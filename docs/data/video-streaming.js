@@ -10,7 +10,7 @@ SD.register({
     insight: 'Video streaming is mostly <b>plain HTTP GETs of static files</b>. All the intelligence sits at the two ends: the encoder decides how few bits each scene needs, and the player decides which bits to fetch next.',
     numbers: [
       { v: '20–33×', l: 'compute efficiency of YouTube\'s Argos VCU vs its prior software encoders (Google, 2021)' },
-      { v: '~30%', l: 'avg bitrate cut of Netflix\'s dynamic optimizer vs best fixed-QP encodes (Netflix, 2018)' },
+      { v: '~30%', l: 'reported bitrate cut of Netflix\'s dynamic optimizer vs fixed-QP encodes; varies by codec (Netflix, 2018)' },
       { v: '10–20%', l: 'fewer rebuffers with buffer-based ABR in Netflix A/B tests (SIGCOMM 2014)' }
     ]
   },
@@ -225,7 +225,7 @@ SD.register({
       { when: '2014', who: 'Netflix · Stanford', title: 'Buffer-based rate adaptation', text: 'Huang et al. tested ABR that picks the bitrate from <b>buffer level</b> rather than throughput estimates, in A/B tests with more than half a million users each. It cut rebuffers by about <b>10–20%</b> vs Netflix\'s default while keeping or improving video rate.', src: 5 },
       { when: 'Dec 2015', who: 'Netflix', title: 'Per-title encode optimization', text: 'Instead of one fixed ladder for every title, Netflix encodes each title at many resolution/bitrate points and builds its ladder from the points closest to the <b>convex hull</b>. Simple content (their example: animation such as <i>BoJack Horseman</i>) gets higher resolution at the same bitrate.', src: 0 },
       { when: '2016', who: 'Netflix', title: 'Traffic over direct ISP connections', text: 'Netflix says close to <b>90%</b> of its traffic is delivered via direct connections between Open Connect and the residential ISPs its members use.', src: 4 },
-      { when: '2018', who: 'Netflix', title: 'Dynamic optimizer (shot-based)', text: 'A codec-agnostic framework that chooses resolution and quantizer <b>per shot</b>, optimizing the VMAF perceptual metric. Against the best fixed-QP encoding it reduced bitrate by about <b>30%</b> on average in Netflix\'s tests.', src: 1 },
+      { when: '2018', who: 'Netflix', title: 'Dynamic optimizer (shot-based)', text: 'A codec-agnostic framework that chooses resolution and quantizer <b>per shot</b>, optimizing the VMAF perceptual metric. Against the best fixed-QP encoding it reduced bitrate by roughly <b>30%</b> in Netflix\'s tests, with the exact saving depending on the codec.', src: 1 },
       { when: '2020', who: 'Netflix', title: 'Optimized shot-based 4K encodes', text: 'Shot-based encoding reached 4K streams. Press coverage reported roughly <b>half the bitrate</b> at comparable quality versus the previous fixed 4K ladder.', src: 2 },
       { when: 'Apr 2021', who: 'YouTube', title: 'Argos video coding unit (VCU)', text: 'YouTube built its own transcoding chip and the software to run it at warehouse scale, reporting <b>20–33×</b> better compute efficiency than its previous optimized software encoders. The details are in Google\'s ASPLOS \'21 paper.', src: 6 },
       { when: 'Ongoing', who: 'Netflix', title: 'Open Connect appliances in ISPs', text: 'Netflix gives qualifying ISPs Open Connect Appliances free of charge; the ISP supplies power, space and connectivity. Caching is <b>proactive and directed</b>: content is filled ahead of demand during off-peak hours rather than on first request.', src: 3 }

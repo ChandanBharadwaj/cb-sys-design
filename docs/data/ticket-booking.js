@@ -11,7 +11,7 @@ SD.register({
     numbers: [
       { v: '3.5B', l: 'system requests in the Eras Tour presale, 4× Ticketmaster\'s previous peak (Nov 2022)' },
       { v: '3.5M', l: 'Verified Fan registrations for that sale: 1.5M invited, 2M wait-listed' },
-      { v: '~3×', l: 'usual bot traffic that day (Live Nation testimony to the US Senate, 2023)' }
+      { v: '~3×', l: 'the most bot traffic Ticketmaster had ever seen (Live Nation testimony to the US Senate, 2023)' }
     ]
   },
 
@@ -233,7 +233,7 @@ SD.register({
       { when: 'Queue-it docs', who: 'Queue-it', title: 'Pre-queue randomization, then FIFO', text: 'Visitors who arrive before the sale wait without a position. At sale start everyone in the pre-queue gets a <b>random</b> place; later arrivals queue FIFO. Outflow is set in visitors per minute and can change live; users return with a <b>signed token</b>.', src: 1 },
       { when: 'by 2022', who: 'SeatGeek', title: 'Own virtual waiting room', text: 'SeatGeek replaced a third-party queue with its own, on <b>AWS Lambda + DynamoDB</b> for queue state, with token validation and routing at the <b>Fastly</b> edge to cut origin load and latency.', src: 2 },
       { when: 'Nov 15, 2022', who: 'Ticketmaster', title: 'Eras Tour presale', text: '<b>3.5M</b> fans registered for Verified Fan; <b>1.5M</b> were invited and 2M wait-listed. Bots and fans without codes drove <b>3.5B system requests</b>, 4× the previous peak. Over 2M tickets still sold that day; Ticketmaster said about 15% of interactions had issues, and the general on-sale was cancelled.', src: 3 },
-      { when: 'Jan 2023', who: 'Live Nation', title: 'Senate testimony', text: 'Live Nation\'s president said the presale saw about <b>three times</b> the usual bot traffic and, for the first time in some 400 Verified Fan sales, bots attacked the Verified Fan servers themselves. The company had to slow and pause the sale.', src: 4 }
+      { when: 'Jan 2023', who: 'Live Nation', title: 'Senate testimony', text: 'Live Nation\'s president said the presale saw <b>three times</b> more bot traffic than Ticketmaster had ever experienced and, for the first time in some 400 Verified Fan sales, bots attacked the Verified Fan servers themselves. The company had to slow and pause the sale.', src: 4 }
     ],
     lessons: [
       '<span><b>Shape demand before it arrives</b>: pre-registration, codes and randomized pre-queues.</span>',

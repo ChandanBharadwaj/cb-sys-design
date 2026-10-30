@@ -9,7 +9,7 @@ SD.register({
     idea: 'Keep each board in a <b>Redis sorted set</b>: a <b>skip list</b> whose forward pointers store <b>spans</b> (how many nodes they jump), plus a hash of member → score. Insert, update and rank are all <b>O(log N)</b>.',
     insight: 'Rank = sum of the spans you cross on the way down. Sharding a board is the hard part: one sorted set lives on one Redis shard, so huge boards are split <b>by score range</b> and global rank becomes "players in higher shards + local rank".',
     numbers: [
-      { v: 'O(log N)', l: 'ZADD, ZRANGE and ZREVRANK cost (redis.io leaderboard guide)' },
+      { v: 'O(log N)', l: 'ZADD and ZREVRANK cost; ZRANGE is O(log N + M) for M results (redis.io)' },
       { v: '2 structures', l: 'per sorted set: skip list (order, rank) + hash table (member → score)' },
       { v: '27,556', l: 'riders in one Peloton class, ranked live (2023, AWS blog)' }
     ]
@@ -222,7 +222,7 @@ SD.register({
     intro: 'Most published leaderboards are Redis sorted sets with a durable log behind them. The interesting parts are the data structure and how teams handle peaks.',
     timeline: [
       { when: '1990 → Redis', who: 'Redis', title: 'Pugh\'s skip list, extended', text: 'Redis\'s sorted set code describes itself as almost a C translation of William Pugh\'s skip list paper, changed to allow <b>repeated scores</b>, to compare by <b>score and then member</b>, and to keep a backward pointer. Each forward pointer also stores a <b>span</b>, which is what makes <b>ZRANK O(log N)</b>.', src: 0 },
-      { when: 'Redis docs', who: 'Redis', title: 'Leaderboard pattern', text: 'One sorted set per board, member = player id, score = points. <b>ZADD, ZRANGE and ZREVRANK are O(log N)</b> regardless of size; names and avatars go in a companion hash so the set stays lean.', src: 1 },
+      { when: 'Redis docs', who: 'Redis', title: 'Leaderboard pattern', text: 'One sorted set per board, member = player id, score = points. <b>ZADD and ZREVRANK are O(log N)</b>, and ZRANGE is O(log N + M) for M returned members; names and avatars go in a companion hash so the set stays lean.', src: 1 },
       { when: '2018', who: 'Peloton', title: 'Real-time messaging for classes', text: 'Peloton described a publish/subscribe setup with <b>one channel per member</b>; the leaderboard team used it to connect members to friends taking the same class.', src: 2 },
       { when: '2024', who: 'AWS', title: 'Gaming leaderboard on ElastiCache', text: 'AWS\'s reference moves leaderboard storage and queries out of a relational database into <b>Redis sorted sets</b>, which keep members ordered as scores are inserted or updated.', src: 3 },
       { when: '2023–26', who: 'Peloton', title: 'Turkey Burn: the largest live class', text: 'For its biggest live events Peloton runs the leaderboard on <b>ElastiCache sorted sets</b> with replicas, plus MSK, SQS and OpenSearch, keeping <b>tens of thousands</b> of participants in sync with sub-second latency. The 2023 class had <b>27,556</b> simultaneous riders. Capacity is pre-warmed and tier-0 services are isolated.', src: 4 }
