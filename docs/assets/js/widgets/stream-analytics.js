@@ -39,7 +39,7 @@ SD.widget('stream-analytics', function (root, ctx) {
   const T = (x, y, txt, st, anchor) => svg('text', { x, y, 'text-anchor': anchor || 'middle', style: st || 'font:600 9.5px var(--sans)', fill: 'var(--text-3)', text: txt });
   // axis
   gAxis.append(svg('line', { x1: X0, x2: X1, y1: BASE + 4, y2: BASE + 4, stroke: 'var(--border)' }));
-  for (let s = 0; s <= SPAN; s += WIN) gAxis.append(T(xOf(s), BASE + 17, '12:00:' + String(s).padStart(2, '0').replace('60', '60'), 'font:600 9px var(--mono)'));
+  for (let s = 0; s <= SPAN; s += WIN) gAxis.append(T(xOf(s), BASE + 17, s === 60 ? '12:01:00' : '12:00:' + String(s).padStart(2, '0'), 'font:600 9px var(--mono)'));
   gAxis.append(T(X0, H - 6, 'event time →', 'font:600 9.5px var(--sans)', 'start'));
   const legend = [['var(--accent)', 'on time'], ['var(--warn)', 'late, accepted'], ['var(--err)', 'dropped → side output']];
   legend.forEach(([c, l], i) => { const x = 175 + i * 105; gAxis.append(svg('circle', { cx: x, cy: H - 9, r: 4, fill: c }), T(x + 8, H - 6, l, 'font:600 9.5px var(--sans)', 'start')); });

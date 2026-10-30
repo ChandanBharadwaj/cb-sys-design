@@ -237,10 +237,10 @@ SD.register({
       { when: '2021', who: 'Uber', title: 'Log analytics moved from ELK to ClickHouse', text: 'A schema-agnostic layer on ClickHouse ingests <b>millions of logs/s</b> and stores several PB. It replaced 20+ Elasticsearch clusters per region.', src: 7 }
     ],
     lessons: [
-      'Window by <b>event time</b>. Processing time gives different answers every time you replay.',
-      'Make the trade-off explicit: <b>watermark lag</b> buys completeness, <b>allowed lateness</b> buys corrections, and both cost latency or state.',
-      'Exactly-once is a <b>pipeline</b> property: replayable source + consistent snapshots + transactional or idempotent sink.',
-      'Serve from a <b>columnar store</b> sorted by your filter keys. Insert in batches and let merges do the rest.'
+      '<span>Window by <b>event time</b>. Processing time gives different answers every time you replay.</span>',
+      '<span>Make the trade-off explicit: <b>watermark lag</b> buys completeness, <b>allowed lateness</b> buys corrections, and both cost latency or state.</span>',
+      '<span>Exactly-once is a <b>pipeline</b> property: replayable source + consistent snapshots + transactional or idempotent sink.</span>',
+      '<span>Serve from a <b>columnar store</b> sorted by your filter keys. Insert in batches and let merges do the rest.</span>'
     ],
     sources: [
       { title: 'MillWheel: Fault-Tolerant Stream Processing at Internet Scale', url: 'https://research.google/pubs/pub41378/', pub: 'Google Research, VLDB 2013' },
@@ -294,7 +294,7 @@ SD.register({
 
   code: [
     {
-      title: 'Flink (Java): event-time windows, lateness, exactly-once Kafka sink', lang: 'java',
+      title: 'Flink: windows + exactly-once', lang: 'java',
       code: `// Flink 1.19+/2.x DataStream API + flink-connector-kafka
 StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 env.enableCheckpointing(60_000, CheckpointingMode.EXACTLY_ONCE);   // barrier every 60 s
@@ -334,7 +334,7 @@ env.execute("page-views-per-minute");`,
       note: 'Consumers of <code>page-counts-1m</code> must use <code>isolation.level=read_committed</code>. Otherwise they also see aborted transactions.'
     },
     {
-      title: 'ClickHouse: raw MergeTree + upsert-friendly rollup', lang: 'sql',
+      title: 'ClickHouse: MergeTree DDL', lang: 'sql',
       code: `-- raw events: sorted by the columns you filter on, TTL for retention
 CREATE TABLE page_views
 (
