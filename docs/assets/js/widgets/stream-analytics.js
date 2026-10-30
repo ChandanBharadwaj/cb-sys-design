@@ -28,7 +28,7 @@ SD.widget('stream-analytics', function (root, ctx) {
     el('label', null, 'Watermark lag ', lagOut, lagIn), el('label', null, 'Allowed lateness ', latOut, latIn)));
 
   // ---------- stage ----------
-  const S_ = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Event-time windows with watermark', style: 'touch-action:none;cursor:crosshair' });
+  const S_ = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Event-time windows with watermark', style: 'touch-action:none;cursor:crosshair;max-width:720px;margin:0 auto' });
   const gBands = svg('g'), gAxis = svg('g'), gDots = svg('g'), gLines = svg('g'), gGhost = svg('g');
   S_.append(gBands, gAxis, gDots, gLines, gGhost);
   root.append(el('div', { class: 'w-stage' }, S_));

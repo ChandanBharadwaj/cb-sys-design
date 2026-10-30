@@ -19,7 +19,7 @@ SD.widget('llm-inference', function (root, ctx) {
   resetBtn.addEventListener('click', reset);
   root.append(el('div', { class: 'w-controls' }, kvBtn, bBtn, playBtn, stepBtn, resetBtn));
 
-  const S_ = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'GPU KV block pool' });
+  const S_ = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'GPU KV block pool', style: 'max-width:680px;margin:0 auto' });
   const defs = svg('defs', null, svg('pattern', { id: 'llmHatch', width: 6, height: 6, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' }, svg('line', { x1: 0, y1: 0, x2: 0, y2: 6, stroke: 'var(--text-3)', 'stroke-width': 1.6, opacity: 0.5 })));
   const gGrid = svg('g'), gTl = svg('g');
   S_.append(defs, gGrid, gTl);

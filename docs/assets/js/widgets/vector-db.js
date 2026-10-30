@@ -25,7 +25,7 @@ SD.widget('vector-db', function (root, ctx) {
   }
   root.append(el('div', { class: 'w-controls' }, hBtn, iBtn, qBtn, nBtn, el('label', null, sLab, sOut, sIn)));
 
-  const S_ = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Vector index in 2-D', style: 'cursor:crosshair' });
+  const S_ = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Vector index in 2-D', style: 'cursor:crosshair;max-width:720px;margin:0 auto' });
   const gE = svg('g'), gP = svg('g'), fx = svg('g');
   S_.append(svg('rect', { x: 0, y: 0, width: W, height: H, rx: 10, fill: 'var(--surface-2)' }), gE, gP, fx);
   root.append(el('div', { class: 'w-stage' }, S_));

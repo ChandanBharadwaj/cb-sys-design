@@ -909,7 +909,7 @@
       s.append(tlw);
       if (R.lessons && R.lessons.length) s.append(el('div', { class: 'card reveal', style: { marginTop: '14px' } },
         el('h3', { text: 'What to steal for your design', style: { fontSize: '15px', marginBottom: '10px' } }),
-        el('div', { class: 'lessons' }, R.lessons.map((l) => el('div', { class: 'lesson', html: l })))));
+        el('div', { class: 'lessons' }, R.lessons.map((l) => el('div', { class: 'lesson' }, el('span', { html: l }))))));
       if (R.sources && R.sources.length) s.append(el('div', { class: 'card reveal', style: { marginTop: '14px' } },
         el('h3', { text: 'Sources', style: { fontSize: '15px', marginBottom: '8px' } }),
         el('ol', { class: 'sources' }, R.sources.map((x) => el('li', null,

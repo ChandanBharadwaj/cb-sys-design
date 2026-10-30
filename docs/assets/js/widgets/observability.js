@@ -62,7 +62,7 @@ SD.widget('observability', function (root, ctx) {
   const jBtn = el('button', { class: 'btn', text: '⏱ Jitter: off' });
   jBtn.addEventListener('click', () => { jitter = !jitter; jBtn.textContent = '⏱ Jitter: ' + (jitter ? 'on' : 'off'); restart(); });
   root.append(el('div', { class: 'w-controls' }, ...kBtns, jBtn));
-  const S_ = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Bits per point' });
+  const S_ = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Bits per point', style: 'max-width:680px;margin:0 auto' });
   const gGrid = svg('g'), gBars = svg('g');
   S_.append(gGrid, gBars);
   root.append(el('div', { class: 'w-stage' }, S_));
