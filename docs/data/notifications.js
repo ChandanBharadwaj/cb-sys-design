@@ -282,7 +282,7 @@ SD.register({
 
   code: [
     {
-      title: 'Spring Boot: SMS sender with Resilience4j retry + rate limiter', lang: 'java',
+      title: 'Spring: SMS sender + Resilience4j', lang: 'java',
       code: `// resilience4j-spring-boot3; application.yml configures the "sms" instances:
 // resilience4j.retry.instances.sms: max-attempts 5, wait-duration 500ms,
 //   enable-exponential-backoff true, enable-randomized-wait true,
@@ -315,7 +315,7 @@ public class SmsSender {
       note: 'Annotation order matters: with default aspect order, Retry wraps the RateLimiter, so every retry also waits for a permit.'
     },
     {
-      title: 'Kafka: one topic per lane, separate consumer pools', lang: 'java',
+      title: 'Kafka: one topic per lane', lang: 'java',
       code: `@Component
 public class Lanes {
   private final SmsSender sms;

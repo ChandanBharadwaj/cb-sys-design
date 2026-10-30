@@ -90,7 +90,7 @@ SD.register({
       { from: 'api', to: 'idem', bidi: true },
       { from: 'api', to: 'pay' },
       { from: 'pay', to: 'risk' },
-      { from: 'pay', to: 'psp' },
+      { from: 'pay', to: 'psp', bidi: true },
       { from: 'psp', to: 'net', bidi: true },
       { from: 'pay', to: 'ledger' },
       { from: 'ledger', to: 'kfk', label: 'outbox' },

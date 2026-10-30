@@ -48,7 +48,7 @@ SD.widget('unique-id', function (root, ctx) {
     const bit = 63 - i, r = Math.floor(i / 16), c = i % 16;
     const x = X0 + c * CW, y = Y0 + r * RG;
     const rect = svg('rect', { x: x + 1, y, width: CW - 2, height: CH, rx: 4, style: 'transition:fill .25s' });
-    const t = svg('text', { x: x + CW / 2, y: y + 16, 'text-anchor': 'middle', style: 'font:600 12px var(--mono)', fill: 'var(--text)' });
+    const t = svg('text', { x: x + CW / 2, y: y + 16, 'text-anchor': 'middle', style: 'font:600 13px var(--mono)', fill: 'var(--text)' });
     gCells.append(rect, t);
     if (c === 0) gCells.append(svg('text', { x: X0 - 6, y: y + 16, 'text-anchor': 'end', style: 'font:10px var(--mono)', fill: 'var(--text-3)', text: bit }));
     cells.push({ bit, rect, t, x, y });

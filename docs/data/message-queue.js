@@ -219,7 +219,7 @@ SD.register({
         labels: pulsar ? {
           b1: { label: 'Broker 1', sub: 'stateless · owns P0' }, b2: { label: 'Broker 2', sub: 'stateless · owns P1' }, b3: { label: 'Broker 3', sub: 'stateless · owns P2' },
           tier: { label: 'BookKeeper bookies', sub: 'ledgers (segments)' }, ctrl: { label: 'Metadata store', sub: 'cluster metadata' }
-        } : { b1: { label: 'Broker 1', sub: 'P0 leader · acks=' + s.acks } },
+        } : { b1: { label: 'Broker 1', sub: 'P0 · acks=' + s.acks } },
         hot: pulsar ? ['tier', 'b1'] : ['b1'],
         warn: s.acks !== 'all' ? ['b2', 'b3'] : [],
         err: blocked || (s.sem === 'eos' && s.acks !== 'all') ? ['prod'] : [],
@@ -245,10 +245,10 @@ SD.register({
       { when: 'Design', who: 'Apache Pulsar', title: 'Separate serving from storage', text: 'Pulsar brokers are stateless. Data lives in Apache BookKeeper as a sequence of <b>ledgers</b> replicated across bookies, so brokers scale and fail over without moving data.', src: 6 }
     ],
     lessons: [
-      'A log with consumer-owned offsets scales better than a broker that tracks every message.',
-      'Durability is a <b>combination</b>: RF=3, <code>min.insync.replicas=2</code>, <code>acks=all</code>.',
-      'Order exists only <b>per partition</b>. Choose the key for the order you need.',
-      'Consumer lag is the health metric. Alert on it.'
+      '<span>A log with consumer-owned offsets scales better than a broker that tracks every message.</span>',
+      '<span>Durability is a <b>combination</b>: replication factor 3, min in-sync replicas 2, and acks = all.</span>',
+      '<span>Order exists only <b>per partition</b>. Choose the key for the order you need.</span>',
+      '<span>Consumer lag is the health metric. Alert on it.</span>'
     ],
     sources: [
       { title: 'Kafka: a Distributed Messaging System for Log Processing', url: 'https://people.csail.mit.edu/matei/courses/2015/6.S897/readings/kafka.pdf', pub: 'Kreps, Narkhede, Rao · NetDB \'11 (course mirror)' },

@@ -92,7 +92,7 @@ SD.register({
       { from: 'orch', to: 'enc' },
       { from: 'enc', to: 'pkg' },
       { from: 'pkg', to: 'org' },
-      { from: 'org', to: 'cdn', label: 'fill' },
+      { from: 'org', to: 'cdn', bidi: true, label: 'fill' },
       { from: 'pre', to: 'cdn', dashed: true },
       { from: 'ply', to: 'ctl', bidi: true },
       { from: 'ply', to: 'cdn', bidi: true },
@@ -173,7 +173,7 @@ SD.register({
       const rebufBase = { tput: 1.0, buffer: 0.8, hybrid: 0.7 }[s.abr] * { 2: 0.9, 6: 1, 10: 1.25 }[s.seg] * (s.bw < 3 ? 1.6 : 1);
       const compute = { fixed: '1× (baseline)', pertitle: '≈ 2–3× (trial encodes)', shot: '≈ 5–10× (per-shot search)' }[s.ladder];
       const metrics = [
-        { k: 'Bits for the same quality', v: Math.round(fac * segOverhead * 100) + '% of fixed', s: 1.15 - fac * segOverhead },
+        { k: 'Bits for the same quality', v: Math.round(fac * segOverhead * 100) + '% of fixed', s: Math.max(0.05, Math.min(1, (1.1 - fac * segOverhead) / 0.5)) },
         { k: 'Best sustainable quality', v: best[0] + ' at ' + s.bw + ' Mbps', s: qS },
         { k: 'Startup time', v: '≈ ' + startup.toFixed(1) + ' s', s: startup < 1.2 ? 0.9 : startup < 2.5 ? 0.6 : 0.3 },
         { k: 'Rebuffer risk (relative)', v: rebufBase.toFixed(2) + '×', s: Math.max(0.05, 1.1 - rebufBase * 0.6) },
@@ -184,6 +184,9 @@ SD.register({
       const notes = [];
       if (s.ladder === 'fixed') notes.push('A fixed ladder gives a cartoon the same bits as an action film. Netflix\'s 2015 per-title work showed simple titles look the same at much lower bitrates.');
       if (s.ladder === 'shot') notes.push('Per-shot encoding picks resolution and quantizer per shot to sit on the quality/bitrate <b>convex hull</b>. It costs many trial encodes, so it pays off for titles watched millions of times.');
+      if (s.ladder === 'pertitle') notes.push('Per-title runs trial encodes per title and keeps the ladder points on the quality/bitrate convex hull. The 20% saving here is illustrative; real savings depend on how simple the content is.');
+      if (s.abr === 'hybrid') notes.push('Hybrid ABR uses throughput while the buffer is nearly empty (startup, after a seek) and switches to buffer-based logic once there is a cushion.');
+      if (s.cdn === 'own') notes.push('Own caches inside ISPs are filled ahead of demand during off-peak hours, so the peak is served locally. Hit ratios shown are <em>estimates</em>.');
       if (s.seg === 2) notes.push('2 s segments react fast and start fast, but triple the request rate and add keyframe overhead. Common in live and low-latency setups.');
       if (s.seg === 10) notes.push('10 s segments are efficient to serve, but the player can only change bitrate every 10 s, so a sudden drop drains the buffer before ABR can react.');
       if (s.abr === 'buffer') notes.push('Buffer-based ABR maps buffer level to a rung, ignoring noisy throughput estimates in steady state. Netflix\'s A/B tests found 10–20% fewer rebuffers.');

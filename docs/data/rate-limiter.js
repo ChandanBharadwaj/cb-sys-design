@@ -224,7 +224,7 @@ SD.register({
 
   widget: {
     title: 'Four algorithms, one request stream',
-    caption: 'Every request you send goes to <b>all four limiters at once</b>. Green ticks pass, red ticks get a 429. Try <b>Boundary attack</b>: the fixed window lets through twice the limit across the window edge, the others do not.'
+    caption: 'Every request you send goes to <b>all four limiters at once</b>. Green ticks pass, red ticks get a 429. Try <b>Boundary attack</b>: the fixed window lets through twice the limit across the window edge, the sliding algorithms hold the line, and the token bucket allows only its burst plus what refilled.'
   },
 
   realWorld: {
@@ -238,10 +238,10 @@ SD.register({
       { when: '2026', who: 'IETF', title: 'Standard headers, still a draft', text: 'The HTTPAPI working group\'s <code>RateLimit-Policy</code> and <code>RateLimit</code> header fields are still an Internet-Draft. <code>Retry-After</code> remains the one header every client understands.', src: 5 }
     ],
     lessons: [
-      'Separate <b>per-client limits</b> (fairness) from <b>load shedding</b> (protect the fleet). You need both.',
-      'Make the check <b>one atomic round trip</b>: a Lua script, not GET then SET.',
-      'Launch new limits in <b>shadow mode</b> and watch who would have been blocked.',
-      'Decide the <b>failure mode</b> up front. Most limits fail open.'
+      '<span>Separate <b>per-client limits</b> (fairness) from <b>load shedding</b> (protect the fleet). You need both.</span>',
+      '<span>Make the check <b>one atomic round trip</b>: a Lua script, not GET then SET.</span>',
+      '<span>Launch new limits in <b>shadow mode</b> and watch who would have been blocked.</span>',
+      '<span>Decide the <b>failure mode</b> up front. Most limits fail open.</span>'
     ],
     sources: [
       { title: 'Scaling your API with rate limiters', url: 'https://stripe.com/blog/rate-limiters', pub: 'Stripe, 2017' },

@@ -248,10 +248,10 @@ SD.register({
       { when: 'Redis 6.2+', who: 'Redis', title: 'GEOSEARCH on a sorted set', text: 'Redis GEO stores each member as a <b>52-bit interleaved geohash</b> score in an ordinary sorted set. GEOSEARCH computes the bounding area and turns it into a few score ranges, then filters by distance.', src: 5 }
     ],
     lessons: [
-      'Static places: <b>read-only in-memory index + replicas</b>. Moving entities: <b>shard by cell</b> and design the write path.',
-      'Always query <b>neighbouring cells</b>; prefixes lie at cell edges.',
-      'Space-filling curves (Hilbert in S2, Z-order in geohash) turn 2-D search into a few 1-D range scans.',
-      'Balance shards by <b>load</b>, not by area: one downtown cell can outweigh a whole country.'
+      '<span>Static places: <b>read-only in-memory index + replicas</b>. Moving entities: <b>shard by cell</b> and design the write path.</span>',
+      '<span>Always query <b>neighbouring cells</b>; prefixes lie at cell edges.</span>',
+      '<span>Space-filling curves (Hilbert in S2, Z-order in geohash) turn 2-D search into a few 1-D range scans.</span>',
+      '<span>Balance shards by <b>load</b>, not by area: one downtown cell can outweigh a whole country.</span>',
     ],
     sources: [
       { title: 'Moving Yelp\'s Core Business Search to Elasticsearch', url: 'https://engineeringblog.yelp.com/2017/06/moving-yelps-core-business-search-to-elasticsearch.html', pub: 'Yelp Engineering, 2017' },

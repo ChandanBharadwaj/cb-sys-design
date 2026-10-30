@@ -61,7 +61,7 @@ SD.widget('rate-limiter', function (root, ctx) {
   ];
 
   // ---- drawing
-  const VW = (root.clientWidth || window.innerWidth) < 560 ? 360 : 500;   // narrower viewBox on phones keeps text legible
+  const VW = (root.clientWidth || window.innerWidth) < 560 ? 360 : 820;   // narrower viewBox on phones keeps text legible
   const LH = 74, X0 = 10, X1 = VW - 98, GX = VW - 74;
   const H = algos.length * LH + 22;
   const S = svg('svg', { viewBox: `0 0 ${VW} ${H}`, role: 'img', 'aria-label': 'Four rate limiter lanes' });

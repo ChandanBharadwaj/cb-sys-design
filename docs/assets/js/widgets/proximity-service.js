@@ -56,7 +56,7 @@ SD.widget('proximity-service', function (root, ctx) {
   root.append(el('div', { class: 'w-controls' }, modeBtns, precGroup, addBtn, el('label', null, 'Radius ', rOut, ' ', rIn), resetBtn));
   function syncControls() { precGroup.style.display = mode === 'geo' ? 'inline-flex' : 'none'; addBtn.style.display = mode === 'quad' ? '' : 'none'; }
 
-  const S_ = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Map with places, geohash cells or quadtree', style: 'cursor:crosshair;touch-action:manipulation' });
+  const S_ = svg('svg', { viewBox: `0 0 ${W} ${H}`, style: 'max-width:820px;margin:0 auto;cursor:crosshair;touch-action:manipulation', role: 'img', 'aria-label': 'Map with places, geohash cells or quadtree' });
   const gBg = svg('g'), gGrid = svg('g'), gHi = svg('g'), gPts = svg('g'), gTop = svg('g');
   S_.append(svg('rect', { x: 0, y: 0, width: W, height: H, fill: 'var(--surface-2)' }), gBg, gHi, gGrid, gPts, gTop);
   root.append(el('div', { class: 'w-stage' }, S_));

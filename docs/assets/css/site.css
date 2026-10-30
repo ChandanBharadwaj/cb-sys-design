@@ -394,6 +394,7 @@ svg.tall .node .sub { font-size: 10px; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .btn.primary:hover { filter: brightness(1.08); color: #fff; }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
+.w-stage { max-width: 860px; margin: 0 auto; }
 .w-stage svg { display: block; width: 100%; height: auto; }
 .w-stats { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .w-stat { font-size: 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 5px 9px; color: var(--text-2); }
@@ -453,6 +454,7 @@ table.t td:first-child { font-weight: 600; }
 
 /* ---------- code ---------- */
 .code-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.code-tabs .tab { white-space: normal; text-align: left; max-width: 100%; }
 .codebox { position: relative; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--surface-2); }
 .codebox .ch { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 12.5px; color: var(--text-2); }
 .codebox pre { margin: 0; padding: 14px; overflow-x: auto; font-size: 12.5px; line-height: 1.6; }

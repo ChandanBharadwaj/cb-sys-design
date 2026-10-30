@@ -1,7 +1,7 @@
 /* Priority lanes + token-bucket provider + full-jitter retries, simulated in real time. */
 SD.widget('notifications', function (root, ctx) {
   const { el, svg } = ctx;
-  const RATE = 40, BURST = 40, WORKER = 60, SLOTS = 28, SW = 9;
+  const RATE = 40, BURST = 40, WORKER = 60, SLOTS = 18, SW = 11;
   let promoRate = 20, lanes = true, limiter = true;
   let now = 0, tokens = BURST, otpAcc = 0, promoAcc = 0, workAcc = 0;
   let txn = [], promo = [], retry = [], lat = [], hist = [], c429 = 0, sentWin = 0, sentRate = 0, rejected = 0, secT = 0;
@@ -29,34 +29,34 @@ SD.widget('notifications', function (root, ctx) {
   root.append(el('div', { class: 'w-controls' }, laneBtn, limBtn, resetBtn, el('label', null, 'Promo rate ', pOut, ' ', pIn)));
 
   // drawing
-  const W = 500, H = 262;
+  const W = 400, H = 276;
   const S = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Queue lanes and provider token bucket' });
-  const T = (x, y, t, st, fill) => { const n = svg('text', { x, y, style: st || 'font:600 11px var(--mono)', fill: fill || 'var(--text-2)', text: t }); S.append(n); return n; };
-  const laneY = [38, 88, 138];
-  const laneName = [T(8, laneY[0] + 15, 'TXN'), T(8, laneY[1] + 15, 'PROMO'), T(8, laneY[2] + 15, 'RETRY')];
-  const laneCnt = laneY.map((y) => T(62, y - 5, '', 'font:500 10px var(--mono)', 'var(--text-3)'));
+  const T = (x, y, t, st, fill) => { const n = svg('text', { x, y, style: st || 'font:700 13px var(--mono)', fill: fill || 'var(--text-2)', text: t }); S.append(n); return n; };
+  const laneY = [30, 84, 138];
+  const laneName = [T(4, laneY[0] + 41, 'TXN'), T(4, laneY[1] + 41, 'PROMO'), T(4, laneY[2] + 41, 'RETRY')];
+  const laneCnt = laneY.map((y) => T(60, y + 41, '', 'font:500 12px var(--mono)', 'var(--text-3)'));
   const rects = laneY.map((y) => {
-    S.append(svg('rect', { x: 60, y, width: SLOTS * SW + 6, height: 22, rx: 5, fill: 'var(--surface-2)', stroke: 'var(--border)' }));
-    return Array.from({ length: SLOTS }, (_, i) => { const r = svg('rect', { x: 63 + (SLOTS - 1 - i) * SW, y: y + 4, width: SW - 2, height: 14, rx: 2 }); S.append(r); return r; });
+    S.append(svg('rect', { x: 4, y, width: SLOTS * SW + 6, height: 26, rx: 5, fill: 'var(--surface-2)', stroke: 'var(--border)' }));
+    return Array.from({ length: SLOTS }, (_, i) => { const r = svg('rect', { x: 7 + (SLOTS - 1 - i) * SW, y: y + 4, width: SW - 3, height: 18, rx: 2 }); S.append(r); return r; });
   });
   // arrows into the provider
-  laneY.slice(0, 2).forEach((y) => S.append(svg('line', { x1: 324, y1: y + 11, x2: 380, y2: 100, stroke: 'var(--border)', 'stroke-width': 1.5 })));
+  laneY.slice(0, 2).forEach((y) => S.append(svg('line', { x1: 210, y1: y + 13, x2: 262, y2: 90, stroke: 'var(--border)', 'stroke-width': 1.5 })));
   // provider token bucket
-  S.append(svg('rect', { x: 384, y: 30, width: 100, height: 140, rx: 10, fill: 'var(--surface-2)', stroke: 'var(--border)' }));
-  T(394, 48, 'PROVIDER', 'font:700 11px var(--mono)', 'var(--text)');
-  T(394, 62, RATE + '/s limit', 'font:500 10px var(--mono)', 'var(--text-3)');
-  S.append(svg('rect', { x: 420, y: 72, width: 28, height: 90, rx: 4, fill: 'var(--surface)', stroke: 'var(--border)' }));
-  const fill = svg('rect', { x: 422, y: 74, width: 24, height: 86, rx: 3, fill: 'var(--ok)' });
+  S.append(svg('rect', { x: 266, y: 22, width: 130, height: 168, rx: 10, fill: 'var(--surface-2)', stroke: 'var(--border)' }));
+  T(276, 42, 'PROVIDER', 'font:700 13px var(--mono)', 'var(--text)');
+  T(276, 58, RATE + '/s limit', 'font:500 12px var(--mono)', 'var(--text-3)');
+  S.append(svg('rect', { x: 278, y: 70, width: 32, height: 90, rx: 4, fill: 'var(--surface)', stroke: 'var(--border)' }));
+  const fill = svg('rect', { x: 280, y: 72, width: 28, height: 86, rx: 3, fill: 'var(--ok)' });
   S.append(fill);
-  const tokTxt = T(452, 120, '', 'font:600 10px var(--mono)', 'var(--text-2)');
-  const flash = T(392, 160, '', 'font:700 11px var(--mono)', 'var(--err)');
+  const tokTxt = T(318, 120, '', 'font:600 12px var(--mono)', 'var(--text-2)');
+  const flash = T(318, 150, '', 'font:700 14px var(--mono)', 'var(--err)');
   // sparkline of OTP latency
-  T(8, 192, 'OTP p95 latency, last 60 s', 'font:600 10px var(--mono)', 'var(--text-3)');
-  S.append(svg('rect', { x: 8, y: 198, width: 484, height: 58, rx: 6, fill: 'var(--surface-2)', stroke: 'var(--border)' }));
+  T(4, 210, 'OTP p95 latency, last 60 s', 'font:600 12px var(--mono)', 'var(--text-3)');
+  S.append(svg('rect', { x: 4, y: 216, width: 392, height: 56, rx: 6, fill: 'var(--surface-2)', stroke: 'var(--border)' }));
   const spark = svg('polyline', { fill: 'none', stroke: 'var(--accent)', 'stroke-width': 2, points: '' });
-  const maxTxt = T(486, 210, '', 'font:500 10px var(--mono);text-anchor:end', 'var(--text-3)');
+  const maxTxt = T(392, 210, '', 'font:500 12px var(--mono);text-anchor:end', 'var(--text-3)');
   S.append(spark);
-  root.append(el('div', { class: 'w-stage' }, S));
+  root.append(el('div', { class: 'w-stage', style: { maxWidth: '620px', margin: '0 auto' } }, S));
   const st = el('div', { class: 'w-stats' });
   const log = el('div', { class: 'w-log', 'aria-live': 'polite' });
   root.append(st, log);
@@ -111,11 +111,11 @@ SD.widget('notifications', function (root, ctx) {
     drawLane(1, lanes ? promo : [], 'var(--accent)');
     drawLane(2, retry.map((r) => r.m), 'var(--warn)');
     const h = 86 * (tokens / BURST);
-    fill.setAttribute('y', 74 + 86 - h); fill.setAttribute('height', Math.max(0, h));
+    fill.setAttribute('y', 72 + 86 - h); fill.setAttribute('height', Math.max(0, h));
     fill.setAttribute('fill', tokens < 1 ? 'var(--err)' : tokens < 10 ? 'var(--warn)' : 'var(--ok)');
     tokTxt.textContent = Math.floor(tokens) + ' tok';
     const mx = Math.max(3, ...hist);
-    spark.setAttribute('points', hist.map((v, i) => `${(12 + i * (476 / 59)).toFixed(1)},${(252 - (v / mx) * 46).toFixed(1)}`).join(' '));
+    spark.setAttribute('points', hist.map((v, i) => `${(8 + i * (384 / 59)).toFixed(1)},${(268 - (v / mx) * 46).toFixed(1)}`).join(' '));
     maxTxt.textContent = 'max ' + mx.toFixed(1) + ' s';
     const p = p95();
     st.innerHTML = '';

@@ -22,7 +22,7 @@ SD.widget('video-streaming', function (root, ctx) {
   bwIn.addEventListener('input', () => { bwSet = +bwIn.value; bwOut.textContent = (bwSet / 1000).toFixed(1) + ' Mbps'; });
   root.append(el('div', { class: 'w-controls' }, playBtn, algoBtn, dropBtn, resetBtn, el('label', null, 'Bandwidth ', bwOut, bwIn)));
 
-  const S = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Segments by bitrate, bandwidth and buffer level', style: 'max-width:640px;margin:0 auto' });
+  const S = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Segments by bitrate, bandwidth and buffer level', style: 'max-width:560px;margin:0 auto' });
   const gGrid = svg('g'), gBars = svg('g'), gLine = svg('g'), gBuf = svg('g');
   S.append(gGrid, gBars, gLine, gBuf);
   root.append(el('div', { class: 'w-stage' }, S));
@@ -30,7 +30,7 @@ SD.widget('video-streaming', function (root, ctx) {
   const log = el('div', { class: 'w-log', 'aria-live': 'polite' });
   root.append(stats, log);
   const say = (t) => { log.prepend(el('div', { html: t })); while (log.children.length > 30) log.lastChild.remove(); };
-  const T = (x, y, text, o) => svg('text', Object.assign({ x, y, text, fill: 'var(--text-3)', style: 'font:500 10.5px var(--mono)' }, o || {}));
+  const T = (x, y, text, o) => svg('text', Object.assign({ x, y, text, fill: 'var(--text-3)', style: 'font:500 11.5px var(--mono)' }, o || {}));
   const yOf = (kbps) => CB - (Math.min(kbps, YMAX) / YMAX) * (CB - CT);
   const rungColor = (r) => `color-mix(in srgb, var(--accent) ${25 + 75 * LADDER.indexOf(r) / (LADDER.length - 1)}%, var(--surface))`;
 

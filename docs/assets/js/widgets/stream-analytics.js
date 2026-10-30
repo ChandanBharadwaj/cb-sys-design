@@ -1,8 +1,8 @@
 /* Event-time tumbling windows with a bounded-out-of-orderness watermark, allowed lateness and a late side output. */
 SD.widget('stream-analytics', function (root, ctx) {
   const { el, svg } = ctx;
-  const W = 500, H = 290, X0 = 34, X1 = 490, SPAN = 60, WIN = 10, NW = SPAN / WIN;
-  const TOP = 50, BASE = 248, MS_PER_S = 420; // 1 s of processing time = 420 ms real time
+  const W = 500, H = 236, X0 = 22, X1 = 478, SPAN = 60, WIN = 10, NW = SPAN / WIN;
+  const TOP = 62, BASE = 204, MS_PER_S = 420; // 1 s of processing time = 420 ms real time
   const xOf = (e) => X0 + (X1 - X0) * (e / SPAN);
   const eOf = (x) => ((x - X0) / (X1 - X0)) * SPAN;
 
@@ -36,25 +36,24 @@ SD.widget('stream-analytics', function (root, ctx) {
   const log = el('div', { class: 'w-log', 'aria-live': 'polite' });
   root.append(statsEl, log);
 
-  const T = (x, y, txt, st, anchor) => svg('text', { x, y, 'text-anchor': anchor || 'middle', style: st || 'font:600 9.5px var(--sans)', fill: 'var(--text-3)', text: txt });
+  const T = (x, y, txt, st, anchor) => svg('text', { x, y, 'text-anchor': anchor || 'middle', style: st || 'font:600 12px var(--sans)', fill: 'var(--text-3)', text: txt });
   // axis
   gAxis.append(svg('line', { x1: X0, x2: X1, y1: BASE + 4, y2: BASE + 4, stroke: 'var(--border)' }));
-  for (let s = 0; s <= SPAN; s += WIN) gAxis.append(T(xOf(s), BASE + 17, s === 60 ? '12:01:00' : '12:00:' + String(s).padStart(2, '0'), 'font:600 9px var(--mono)'));
-  gAxis.append(T(X0, H - 6, 'event time →', 'font:600 9.5px var(--sans)', 'start'));
-  const legend = [['var(--accent)', 'on time'], ['var(--warn)', 'late, accepted'], ['var(--err)', 'dropped → side output']];
-  legend.forEach(([c, l], i) => { const x = 175 + i * 105; gAxis.append(svg('circle', { cx: x, cy: H - 9, r: 4, fill: c }), T(x + 8, H - 6, l, 'font:600 9.5px var(--sans)', 'start')); });
+  for (let s = 0; s <= SPAN; s += WIN) gAxis.append(T(xOf(s), BASE + 20, s === 60 ? '1:00' : ':' + String(s).padStart(2, '0'), 'font:600 14px var(--mono)'));
+  const legend = [['var(--accent)', 'on time'], ['var(--warn)', 'late, accepted (re-fire)'], ['var(--err)', 'dropped → side output'], ['var(--text-3)', '┆ processing time now']];
+  root.insertBefore(el('div', { class: 'w-stats', style: { marginTop: '0', marginBottom: '6px' } }, legend.map(([c, l]) => el('span', { class: 'w-stat', html: `<i style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${c};margin-right:5px"></i>${l}` }))), statsEl);
 
   const bandEls = [];
   for (let k = 0; k < NW; k++) {
     const x = xOf(k * WIN) + 1, w = xOf(WIN) - X0 - 2;
     const rect = svg('rect', { x, y: TOP - 30, width: w, height: BASE - TOP + 32, rx: 6, style: 'transition:fill .3s' });
-    const t1 = T(x + w / 2, TOP - 17, '', 'font:700 10px var(--mono)');
-    const t2 = T(x + w / 2, TOP - 5, '', 'font:600 9px var(--sans)');
+    const t1 = T(x + w / 2, TOP - 15, '', 'font:700 16px var(--mono)');
+    const t2 = T(x + w / 2, TOP + 3, '', 'font:600 13.5px var(--sans)');
     gBands.append(rect, t1, t2);
     bandEls.push({ rect, t1, t2 });
   }
   const wmLine = svg('line', { y1: TOP - 34, y2: BASE + 4, stroke: 'var(--accent)', 'stroke-width': 2.5 });
-  const wmText = T(0, TOP - 37, 'watermark', 'font:700 9.5px var(--sans)');
+  const wmText = T(0, TOP - 38, 'watermark', 'font:700 14px var(--sans)');
   wmText.setAttribute('fill', 'var(--accent)');
   const nowLine = svg('line', { y1: TOP - 30, y2: BASE + 4, stroke: 'var(--text-3)', 'stroke-dasharray': '3 3' });
   gLines.append(nowLine, wmLine, wmText);
@@ -86,9 +85,9 @@ SD.widget('stream-analytics', function (root, ctx) {
     }
     if (kind === 'drop') say(`Event @${e.toFixed(1)} s is behind watermark − lateness (${(wm - lateness).toFixed(1)} s). Window purged → <b>side output</b>.`);
     else if (manual && kind === 'ok') say(`Event @${e.toFixed(1)} s arrived before its window fired, so it counts as on time.`);
-    const y = Math.max(TOP + 4, BASE - 3 - (bins[b] - 1) * 7.5);
+    const y = Math.max(TOP + 10, BASE - 5 - (bins[b] - 1) * 9.5);
     const fill = kind === 'ok' ? 'var(--accent)' : kind === 'late' ? 'var(--warn)' : 'var(--err)';
-    const dot = svg('circle', { cx: xOf(e), cy: y, r: manual ? 4.6 : 3.4, fill, stroke: manual ? 'var(--text)' : 'none', 'stroke-width': 1.2 });
+    const dot = svg('circle', { cx: xOf(e), cy: y, r: manual ? 5.6 : 4.4, fill, stroke: manual ? 'var(--text)' : 'none', 'stroke-width': 1.2 });
     gDots.append(dot);
     events.push({ e, kind });
   }
@@ -125,7 +124,7 @@ SD.widget('stream-analytics', function (root, ctx) {
     });
     const xw = xOf(Math.max(0, Math.min(SPAN, wm)));
     wmLine.setAttribute('x1', xw); wmLine.setAttribute('x2', xw);
-    wmText.setAttribute('x', Math.max(X0 + 24, Math.min(X1 - 24, xw)));
+    wmText.setAttribute('x', Math.max(X0 + 32, Math.min(X1 - 32, xw)));
     const xn = xOf(Math.min(SPAN, p));
     nowLine.setAttribute('x1', xn); nowLine.setAttribute('x2', xn);
     statsEl.innerHTML = '';
@@ -144,7 +143,7 @@ SD.widget('stream-analytics', function (root, ctx) {
     gGhost.innerHTML = '';
     const x = xOf(Math.min(e, p));
     gGhost.append(svg('line', { x1: x, x2: x, y1: TOP - 30, y2: BASE + 4, stroke: 'var(--warn)', 'stroke-width': 1.5, 'stroke-dasharray': '4 3' }),
-      T(Math.max(X0 + 30, Math.min(X1 - 30, x)), BASE - (BASE - TOP) / 2, 'ts ' + Math.min(e, p).toFixed(1) + ' s', 'font:700 10px var(--mono);paint-order:stroke;stroke:var(--surface);stroke-width:3px'));
+      T(Math.max(X0 + 30, Math.min(X1 - 30, x)), BASE - (BASE - TOP) / 2, 'ts ' + Math.min(e, p).toFixed(1) + ' s', 'font:700 13px var(--mono);paint-order:stroke;stroke:var(--surface);stroke-width:3px'));
   }
   S_.addEventListener('pointerdown', (ev) => { ghost = evtTime(ev); drawGhost(ghost); S_.setPointerCapture(ev.pointerId); });
   S_.addEventListener('pointermove', (ev) => { if (ghost != null) { ghost = evtTime(ev); drawGhost(ghost); } });

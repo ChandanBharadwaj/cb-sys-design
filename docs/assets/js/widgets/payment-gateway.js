@@ -24,7 +24,7 @@ SD.widget('payment-gateway', function (root, ctx) {
   const resetBtn = el('button', { class: 'btn', text: 'Reset' });
   root.append(el('div', { class: 'w-controls' }, payBtn, retryBtn, crashBtn, idemBtn, resetBtn));
 
-  const S = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Idempotency key state and ledger T-accounts', style: 'max-width:540px;margin:0 auto' });
+  const S = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Idempotency key state and ledger T-accounts', style: 'max-width:460px;margin:0 auto' });
   const gKey = svg('g'), gCard = svg('g'), gT = svg('g');
   S.append(gKey, gCard, gT);
   root.append(el('div', { class: 'w-stage' }, S));

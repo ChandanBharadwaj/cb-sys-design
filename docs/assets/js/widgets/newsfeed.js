@@ -1,8 +1,8 @@
 /* Hybrid fan-out on a real power-law follow graph: push below the threshold, pull (merge at read) above it. */
 SD.widget('newsfeed', function (root, ctx) {
   const { el, svg } = ctx;
-  const N = 240, COLS = 20, K = 12, LEN = 20;
-  const W = 500, H = 300, X0 = 22, DX = 24, Y0 = 62, DY = 20;
+  const N = 240, COLS = 16, K = 12, LEN = 20;
+  const W = 500, H = 372, X0 = 26, DX = 30, Y0 = 66, DY = 21;
 
   // seeded RNG so the graph is the same on every load
   let seed = 7;
@@ -38,11 +38,11 @@ SD.widget('newsfeed', function (root, ctx) {
   readBtn.addEventListener('click', () => read(Math.floor(rnd() * N)));
   root.append(el('div', { class: 'w-controls' }, postBtn, celebBtn, readBtn, el('label', null, 'Pull above ', tOut, ' followers ', tIn)));
 
-  const stage = el('div', { class: 'w-stage' });
+  const stage = el('div', { class: 'w-stage', style: { maxWidth: '720px', margin: '0 auto' } });
   const S = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Follow graph with 240 users' });
   const gLines = svg('g'), gDots = svg('g'), gTop = svg('g');
-  const title = svg('text', { x: 12, y: 20, style: 'font:700 13px var(--sans)', fill: 'var(--text)', text: 'Tap any dot to post as that user' });
-  const sub = svg('text', { x: 12, y: 40, style: 'font:500 11px var(--mono)', fill: 'var(--text-3)', text: 'dot size = followers · ringed = pulled at read time' });
+  const title = svg('text', { x: 12, y: 22, style: 'font:700 18px var(--sans)', fill: 'var(--text)', text: 'Tap any dot to post as that user' });
+  const sub = svg('text', { x: 12, y: 44, style: 'font:500 13px var(--mono)', fill: 'var(--text-3)', text: 'dot size = followers · ringed = pulled at read time' });
   S.append(title, sub, gLines, gDots, gTop);
   stage.append(S); root.append(stage);
   const st = el('div', { class: 'w-stats' });
@@ -53,7 +53,7 @@ SD.widget('newsfeed', function (root, ctx) {
   const dots = [];
   for (let u = 0; u < N; u++) {
     const [x, y] = pos(u);
-    const r = Math.min(9, 2.4 + Math.log2(1 + followers[u].length) * 0.95);
+    const r = Math.min(10.5, 4.2 + Math.log2(1 + followers[u].length) * 0.85);
     const c = svg('circle', { cx: x, cy: y, r, style: 'cursor:pointer;transition:fill .25s, stroke .25s' });
     c.addEventListener('click', () => post(u));
     c.append(svg('title', { text: `user #${u} · ${followers[u].length} followers` }));
