@@ -368,7 +368,7 @@ public class ChatSocketHandler extends TextWebSocketHandler implements MessageLi
   }
 
   @Override public void afterConnectionClosed(WebSocketSession s, CloseStatus st) {
-    local.values().remove(s);
+    local.remove((String) s.getAttributes().get("userId"));
   }
 }`,
       note: 'Heartbeats refresh the <code>session:</code> TTL. For production, route by consistent hashing to a channel owner first so per-conversation order is assigned in one place.'

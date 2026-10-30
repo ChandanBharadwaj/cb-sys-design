@@ -151,7 +151,7 @@ SD.register({
     controls: [
       { id: 'index', label: 'Index', type: 'seg', value: 'hnsw', options: [
         { v: 'flat', l: 'Flat (exact)' }, { v: 'ivf', l: 'IVF-Flat' }, { v: 'ivfpq', l: 'IVF-PQ' }, { v: 'hnsw', l: 'HNSW' }, { v: 'diskann', l: 'DiskANN' }] },
-      { id: 'effort', label: 'Search effort (HNSW ef / DiskANN L; IVF nprobe = effort ÷ 4)', type: 'range', min: 8, max: 512, step: 8, value: 64 },
+      { id: 'effort', label: 'Search effort (HNSW ef / DiskANN L; IVF nprobe = effort ÷ 4)', type: 'range', min: 8, max: 512, step: 8, value: 128 },
       { id: 'filter', label: 'Metadata filtering', type: 'seg', value: 'ingraph', options: [
         { v: 'post', l: 'Post-filter (top-40, then filter)' }, { v: 'pre', l: 'Pre-filter + brute force' }, { v: 'ingraph', l: 'Filter during traversal' }, { v: 'partition', l: 'Partition key' }] },
       { id: 'sel', label: 'Share of vectors matching the filter', type: 'range', min: 0, max: 5, step: 1, value: 2, fmt: (v) => ['0.1%', '1%', '5%', '20%', '50%', '100%'][v] }

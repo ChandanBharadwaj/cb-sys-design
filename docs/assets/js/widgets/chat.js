@@ -2,7 +2,7 @@
    offline sync from cursor, and dedup of retried sends by client_msg_id. */
 SD.widget('chat', function (root, ctx) {
   const { el, svg } = ctx;
-  const W = 500, ROWS = 7, RH = 34, TOP = 52, H = TOP + ROWS * RH + 6;
+  const W = 500, ROWS = 6, RH = 34, TOP = 52, H = TOP + ROWS * RH + 6;
   const XA = 50, XS = 165, RX = { Bob: 290, Carol: 372, Dan: 454 };
   const NAMES = Object.keys(RX);
   const D = (ms) => (ctx.reduced ? 0 : ms);
