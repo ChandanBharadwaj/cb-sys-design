@@ -1,7 +1,7 @@
 /* Two mini-sims: TrueTime commit wait (interval clocks, real 2ε wait math) and Raft leader election (randomized timeouts, terms, majority votes). */
 SD.widget('distributed-sql', function (root, ctx) {
   const { el, svg } = ctx;
-  const W = 460, H = 300;
+  const W = 440, H = 312;
   let mode = 'tt';
   const T = (x, y, t, o) => svg('text', Object.assign({ x, y, 'text-anchor': 'middle', fill: 'var(--text)', style: 'font:600 13px var(--sans)', text: t }, o || {}));
 
@@ -42,7 +42,7 @@ SD.widget('distributed-sql', function (root, ctx) {
   runBtn.onclick = () => runTT();
   ctlTT.append(runBtn, waitBtn, skewBtn, el('label', null, 'ε ', epsOut, epsIn));
 
-  const X0 = 30, X1 = 440, ROW_A = 95, ROW_B = 185;
+  const X0 = 24, X1 = 420, ROW_A = 78, ROW_B = 196;
   function runTT() {
     const offA = worst ? 0.9 * eps : (Math.random() * 2 - 1) * eps;
     const offB = worst ? -0.9 * eps : (Math.random() * 2 - 1) * eps;
@@ -61,34 +61,33 @@ SD.widget('distributed-sql', function (root, ctx) {
   function drawTT() {
     gTT.innerHTML = '';
     if (!tt) {
-      gTT.append(T(W / 2, 120, 'Each node knows time only as [earliest, latest].', { style: 'font:600 14px var(--sans)' }),
-        T(W / 2, 148, 'Press ▶ Run to commit T1 on node A,', { fill: 'var(--text-3)' }),
-        T(W / 2, 170, 'then start T2 on node B right after the ack.', { fill: 'var(--text-3)' }));
+      gTT.append(T(W / 2, 120, 'Each node knows time only as [earliest, latest].', { style: 'font:700 15px var(--sans)' }),
+        T(W / 2, 150, 'Press ▶ Run to commit T1 on node A,', { fill: 'var(--text-3)', style: 'font:600 15px var(--sans)' }),
+        T(W / 2, 174, 'then start T2 on node B after the ack.', { fill: 'var(--text-3)', style: 'font:600 15px var(--sans)' }));
       return;
     }
     const t = tt.t;
-    gTT.append(svg('line', { x1: X0, x2: X1, y1: 250, y2: 250, stroke: 'var(--border)', 'stroke-width': 1.5 }));
+    gTT.append(svg('line', { x1: X0, x2: X1, y1: 262, y2: 262, stroke: 'var(--border)', 'stroke-width': 1.5 }));
     for (let k = 0; k <= tt.tmax; k += tt.tmax > 40 ? 10 : 5) {
-      gTT.append(svg('line', { x1: xs(k), x2: xs(k), y1: 246, y2: 254, stroke: 'var(--text-3)' }), T(xs(k), 270, k + '', { style: 'font:600 12px var(--mono)', fill: 'var(--text-3)' }));
+      gTT.append(svg('line', { x1: xs(k), x2: xs(k), y1: 258, y2: 266, stroke: 'var(--text-3)' }), T(xs(k), 284, k + '', { style: 'font:600 14px var(--mono)', fill: 'var(--text-3)' }));
     }
-    gTT.append(T(X1, 290, 'true time (ms)', { 'text-anchor': 'end', style: 'font:600 12px var(--sans)', fill: 'var(--text-3)' }));
-    gTT.append(T(X0, ROW_A - 38, 'Node A · T1', { 'text-anchor': 'start', style: 'font:700 13px var(--sans)' }), T(X0, ROW_B - 38, 'Node B · T2', { 'text-anchor': 'start', style: 'font:700 13px var(--sans)' }));
+    gTT.append(T(X1, 306, 'true time (ms)', { 'text-anchor': 'end', style: 'font:600 14px var(--sans)', fill: 'var(--text-3)' }));
+    gTT.append(T(X0, ROW_A - 44, 'Node A · T1', { 'text-anchor': 'start', style: 'font:700 15px var(--sans)' }), T(X0, ROW_B - 44, 'Node B · T2', { 'text-anchor': 'start', style: 'font:700 15px var(--sans)' }));
     function interval(row, tc, off, sVal, label, color) {
       const a = tc + off - tt.eps, b = tc + off + tt.eps;
       gTT.append(svg('rect', { x: xs(a), y: row - 12, width: Math.max(2, xs(b) - xs(a)), height: 24, rx: 5, fill: `color-mix(in srgb, ${color} 25%, var(--surface))`, stroke: color }));
       gTT.append(svg('circle', { cx: xs(tc), cy: row, r: 4, fill: 'var(--text)' }));
-      gTT.append(svg('line', { x1: xs(sVal), x2: xs(sVal), y1: row - 22, y2: 246, stroke: color, 'stroke-width': 2, 'stroke-dasharray': '4 3' }));
-      gTT.append(T(xs(sVal), row - 26, label + ' = ' + sVal.toFixed(1), { style: 'font:700 13px var(--mono)', fill: color }));
+      gTT.append(svg('line', { x1: xs(sVal), x2: xs(sVal), y1: row - 22, y2: 258, stroke: color, 'stroke-width': 2, 'stroke-dasharray': '4 3' }));
+      gTT.append(T(Math.min(X1 - 40, Math.max(X0 + 40, xs(sVal))), row - 26, label + ' = ' + sVal.toFixed(1), { style: 'font:700 15px var(--mono)', fill: color }));
     }
     if (t >= tt.t0) interval(ROW_A, tt.t0, tt.offA, tt.s1, 's1', 'var(--accent)');
     if (tt.wait && t >= tt.t0) {
       const e = Math.min(t, tt.ack);
-      gTT.append(svg('rect', { x: xs(tt.t0), y: ROW_A + 18, width: Math.max(1, xs(e) - xs(tt.t0)), height: 10, rx: 3, fill: 'var(--warn)' }));
-      gTT.append(T(xs(tt.t0) + 4, ROW_A + 46, 'commit wait ≈ 2ε', { 'text-anchor': 'start', style: 'font:600 12px var(--sans)', fill: 'var(--warn)' }));
+      gTT.append(svg('rect', { x: xs(tt.t0), y: ROW_A + 18, width: Math.max(1, xs(e) - xs(tt.t0)), height: 12, rx: 3, fill: 'var(--warn)' }));
     }
-    if (t >= tt.ack) gTT.append(T(xs(tt.ack), ROW_A + 62, 'ack ✓', { style: 'font:700 12px var(--sans)', fill: 'var(--ok)' }));
+    if (t >= tt.t0) gTT.append(T(xs(tt.t0), ROW_A + 50, tt.wait ? (t >= tt.ack ? 'waited 2ε → ack ✓' : 'commit wait…') : 'ack at once (no wait)', { 'text-anchor': 'start', style: 'font:700 14px var(--sans)', fill: tt.wait ? 'var(--warn)' : 'var(--text-3)' }));
     if (t >= tt.t1) interval(ROW_B, tt.t1, tt.offB, tt.s2, 's2', tt.s2 > tt.s1 ? 'var(--ok)' : 'var(--err)');
-    gTT.append(svg('line', { x1: xs(Math.min(t, tt.tmax)), x2: xs(Math.min(t, tt.tmax)), y1: 40, y2: 250, stroke: 'var(--text-3)', 'stroke-width': 1 }));
+    gTT.append(svg('line', { x1: xs(Math.min(t, tt.tmax)), x2: xs(Math.min(t, tt.tmax)), y1: 40, y2: 262, stroke: 'var(--text-3)', 'stroke-width': 1 }));
     if (t >= tt.tmax && !tt.done) {
       tt.done = true;
       const ok = tt.s2 > tt.s1;
@@ -103,13 +102,13 @@ SD.widget('distributed-sql', function (root, ctx) {
   }
 
   /* ---------------- Raft ---------------- */
-  const N = 5, CX = 230, CY = 150, R = 100, HB = 50;
-  let nodes, msgs, now;
+  const N = 5, CX = 220, CY = 150, R = 104, HB = 50;
+  let nodes, msgs, now, noQuorum = false;
   const killBtn = el('button', { class: 'btn primary', text: '✖ Kill leader' });
   const revBtn = el('button', { class: 'btn', text: '↺ Revive all' });
   ctlRF.append(killBtn, revBtn, el('label', null, 'Tap a node to kill or revive it'));
   const gEdges = svg('g'), gMsg = svg('g'), gNodes = svg('g');
-  gRF.append(gEdges, gMsg, gNodes, T(W / 2, H - 6, 'timeouts 150–300 ms · heartbeat 50 ms (slow motion)', { style: 'font:600 12px var(--sans)', fill: 'var(--text-3)' }));
+  gRF.append(gEdges, gMsg, gNodes, T(W / 2, H - 4, 'timeouts 150–300 ms · heartbeats 50 ms · slow motion', { style: 'font:600 13px var(--sans)', fill: 'var(--text-3)' }));
   const rnd = () => 150 + Math.random() * 150;
   function resetRaft() {
     now = 0; msgs = [];
@@ -126,11 +125,11 @@ SD.widget('distributed-sql', function (root, ctx) {
     gNodes.innerHTML = ''; gEdges.innerHTML = '';
     nodes.forEach((a, i) => nodes.forEach((b, j) => { if (j > i) gEdges.append(svg('line', { x1: a.x, y1: a.y, x2: b.x, y2: b.y, stroke: 'var(--border)', 'stroke-dasharray': '3 4' })); }));
     nodes.forEach((n) => {
-      n.ring = svg('circle', { cx: n.x, cy: n.y, r: 31, fill: 'none', stroke: 'var(--accent)', 'stroke-width': 4, transform: `rotate(-90 ${n.x} ${n.y})` });
-      n.body = svg('circle', { cx: n.x, cy: n.y, r: 25, 'stroke-width': 2 });
-      n.t1 = T(n.x, n.y - 2, 'N' + n.id, { style: 'font:700 14px var(--sans)' });
-      n.t2 = T(n.x, n.y + 14, '', { style: 'font:600 12px var(--mono)' });
-      n.t3 = T(n.x, n.y + (n.y > CY ? 52 : -40), '', { style: 'font:700 12px var(--sans)' });
+      n.ring = svg('circle', { cx: n.x, cy: n.y, r: 34, fill: 'none', stroke: 'var(--accent)', 'stroke-width': 4, transform: `rotate(-90 ${n.x} ${n.y})` });
+      n.body = svg('circle', { cx: n.x, cy: n.y, r: 28, 'stroke-width': 2 });
+      n.t1 = T(n.x, n.y - 2, 'N' + n.id, { style: 'font:700 16px var(--sans)' });
+      n.t2 = T(n.x, n.y + 16, '', { style: 'font:600 13px var(--mono)' });
+      n.t3 = T(n.x, n.y + (n.y > CY ? 56 : -42), '', { style: 'font:700 14px var(--sans)' });
       const g = svg('g', { style: 'cursor:pointer' }, n.ring, n.body, n.t1, n.t2, n.t3);
       g.addEventListener('click', () => toggle(n));
       gNodes.append(g);
@@ -157,7 +156,7 @@ SD.widget('distributed-sql', function (root, ctx) {
     const n = m.to; if (!n.alive) return;
     if (m.term > n.term) { n.term = m.term; n.state = 'follower'; n.voted = null; }
     if (m.type === 'hb') {
-      if (m.term >= n.term) { n.state = n.state === 'leader' && m.from !== n ? 'follower' : n.state; if (n.state !== 'leader') n.state = 'follower'; n.deadline = now + rnd(); }
+      if (m.term >= n.term) { n.state = 'follower'; n.deadline = now + rnd(); }
     } else if (m.type === 'vote?') {
       const grant = m.term === n.term && (n.voted === null || n.voted === m.from.id);
       if (grant) { n.voted = m.from.id; n.deadline = now + rnd(); }
@@ -169,15 +168,16 @@ SD.widget('distributed-sql', function (root, ctx) {
   }
   function stepRaft(dt) {
     now += dt;
-    msgs = msgs.filter((m) => { if (now - m.t0 >= m.dur) { if (m.from.alive || m.type !== 'hb') deliver(m); return false; } return true; });
+    const due = msgs.filter((m) => now - m.t0 >= m.dur);
+    msgs = msgs.filter((m) => now - m.t0 < m.dur);
+    due.forEach((m) => { if (m.from.alive || m.type !== 'hb') deliver(m); });
+    const alive = nodes.filter((x) => x.alive).length;
+    if (alive > N / 2) noQuorum = false;
+    else if (!noQuorum) { noQuorum = true; say(`⚠ Only ${alive} of ${N} replicas alive: no candidate can collect 3 votes, so the range is <b>unavailable</b>.`); }
     nodes.forEach((n) => {
       if (!n.alive) return;
       if (n.state === 'leader') { if (now - n.lastHb >= HB) { n.lastHb = now; nodes.forEach((m) => { if (m !== n) send(n, m, 'hb'); }); } }
-      else if (now >= n.deadline) {
-        const alive = nodes.filter((x) => x.alive).length;
-        if (alive <= N / 2 && n.state === 'candidate' && !n.warned) { n.warned = true; say(`⚠ Only ${alive} of ${N} replicas alive: no candidate can reach a majority of 3. The range is unavailable.`); }
-        becomeCandidate(n);
-      }
+      else if (now >= n.deadline) becomeCandidate(n);
       n.timeout = Math.max(0, n.deadline - now);
     });
   }
@@ -193,7 +193,7 @@ SD.widget('distributed-sql', function (root, ctx) {
       const col = !n.alive ? 'var(--text-3)' : n.state === 'leader' ? 'var(--accent)' : n.state === 'candidate' ? 'var(--warn)' : 'var(--ok)';
       n.body.setAttribute('fill', n.alive ? `color-mix(in srgb, ${col} 22%, var(--surface))` : 'var(--surface-2)');
       n.body.setAttribute('stroke', col);
-      const C = 2 * Math.PI * 31, frac = n.alive && n.state !== 'leader' ? Math.min(1, n.timeout / 300) : 0;
+      const C = 2 * Math.PI * 34, frac = n.alive && n.state !== 'leader' ? Math.min(1, n.timeout / 300) : 0;
       n.ring.setAttribute('stroke-dasharray', `${C * frac} ${C}`);
       n.ring.setAttribute('stroke', n.state === 'candidate' ? 'var(--warn)' : 'var(--ok)');
       n.t2.textContent = n.alive ? 't' + n.term : 'down';

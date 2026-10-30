@@ -76,12 +76,12 @@ SD.register({
       { id: 'lb', label: 'Load balancer', sub: 'any node is a gateway', kind: 'edge', wide: [280, 170], tall: [315, 0], tip: 'Spreads connections across nodes. There is no special primary node: every node can parse and plan SQL.' },
       { id: 'gw', label: 'SQL gateway', sub: 'parse · plan · DistSQL', kind: 'service', wide: [470, 170], tall: [210, 105], tip: 'Turns SQL into KV operations on key spans, and pushes filters and aggregations down to the nodes that hold the data.' },
       { id: 'meta', label: 'Range directory', sub: 'meta ranges (cached)', kind: 'cache', wide: [470, 50], tall: [70, 105], tip: 'Maps a key to its range and the range\'s leaseholder. Cached on each gateway and refreshed when a request is redirected.' },
-      { id: 'clock', label: 'Clock', sub: 'TrueTime or HLC + NTP', kind: 'external', wide: [660, 50], tall: [350, 105], tip: 'Spanner: GPS and atomic clocks give an interval [earliest, latest]. CockroachDB: NTP-synced wall clock inside a hybrid logical clock, with a maximum allowed offset.' },
+      { id: 'clock', label: 'Clock', sub: 'TrueTime or HLC + NTP', kind: 'external', wide: [660, 50], tall: [70, 210], tip: 'Spanner: GPS and atomic clocks give an interval [earliest, latest]. CockroachDB: NTP-synced wall clock inside a hybrid logical clock, with a maximum allowed offset.' },
       { id: 'txn', label: 'Txn coordinator', sub: 'timestamps · 2PC', kind: 'service', wide: [660, 170], tall: [210, 210], tip: 'Picks the transaction timestamp, writes intents to every range it touches, then flips one transaction record to COMMITTED.' },
-      { id: 'rA', label: 'Range A', sub: 'leaseholder · [a, m)', kind: 'store', wide: [860, 60], tall: [70, 315], tip: 'Leaseholder of range A, usually also its Raft leader. Serves consistent reads and proposes every write to its Raft group.' },
-      { id: 'rAf', label: 'Range A followers', sub: '2 replicas · other AZs', kind: 'store', wide: [860, 170], tall: [70, 420], tip: 'Append the leader\'s log entries. A write is committed when a majority (2 of 3) has it durably.' },
-      { id: 'rB', label: 'Range B', sub: 'leaseholder · [m, z)', kind: 'store', wide: [660, 300], tall: [350, 315], tip: 'Another range, another Raft group, often led from a different node. Load spreads because leaders spread.' },
-      { id: 'rBf', label: 'Range B followers', sub: '2 replicas · other AZs', kind: 'store', wide: [860, 300], tall: [350, 420], tip: 'Can also serve follower reads at a timestamp below the range\'s closed timestamp.' }
+      { id: 'rA', label: 'Range A', sub: 'leaseholder · [a, m)', kind: 'store', wide: [860, 60], tall: [105, 315], tip: 'Leaseholder of range A, usually also its Raft leader. Serves consistent reads and proposes every write to its Raft group.' },
+      { id: 'rAf', label: 'Range A followers', sub: '2 replicas · other AZs', kind: 'store', wide: [860, 170], tall: [315, 315], tip: 'Append the leader\'s log entries. A write is committed when a majority (2 of 3) has it durably.' },
+      { id: 'rB', label: 'Range B', sub: 'leaseholder · [m, z)', kind: 'store', wide: [660, 300], tall: [350, 210], tip: 'Another range, another Raft group, often led from a different node. Load spreads because leaders spread.' },
+      { id: 'rBf', label: 'Range B followers', sub: '2 replicas · other AZs', kind: 'store', wide: [470, 300], tall: [350, 105], tip: 'Can also serve follower reads at a timestamp below the range\'s closed timestamp.' }
     ],
     edges: [
       { from: 'app', to: 'lb', bidi: true },
@@ -93,7 +93,8 @@ SD.register({
       { from: 'txn', to: 'rB', bidi: true },
       { from: 'rA', to: 'rAf', bidi: true, label: 'Raft' },
       { from: 'rB', to: 'rBf', bidi: true, label: 'Raft' },
-      { from: 'gw', to: 'rBf', dashed: true, bend: 0.12, label: 'follower read' }
+      { from: 'gw', to: 'rBf', bidi: true, dashed: true },
+      { from: 'txn', to: 'rAf', dashed: true }
     ]
   },
 
