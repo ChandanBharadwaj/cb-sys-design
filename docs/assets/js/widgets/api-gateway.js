@@ -1,7 +1,7 @@
 /* Gateway filter chain: JWT check, real token bucket, TTL cache, circuit breaker state machine, weighted router. */
 SD.widget('api-gateway', function (root, ctx) {
   const { el, svg } = ctx;
-  const W = 420, ROW = 40, TOP = 30;
+  const W = 360, ROW = 48, TOP = 32;
   const F = [
     { id: 'log', name: 'Access log + trace', cost: 0.05 },
     { id: 'auth', name: 'JWT auth (cached JWKS)', cost: 0.15 },
@@ -11,7 +11,7 @@ SD.widget('api-gateway', function (root, ctx) {
     { id: 'route', name: 'Weighted route 95 / 5', cost: 0.05 }
   ];
   F.forEach((f) => { f.on = true; f.pass = 0; f.rej = 0; });
-  const BY = TOP + F.length * ROW + 6, H = BY + 50;
+  const BY = TOP + F.length * ROW + 4, H = BY + 54;
   const TIMEOUT = 1000, CAP = 20;           // backend timeout (ms) and comfortable capacity (req/s)
   let rate = 8, mode = 'healthy', st;
 
@@ -42,7 +42,7 @@ SD.widget('api-gateway', function (root, ctx) {
   const S_ = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Gateway filter chain' });
   const gRows = svg('g'), gDots = svg('g');
   S_.append(gRows, gDots);
-  root.append(el('div', { class: 'w-stage' }, S_));
+  root.append(el('div', { class: 'w-stage', style: { maxWidth: '600px' } }, S_));
   const stats = el('div', { class: 'w-stats' });
   const log = el('div', { class: 'w-log', 'aria-live': 'polite' });
   root.append(stats, log);
@@ -50,20 +50,20 @@ SD.widget('api-gateway', function (root, ctx) {
   say('Tap a filter row to bypass it. Try: backend slow with the breaker off, then on.');
 
   // static rows
-  S_.insertBefore(svg('text', { x: 20, y: 18, style: 'font:700 13px var(--sans)', fill: 'var(--text-2)', text: 'Client requests ↓' }), gRows);
+  S_.insertBefore(svg('text', { x: 12, y: 20, style: 'font:700 14px var(--sans)', fill: 'var(--text-2)', text: 'Client requests ↓' }), gRows);
   const rows = F.map((f, i) => {
     const y = TOP + i * ROW;
-    const rect = svg('rect', { x: 38, y, width: W - 46, height: ROW - 6, rx: 7, style: 'cursor:pointer' });
-    const name = svg('text', { x: 48, y: y + 22, style: 'font:600 13px var(--sans);pointer-events:none' });
-    const cnt = svg('text', { x: W - 16, y: y + 22, 'text-anchor': 'end', style: 'font:600 12px var(--mono);pointer-events:none' });
+    const rect = svg('rect', { x: 36, y, width: W - 40, height: ROW - 6, rx: 7, style: 'cursor:pointer' });
+    const name = svg('text', { x: 46, y: y + 18, style: 'font:600 14px var(--sans);pointer-events:none' });
+    const cnt = svg('text', { x: 46, y: y + 36, style: 'font:500 14px var(--mono);pointer-events:none' });
     rect.addEventListener('click', () => { f.on = !f.on; say(`${f.name}: <b>${f.on ? 'on' : 'bypassed'}</b>`); paint(); });
     gRows.append(rect, name, cnt);
     return { rect, name, cnt, y };
   });
-  const bRect = svg('rect', { x: 38, y: BY, width: W - 46, height: 42, rx: 7, fill: 'color-mix(in srgb, var(--accent) 10%, var(--surface))', stroke: 'var(--accent)' });
-  const bName = svg('text', { x: 48, y: BY + 18, style: 'font:700 13px var(--sans)', fill: 'var(--text)' });
-  const bSub = svg('text', { x: 48, y: BY + 35, style: 'font:12px var(--mono)', fill: 'var(--text-2)' });
-  gRows.append(svg('line', { x1: 20, y1: TOP, x2: 20, y2: BY + 20, stroke: 'var(--border)', 'stroke-width': 2, 'stroke-dasharray': '3 4' }), bRect, bName, bSub);
+  const bRect = svg('rect', { x: 36, y: BY, width: W - 40, height: 48, rx: 7, fill: 'color-mix(in srgb, var(--accent) 10%, var(--surface))', stroke: 'var(--accent)' });
+  const bName = svg('text', { x: 46, y: BY + 19, style: 'font:700 14px var(--sans)', fill: 'var(--text)' });
+  const bSub = svg('text', { x: 46, y: BY + 39, style: 'font:13.5px var(--mono)', fill: 'var(--text-2)' });
+  gRows.append(svg('line', { x1: 18, y1: TOP, x2: 18, y2: BY + 20, stroke: 'var(--border)', 'stroke-width': 2, 'stroke-dasharray': '3 4' }), bRect, bName, bSub);
 
   const hash = (s) => { let h = 2166136261; for (const c of String(s)) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; };
   function record(fail) {
@@ -125,9 +125,9 @@ SD.widget('api-gateway', function (root, ctx) {
   const dots = [];
   function dot(stop, code) {
     if (ctx.reduced || dots.length > 36) return;
-    const c = svg('circle', { r: 4.5, cx: 14 + Math.random() * 12, cy: TOP - 6 });
+    const c = svg('circle', { r: 4.5, cx: 12 + Math.random() * 12, cy: TOP - 6 });
     gDots.append(c);
-    const ty = stop < 0 ? BY + 20 : TOP + stop * ROW + 17;
+    const ty = stop < 0 ? BY + 22 : TOP + stop * ROW + 20;
     const col = code === 200 ? (stop >= 0 ? 'var(--accent)' : 'var(--ok)') : code === 429 || code === 503 ? 'var(--warn)' : 'var(--err)';
     dots.push({ c, y: TOP - 6, ty, t: 0, col });
   }
@@ -142,12 +142,12 @@ SD.widget('api-gateway', function (root, ctx) {
       r.rect.setAttribute('stroke-width', f.id === 'cb' && st.cb !== 'CLOSED' && f.on ? 2 : 1);
       r.name.textContent = f.on ? f.name + extra : f.name + ' · off';
       r.name.setAttribute('fill', f.on ? 'var(--text)' : 'var(--text-3)');
-      r.cnt.textContent = f.on ? `${f.cost.toFixed(2)}ms ✓${f.pass} ✗${f.rej}` : 'bypassed';
+      r.cnt.textContent = f.on ? `+${f.cost.toFixed(2)} ms  ✓ ${f.pass}  ✗ ${f.rej}` : 'bypassed';
       r.cnt.setAttribute('fill', f.rej ? 'var(--text-2)' : 'var(--text-3)');
     });
     const inflight = st.inflight.length;
     bName.textContent = `Backend: catalog (${mode})`;
-    bSub.textContent = `${st.recent.length} calls/s · in flight ${inflight} · v2 err ${st.v2 ? Math.round(100 * st.v2err / st.v2) : 0}%`;
+    bSub.textContent = `${st.recent.length}/s · in flight ${inflight} · v2 err ${st.v2 ? Math.round(100 * st.v2err / st.v2) : 0}%`;
     bRect.setAttribute('stroke', mode === 'healthy' && st.recent.length <= CAP ? 'var(--accent)' : 'var(--err)');
     stats.innerHTML = '';
     const pct = (n) => st.sent ? Math.round(100 * n / st.sent) + '%' : '0%';
@@ -170,7 +170,7 @@ SD.widget('api-gateway', function (root, ctx) {
       d.y = Math.min(d.ty, d.y + dt * 0.45);
       d.c.setAttribute('cy', d.y);
       d.c.setAttribute('fill', d.y >= d.ty ? d.col : 'var(--text-3)');
-      if (d.y >= d.ty) { const k = Math.min(1, (d.t - (d.ty - TOP) / 0.45) / 500); d.c.setAttribute('cx', 26 + k * 10); d.c.setAttribute('opacity', 1 - k); if (k >= 1) { d.c.remove(); dots.splice(i, 1); } }
+      if (d.y >= d.ty) { const k = Math.min(1, (d.t - (d.ty - TOP) / 0.45) / 500); d.c.setAttribute('cx', 24 + k * 10); d.c.setAttribute('opacity', 1 - k); if (k >= 1) { d.c.remove(); dots.splice(i, 1); } }
     }
     if (performance.now() - last > 200) { last = performance.now(); paint(); }
   });
