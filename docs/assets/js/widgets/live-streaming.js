@@ -46,7 +46,7 @@ SD.widget('live-streaming', function (root, ctx) {
   });
   S.append(svg('rect', { x: X0 + 250, y: H - 26, width: 3, height: 12, fill: 'var(--err)' }));
   S.append(txt(X0 + 258, H - 16, 'dropped', 'font:500 14px var(--sans)', 'var(--text-2)'));
-  root.append(el('div', { class: 'w-stage', style: { maxWidth: '560px' } }, S));
+  root.append(el('div', { class: 'w-stage', style: { maxWidth: '500px' } }, S));
   const stats = el('div', { class: 'w-stats' });
   const log = el('div', { class: 'w-log', 'aria-live': 'polite' });
   root.append(stats, log);

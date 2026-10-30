@@ -1,16 +1,16 @@
 /* Ten PoPs with real LRU+TTL caches, Zipf-distributed requests, optional upper tier with request coalescing. */
 SD.widget('cdn', function (root, ctx) {
   const { el, svg } = ctx;
-  const W = 380, H = 330, N = 3000, RATE = 300, LAT = { tier: 60, origin: 150 };
+  const W = 380, H = 330, N = 2000, RATE = 300, LAT = { tier: 60, origin: 150 };
   // approximate map positions (x, y), traffic weight
   const POPS = [['SJC', 30, 74, 1.2], ['IAD', 128, 70, 1.2], ['GRU', 138, 168, 0.8], ['LHR', 182, 40, 1], ['FRA', 222, 70, 1], ['JNB', 222, 170, 0.4], ['BOM', 266, 110, 1.4], ['SIN', 304, 150, 0.9], ['NRT', 350, 66, 1], ['SYD', 346, 186, 0.5]];
   const TIER = [80, 28], ORIGIN = [72, 128];
-  let tiered = true, utm = false, ttl = 30, cap = 150, t = 0, acc = 0, events = [], flashes = [];
+  let tiered = true, utm = false, ttl = 60, cap = 300, t = 0, acc = 0, events = [], flashes = [];
   let ema = { req: 0, hit: 0, tierHit: 0, miss: 0, origin: 0, coal: 0 }, spark = [], sparkT = 0;
 
-  // Zipf(0.9) popularity
+  // Zipf(1.0) popularity
   const cdf = []; let tot = 0;
-  for (let i = 0; i < N; i++) { tot += 1 / Math.pow(i + 1, 0.9); cdf.push(tot); }
+  for (let i = 0; i < N; i++) { tot += 1 / (i + 1); cdf.push(tot); }
   const pickObj = () => { const r = Math.random() * tot; let lo = 0, hi = N - 1; while (lo < hi) { const m = (lo + hi) >> 1; if (cdf[m] < r) lo = m + 1; else hi = m; } return lo; };
   const wsum = POPS.reduce((a, p) => a + p[3], 0);
   const pickPop = () => { let r = Math.random() * wsum; for (const p of pops) { r -= p.w; if (r <= 0) return p; } return pops[0]; };
@@ -95,7 +95,7 @@ SD.widget('cdn', function (root, ctx) {
   S.append(svg('rect', { x: 4, y: 296, width: W - 8, height: 30, rx: 5, fill: 'var(--surface-2)', stroke: 'var(--border)' }));
   const sparkL = svg('polyline', { fill: 'none', stroke: 'var(--err)', 'stroke-width': 2 });
   S.append(sparkL);
-  root.append(el('div', { class: 'w-stage', style: { maxWidth: '560px' } }, S));
+  root.append(el('div', { class: 'w-stage', style: { maxWidth: '500px' } }, S));
   const stats = el('div', { class: 'w-stats' });
   const log = el('div', { class: 'w-log', 'aria-live': 'polite' });
   root.append(stats, log);

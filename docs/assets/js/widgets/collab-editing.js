@@ -25,7 +25,7 @@ SD.widget('collab-editing', function (root, ctx) {
   [[290, 64, 124], [350, 64, 124], [290, 176, 236], [350, 176, 236]].forEach(([x, y1, y2]) => S.append(svg('line', { x1: x, x2: x, y1, y2, stroke: 'var(--border)', 'stroke-dasharray': '3 4' })));
   const status = svg('text', { x: W / 2, y: H - 4, 'text-anchor': 'middle', style: 'font:700 14px var(--sans)' });
   S.append(gRows, gNet, status);
-  root.append(el('div', { class: 'w-stage', style: { maxWidth: '540px' } }, S));
+  root.append(el('div', { class: 'w-stage', style: { maxWidth: '500px' } }, S));
   const stats = el('div', { class: 'w-stats' });
   const log = el('div', { class: 'w-log', 'aria-live': 'polite' });
   root.append(stats, log);

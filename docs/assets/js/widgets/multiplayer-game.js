@@ -74,7 +74,7 @@ SD.widget('multiplayer-game', function (root, ctx) {
   S.append(bar1, bar2, gTicks);
   const l1 = tx(LX, 256, '', 'font:600 13px var(--sans)'), l2 = tx(LX, 284, '', 'font:600 13px var(--sans)');
   tx(RX, 241, 'now', 'font:600 12px var(--mono);text-anchor:end', 'var(--text-3)');
-  root.append(el('div', { class: 'w-stage', style: { maxWidth: '560px' } }, S));
+  root.append(el('div', { class: 'w-stage', style: { maxWidth: '500px' } }, S));
   const stats = el('div', { class: 'w-stats' });
   const log = el('div', { class: 'w-log', 'aria-live': 'polite' });
   root.append(stats, log);
