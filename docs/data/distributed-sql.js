@@ -232,7 +232,7 @@ SD.register({
       { when: 'Docs', who: 'Cockroach Labs', title: 'Leaseholders and 3 replicas', text: 'By default each range has <b>three replicas</b>. One replica, the <b>leaseholder</b>, coordinates all reads and writes for the range and is normally also the Raft leader.', src: 3 },
       { when: 'Docs', who: 'Cockroach Labs', title: 'Follower reads', text: '<code>AS OF SYSTEM TIME follower_read_timestamp()</code> lets any replica serve a read-only query at a slightly old timestamp, so remote regions avoid the leaseholder round trip.', src: 4 },
       { when: 'Docs', who: 'Cockroach Labs', title: 'Retry on 40001', text: 'Every transaction retry error uses SQLSTATE <b>40001</b>. The server retries on its own when it can. Otherwise the client must roll back, back off and run the whole transaction again.', src: 5 },
-      { when: '2023–24', who: 'Cockroach Labs', title: 'READ COMMITTED', text: 'Previewed in 23.2, with GA planned for 24.1. The docs say it never returns <code>RETRY_SERIALIZABLE</code> and returns 40001 only in limited cases.', src: 6 },
+      { when: '2023–24', who: 'Cockroach Labs', title: 'READ COMMITTED', text: 'Previewed in 23.2 and generally available in 24.1 (May 2024). The docs say it never returns <code>RETRY_SERIALIZABLE</code> and returns 40001 only in limited cases.', src: 6 },
       { when: 'Docs', who: 'Google Cloud', title: 'TrueTime in software', text: 'Spanner Omni runs TrueTime without GPS or atomic-clock hardware. The docs note that uncertainty adds no commit latency while it is <b>smaller than the Paxos round trip</b>.', src: 7 }
     ],
     lessons: [
