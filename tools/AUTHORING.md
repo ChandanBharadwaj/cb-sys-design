@@ -130,6 +130,6 @@ Rules:
 
 ## Verify before you finish
 1. Make sure the local server is running: `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8765/index.html`. If it isn't, start it with `cd docs && python3 -m http.server 8765 --bind 127.0.0.1 &`.
-2. Run `node <SCRATCHPAD>/check.js <slug> [<slug>...]`. Every line must start with ✓, at both phone and desktop sizes: no console errors, no horizontal overflow, scenarios and knobs work, and there are ≥ 8 interview questions and ≥ 3 sources.
-3. **Look at the screenshots** with the Read tool: `<SCRATCHPAD>/shots/<slug>-phone-architecture.png`, `-desk-architecture.png`, `-phone-knobs.png` and `-phone-deep-dive.png`. Fix overlapping boxes, cramped tall layouts and unreadable widgets.
+2. Run `node tools/check.js <slug> [<slug>...]`. Every line must start with ✓, at both phone and desktop sizes: no console errors, no horizontal overflow, scenarios and knobs work, and there are ≥ 8 interview questions and ≥ 3 sources.
+3. **Look at the screenshots** with the Read tool: `.shots/<slug>-phone-architecture.png`, `-desk-architecture.png`, `-phone-knobs.png` and `-phone-deep-dive.png`. Fix overlapping boxes, cramped tall layouts and unreadable widgets.
 4. Do not run git commands. The coordinator commits.
