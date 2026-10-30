@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>System Design Atlas</title>
+<meta name="description" content="41 animated, research-backed system designs: architecture in motion, design knobs, real-world implementations from published papers and engineering blogs, and interview questions.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/site.css">
+<script>try{var t=localStorage.getItem('sd-theme');if(t)document.documentElement.setAttribute('data-theme',JSON.parse(t))}catch(e){}</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="index.html"><span class="brand-mark">◇</span><span>Design Atlas</span></a>
+  <span class="spacer"></span>
+  <span id="themeSlot"></span>
+</header>
+
+<main class="wrap">
+  <section class="ix-hero">
+    <div class="ix-net" aria-hidden="true"><svg id="net"></svg></div>
+    <div class="eyebrow" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+      <span class="pill accent">41 systems · 9 domains</span>
+      <span class="pill">sourced from papers &amp; engineering blogs</span>
+    </div>
+    <h1>System design you can <span class="grad">watch, tweak and break.</span></h1>
+    <p>Each design has an animated architecture, step-through scenarios including failures, design knobs that show how a different choice changes the outcome, how real companies built it (with sources), and interview questions.</p>
+    <div class="ix-tools">
+      <label class="search" for="q"><span aria-hidden="true">⌕</span><input id="q" type="search" placeholder="Search: kafka, H3, idempotency, HNSW…" autocomplete="off"></label>
+      <button class="btn" id="onlyNew" aria-pressed="false">★ Only added systems</button>
+    </div>
+    <div class="howto" id="howto">
+      <div class="stat"><div class="v">▶ Scenarios</div><div class="l">Step through happy paths and failures as packets move</div></div>
+      <div class="stat"><div class="v">⇄ Knobs</div><div class="l">Change one decision and the diagram and metrics update</div></div>
+      <div class="stat"><div class="v">↗ Real world</div><div class="l">How Uber, Netflix, Stripe and others actually built it</div></div>
+      <div class="stat"><div class="v">? Interview</div><div class="l">Questions with crisp answers and a quiz mode</div></div>
+    </div>
+  </section>
+  <div id="domains"></div>
+  <div class="empty" id="empty" hidden>No systems match that search.</div>
+  <footer class="foot">Built as a static site for GitHub Pages · numbers marked <em>estimate</em> are back-of-envelope; company facts link to their sources.</footer>
+</main>
+
+<script src="assets/js/catalog.js"></script>
+<script src="assets/js/engine.js"></script>
+<script>
+(function () {
+  const { el, svg, store } = SD.h;
+  document.getElementById('themeSlot').append(SD.themeButton());
+  const C = window.SD_CATALOG;
+  const visited = new Set(store.get('sd-visited', []));
+  const host = document.getElementById('domains');
+  let n = 0;
+  const cards = [];
+  C.domains.forEach((d) => {
+    const list = C.systems.filter((s) => s.domain === d.id);
+    const grid = el('div', { class: 'ix-grid' });
+    const sec = el('section', { class: 'ix-domain reveal', id: 'domain-' + d.id },
+      el('div', { class: 'ix-domain-head' }, el('div', { class: 'di', text: d.icon }),
+        el('div', null, el('h2', { text: d.id + '. ' + d.name }), el('p', { text: d.blurb + ' · ' + list.length + ' designs' }))),
+      grid);
+    list.forEach((s) => {
+      n++;
+      const a = el('a', { class: 'sys-card', href: 'systems/' + s.slug + '.html' },
+        el('div', { class: 'corner' },
+          s.added ? el('span', { class: 'pill new', style: { padding: '1px 7px', fontSize: '10.5px' }, text: '★ new' }) : null,
+          visited.has(s.slug) ? el('span', { class: 'seen', title: 'Visited', text: '✓' }) : null),
+        el('span', { class: 'num', text: String(n).padStart(2, '0') }),
+        el('h3', { text: s.title }),
+        el('div', { class: 'ex', text: s.examples }),
+        el('div', { class: 'tags' }, s.tags.map((t) => el('span', { text: t }))));
+      grid.append(a);
+      cards.push({ a, s, sec, text: [s.title, s.examples, s.tags.join(' '), d.name].join(' ').toLowerCase() });
+    });
+    host.append(sec);
+  });
+
+  // search + filter
+  const q = document.getElementById('q');
+  const onlyNew = document.getElementById('onlyNew');
+  let newOnly = false;
+  function filter() {
+    const terms = q.value.toLowerCase().trim().split(/\s+/).filter(Boolean);
+    let shown = 0;
+    const secCount = new Map();
+    cards.forEach((c) => {
+      const ok = (!newOnly || c.s.added) && terms.every((t) => c.text.includes(t));
+      c.a.hidden = !ok; if (ok) shown++;
+      secCount.set(c.sec, (secCount.get(c.sec) || 0) + (ok ? 1 : 0));
+    });
+    secCount.forEach((v, s) => { s.hidden = v === 0; });
+    document.getElementById('empty').hidden = shown > 0;
+  }
+  q.addEventListener('input', filter);
+  onlyNew.addEventListener('click', () => { newOnly = !newOnly; onlyNew.setAttribute('aria-pressed', newOnly); onlyNew.classList.toggle('primary', newOnly); filter(); });
+
+  // reveal
+  const items = document.querySelectorAll('.reveal');
+  if (SD.reduced || !('IntersectionObserver' in window)) items.forEach((i) => i.classList.add('in'));
+  else {
+    const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } }), { threshold: 0.05 });
+    items.forEach((i) => io.observe(i));
+  }
+
+  // animated network in the hero
+  const net = document.getElementById('net');
+  const W = 1200, H = 520;
+  net.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  net.setAttribute('preserveAspectRatio', 'xMidYMid slice');
+  const pts = Array.from({ length: 26 }, () => [Math.random() * W, Math.random() * H]);
+  const links = [];
+  pts.forEach((p, i) => {
+    const near = pts.map((q, j) => [j, Math.hypot(p[0] - q[0], p[1] - q[1])]).filter(([j]) => j !== i).sort((a, b) => a[1] - b[1]).slice(0, 2);
+    near.forEach(([j]) => { if (i < j) links.push([i, j]); });
+  });
+  links.forEach(([i, j]) => net.append(svg('line', { x1: pts[i][0], y1: pts[i][1], x2: pts[j][0], y2: pts[j][1], stroke: 'var(--edge)', 'stroke-width': 1.2 })));
+  pts.forEach((p) => net.append(svg('circle', { cx: p[0], cy: p[1], r: 4, fill: 'var(--surface)', stroke: 'var(--accent)', 'stroke-width': 1.5 })));
+  if (!SD.reduced) {
+    const dots = links.map(() => { const c = svg('circle', { r: 2.6, fill: 'var(--accent-2)' }); net.append(c); return { c, t: Math.random(), v: 0.0002 + Math.random() * 0.0004 }; });
+    SD.loop(net, (dt) => {
+      dots.forEach((d, k) => {
+        d.t = (d.t + d.v * dt) % 1;
+        const [i, j] = links[k];
+        d.c.setAttribute('cx', pts[i][0] + (pts[j][0] - pts[i][0]) * d.t);
+        d.c.setAttribute('cy', pts[i][1] + (pts[j][1] - pts[i][1]) * d.t);
+      });
+    });
+  }
+})();
+</script>
+</body>
+</html>
