@@ -158,3 +158,88 @@ This document presents a comprehensive list of high-scale distributed system des
 * **Purpose:** Indexes and retrieves high-dimensional vector embeddings for semantic search, recommendation systems, and RAG architectures.
 * **Key Challenges:** Fast Approximate Nearest Neighbor (ANN) search across hundreds of millions of high-dimensional vectors.
 * **Core Patterns & Tech:** Hierarchical Navigable Small World (HNSW) graphs, Inverted File Index with Vector Quantization (IVF-PQ), Cosine / Euclidean distance metrics.
+---
+
+## 9. Additional Systems (added to the Atlas)
+
+These 16 systems extend the catalog above. Each has an animated page in the [System Design Atlas](https://chandanbharadwaj.github.io/cb-sys-design/).
+
+### Live Event Streaming at Massive Scale (e.g., Hotstar, JioCinema, YouTube Live)
+* **Purpose:** Streams a live event (cricket finals, concerts) to tens of millions of concurrent viewers with a few seconds of delay.
+* **Key Challenges:** Traffic jumps by millions within minutes, autoscaling is too slow for such spikes, origin overload, and multi-CDN steering.
+* **Core Patterns & Tech:** RTMP/SRT ingest, live ABR transcoding, HLS/LL-HLS segments, origin shield, pre-warmed ladder scaling, graceful degradation ("panic mode").
+
+### Collaborative Editing (e.g., Google Docs, Figma, Notion)
+* **Purpose:** Lets many users edit the same document at once and see each other's cursors live.
+* **Key Challenges:** Converging concurrent edits, offline edits, and undo.
+* **Core Patterns & Tech:** Operational Transformation (OT), CRDTs, one session server per document, op log + snapshots.
+
+### Multiplayer Game Backend (e.g., Valorant, Fortnite, Agones)
+* **Purpose:** Matches players and runs authoritative real-time game sessions.
+* **Key Challenges:** Latency fairness, cheating, tick rate vs bandwidth, and scaling servers per match.
+* **Core Patterns & Tech:** Matchmaking queues (Elo/TrueSkill), authoritative servers over UDP, client prediction, lag compensation, fleet allocation.
+
+### E-commerce Orders & Inventory (e.g., Amazon, Flipkart, Shopify)
+* **Purpose:** Handles cart, checkout and order lifecycle with accurate inventory.
+* **Key Challenges:** Overselling during sale spikes, partial failures across services, and order state consistency.
+* **Core Patterns & Tech:** Inventory reservations with TTL, Saga (orchestration), outbox → Kafka, order state machine.
+
+### Food Delivery Platform (e.g., Swiggy, Zomato, DoorDash)
+* **Purpose:** A three-sided marketplace connecting customers, restaurants and delivery riders.
+* **Key Challenges:** Assigning riders so they arrive when the food is ready, accurate ETAs, batching several orders on one trip, and live tracking.
+* **Core Patterns & Tech:** Batched assignment optimization, ML ETA models, geo-indexing, WebSocket tracking.
+
+### Stock Exchange Matching Engine (e.g., NASDAQ, LMAX)
+* **Purpose:** Matches buy and sell orders fairly at microsecond latency.
+* **Key Challenges:** Deterministic ordering, fault tolerance without nondeterminism, and market-data fan-out.
+* **Core Patterns & Tech:** Sequencer, single-threaded in-memory order book (price-time priority), event-sourced journal, LMAX Disruptor ring buffer.
+
+### UPI-Style Real-Time Payments (e.g., NPCI UPI, PhonePe, Google Pay)
+* **Purpose:** Instant bank-to-bank payments addressed by a virtual payment address (VPA).
+* **Key Challenges:** Multi-party failures and timeouts, pending ("deemed") transactions, reconciliation, and festival peaks.
+* **Core Patterns & Tech:** Central switch, idempotent transaction IDs, status-check + auto-reversal, per-bank circuit breakers.
+
+### Content Delivery Network (e.g., Akamai, Cloudflare)
+* **Purpose:** Serves content from edge servers close to users.
+* **Key Challenges:** Hit ratio, global purge, origin protection, and DDoS absorption.
+* **Core Patterns & Tech:** Anycast / DNS routing, tiered caching with origin shield, request coalescing, cache-key design.
+
+### API Gateway (e.g., Netflix Zuul, Envoy, Kong)
+* **Purpose:** Single entry point for authentication, routing, throttling and observability.
+* **Key Challenges:** Avoiding a bottleneck or single point of failure, latency added by filters, and config rollout.
+* **Core Patterns & Tech:** Non-blocking filter chains, JWT validation, rate limiting, circuit breakers, BFF pattern.
+
+### Ad Click Aggregation (e.g., Google Photon, Uber Ads)
+* **Purpose:** Counts ad clicks and impressions in near real time for billing and reporting.
+* **Key Challenges:** Exactly-once counting (it is money), dedup, late events, and hot ads.
+* **Core Patterns & Tech:** Kafka + Flink windows, idempotent sinks, Lambda/Kappa reconciliation, OLAP stores.
+
+### RAG & AI Agent Platform (e.g., enterprise copilots, MCP tool ecosystems)
+* **Purpose:** Answers questions and takes actions grounded in private data and tools.
+* **Key Challenges:** Retrieval quality, hallucination, permissions, latency/cost budgets, and evaluation.
+* **Core Patterns & Tech:** Chunking + embeddings, hybrid BM25 + vector search, reranking, tool-calling agent loop, guardrails, tracing and evals.
+
+### LLM Gateway (e.g., LiteLLM, Portkey, Cloudflare AI Gateway)
+* **Purpose:** One front door to many model providers.
+* **Key Challenges:** Token-based rate limits and budgets, provider outages, streaming, and cost attribution.
+* **Core Patterns & Tech:** Model routing and fallbacks, exact + semantic caching, token buckets, PII redaction, usage metering.
+
+### Recommendation System (e.g., YouTube, Netflix, TikTok)
+* **Purpose:** Ranks a personalized set of items from a catalog of millions within tens of milliseconds.
+* **Key Challenges:** Multi-stage latency budgets, cold start, freshness, and training/serving skew.
+* **Core Patterns & Tech:** Candidate generation (two-tower + ANN), ranking models, re-ranking for diversity, feature store, online training.
+
+### Distributed Key-Value Store (e.g., Amazon Dynamo, Cassandra)
+* **Purpose:** Always-available, horizontally scalable key-value storage.
+* **Key Challenges:** Tunable consistency, node failures, and conflict resolution.
+* **Core Patterns & Tech:** Consistent hashing with virtual nodes, quorum N/R/W, vector clocks / LWW, hinted handoff, Merkle-tree anti-entropy, LSM trees.
+
+### Object Storage (e.g., Amazon S3, GFS, HDFS)
+* **Purpose:** Stores trillions of objects durably and cheaply.
+* **Key Challenges:** Eleven-nines durability, metadata scale, the small-files problem, and repair traffic.
+* **Core Patterns & Tech:** Separate metadata and data planes, erasure coding (Reed-Solomon), multipart upload, scrubbing, lifecycle tiers.
+
+### Distributed SQL (e.g., Google Spanner, CockroachDB)
+* **Purpose:** Horizontally scalable SQL with serializable transactions across regions.
+* **Key Challenges:** Global ordering of transactions, cross-shard commits, and multi-region latency.
+* **Core Patterns & Tech:** Range sharding with a Raft group per range, 2PC over Raft, MVCC, TrueTime / hybrid logical clocks.
