@@ -1,7 +1,7 @@
 /* KV block pool with per-sequence block tables: paged vs contiguous allocation, continuous vs static batching, preemption. */
 SD.widget('llm-inference', function (root, ctx) {
   const { el, svg } = ctx;
-  const COLS = 10, ROWS = 6, NB = COLS * ROWS, BT = 4, MAXSEQ = 8, MAXLEN = 32, HIST = 50;
+  const COLS = 10, ROWS = 6, NB = COLS * ROWS, BT = 4, MAXSEQ = 12, MAXLEN = 32, HIST = 50;
   const CW = 47, CH = 30, GAP = 2.5, GX = (500 - COLS * (CW + GAP)) / 2, GY = 8;
   const W = 500, TY = GY + ROWS * (CH + GAP) + 26, TH = 62, H = TY + TH + 22;
   let paged = true, cont = true, playing = !ctx.reduced, sel = null;
@@ -80,7 +80,7 @@ SD.widget('llm-inference', function (root, ctx) {
 
   function step() {
     stepN++;
-    if (Math.random() < 0.5) { const p = rnd(3, 10); queue.push({ id: nextId++, len: p, prompt: p, left: rnd(2, Math.min(22, MAXLEN - p)), table: [], done: false }); }
+    if (Math.random() < 0.7) { const p = rnd(3, 10); queue.push({ id: nextId++, len: p, prompt: p, left: rnd(2, Math.min(26, MAXLEN - p)), table: [], done: false }); }
     const active = running.filter((s) => !s.done);
     // static batching: only form a new batch when the whole previous batch has finished
     if (!cont && running.length && !active.length) { running.forEach(release); running = []; }
