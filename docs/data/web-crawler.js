@@ -140,7 +140,7 @@ SD.register({
       { label: 'Bloom filter RAM', fmt: 'bytes', f: (v) => v.known * v.bits / 8 },
       { label: 'Bloom false-positive rate (optimal k)', fmt: 'pct', f: (v) => Math.pow(0.6185, v.bits) }
     ],
-    note: 'Common Crawl\'s Aug 2026 archive is 2.14B pages and ~360 TiB uncompressed, about 185 KB per record, which is where the default size comes from. IRLbot sustained 1,789 pages/s on a single server, so 1,000/s is a conservative <em>estimate</em>. FP rate ≈ <code>0.6185^(m/n)</code> at the optimal <code>k = (m/n)·ln 2</code>.'
+    note: 'Common Crawl\'s Aug 2026 archive is 2.14B pages and ~360 TiB uncompressed, about 185 KB per record including HTTP headers, so the 150 KB default per page is a rounded-down <em>estimate</em>. IRLbot sustained 1,789 pages/s on a single server, so 1,000/s is a conservative <em>estimate</em>. FP rate ≈ <code>0.6185^(m/n)</code> at the optimal <code>k = (m/n)·ln 2</code>.'
   },
 
   api: [
@@ -241,7 +241,7 @@ SD.register({
   ],
 
   knobs: {
-    intro: 'Tune the crawl order, the seen-set Bloom filter, the politeness delay and how work is split across nodes. Fleet: 100 fetcher servers, 200K hosts with pending URLs (illustrative).',
+    intro: 'Tune the crawl order, the seen-set Bloom filter, the politeness delay and how work is split across nodes. Fleet: 100 fetcher servers at ~1,000 pages/s each and 200K hosts with pending URLs (illustrative <em>estimates</em>).',
     diagram: null,
     controls: [
       { id: 'order', label: 'Crawl strategy', type: 'seg', value: 'prio', options: [
@@ -252,7 +252,7 @@ SD.register({
         { v: 'host', l: 'hash(host)' }, { v: 'url', l: 'hash(full URL)' }] }
     ],
     evaluate(s) {
-      const CAP = 100 * 1500;     // 100 servers × 1.5K pages/s (estimate; IRLbot did ~1.8K/s on one box)
+      const CAP = 100 * 1000;     // 100 servers × 1K pages/s, same estimate as the calculator (IRLbot did ~1.8K/s on one box)
       const HOSTS = 200000;       // hosts with pending URLs (estimate)
       const polite = HOSTS / s.delay;
       const urlPartPenalty = s.part === 'url' ? 0.7 : 1; // global per-host rate limiter round-trips (illustrative)
@@ -364,6 +364,7 @@ SD.register({
     { q: 'How do you distribute the crawl across machines?', a: '<p>Assign hosts to nodes with <b>hash(host)</b>, ideally consistent hashing. Each node owns its hosts\' back queues, robots and DNS caches, so politeness is local.</p><p>Discovered links to foreign hosts are <b>batched</b> to their owners. Checkpoint the frontier, and rehash a dead node\'s hosts.</p>', lvl: 'core' },
     { q: 'Why is DNS a bottleneck, and what do you do?', a: '<p>Each new host needs a lookup. Synchronous resolvers block threads and add 10–100 ms each (<em>estimate</em>). Run a <b>local caching resolver</b>, resolve asynchronously, and prefetch for hosts that are about to reach the front of the heap.</p>', lvl: 'deep' },
     { q: 'What do you normalise in a URL before the seen check?', a: '<ul><li>Lowercase the scheme and host.</li><li>Remove the default port and the <code>#fragment</code>.</li><li>Resolve <code>./</code> and <code>../</code>.</li><li>Sort query parameters and drop tracking or session parameters.</li><li>Decode unreserved percent-escapes.</li><li>Apply <code>rel=canonical</code> after fetch.</li></ul><p>Otherwise one page appears as thousands of "new" URLs.</p>', lvl: 'core' },
+    { q: 'Thousands of small sites share one IP (shared hosting, one CDN edge). Is per-host politeness enough?', a: '<p>No. Per-host delays can still send hundreds of parallel requests to the <b>same physical server</b>. Add a second limit keyed by <b>resolved IP</b> (or IP prefix): a URL may be fetched only when both its host slot and its IP slot are free.</p><p>Owning hosts by hash(host) can split one IP across nodes, so either keep the IP limit conservative per node or route by IP for known shared hosts. CDNs can take more load than shared hosts, so treat their IP ranges separately.</p>', lvl: 'deep' },
     { q: 'How would you handle JavaScript-heavy sites?', a: '<p>Most pages do not need rendering. Use a two-tier pipeline: fetch raw HTML first, and if heuristics show content is missing (empty body, app shell), send the page to a <b>headless-browser rendering queue</b> with strict budgets, because rendering costs far more CPU than parsing.</p>', lvl: 'deep' },
     { q: 'How fast can one machine crawl?', a: '<p>IRLbot (2008) sustained <b>1,789 pages/s</b> (319 Mb/s) on a <b>single server</b> for 41 days, fetching 6.3B pages. The limits were seen-set checks (solved with DRUM batching), politeness across enough hosts, and spam avoidance, not raw bandwidth.</p>', lvl: 'deep' }
   ],

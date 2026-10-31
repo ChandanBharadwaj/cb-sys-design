@@ -11,7 +11,7 @@ SD.register({
     numbers: [
       { v: '600K/min', l: 'default FCM send quota per project (Firebase docs)' },
       { v: '4 KB', l: 'max payload for APNs alerts and FCM messages (vendor docs)' },
-      { v: '~150K/s', l: 'peak events through Netflix RENO (Netflix, 2022)' }
+      { v: '~150K/s', l: 'peak events through Netflix RENO (InfoQ coverage, 2022)' }
     ]
   },
 
@@ -310,10 +310,10 @@ SD.register({
     timeline: [
       { when: '2020', who: 'Uber', title: 'RAMEN replaces polling', text: 'Uber\'s apps used to poll; at one point <b>80% of API gateway requests were polling calls</b>. RAMEN (Realtime Asynchronous MEssaging Network) pushes updates instead. Its Fireball component decides <i>when</i> to push, and messages carry a TTL and are retried until it expires.', src: 0 },
       { when: '2021', who: 'Airbnb', title: 'One platform for promos and transactional', text: 'Airbnb\'s communications platform serves marketing and transactional messages through one delivery service across email, SMS and push, instead of each team building its own.', src: 3 },
-      { when: '2022', who: 'Netflix', title: 'RENO: priority queues', text: 'RENO receives events from Netflix\'s Manhattan framework and routes them to <b>priority-specific SQS queues</b> and matching compute clusters, so a failing lane does not affect the others. It peaks at about <b>150K events/s</b>; old events are dropped by a staleness filter.', src: 2 },
+      { when: '2022', who: 'Netflix', title: 'RENO: priority queues', text: 'RENO receives events from Netflix\'s Manhattan framework and routes them to <b>priority-specific SQS queues</b> and matching compute clusters, so a failing lane does not affect the others. Events older than a configured threshold are dropped by a staleness filter. InfoQ\'s coverage puts the peak at about <b>150K events/s</b>.', src: 8 },
       { when: '2022', who: 'Uber', title: 'RAMEN moves to gRPC streams', text: 'RAMEN moved from Server-Sent Events over HTTP/1.1 to <b>gRPC bidirectional streaming</b>. Acks used to be sent in batches, so a message\'s delivery state could be unknown for up to 30 s; now each ack goes back on the same stream. The old protocol sent a heartbeat every 4 s and reconnected after 7 s of silence.', src: 1 },
       { when: '2024', who: 'Pinterest', title: 'NEP: relevance before sending', text: 'Pinterest\'s Notification Event Processor makes send decisions in near real time, controlling how many notifications a user gets and when, to cut irrelevant ones.', src: 4 },
-      { when: 'Today', who: 'Apple · Google', title: 'Provider limits you design around', text: 'FCM: a default of <b>600K messages/min per project</b> (429 <code>QUOTA_EXCEEDED</code> when exceeded) and 4096-byte payloads. APNs: 4 KB payloads, <code>apns-priority</code> 10 or 5, <code>apns-collapse-id</code> up to 64 bytes, 410 for dead tokens.', src: 5 }
+      { when: 'Today', who: 'Apple · Google', title: 'Provider limits you design around', text: 'FCM: a default of <b>600K messages/min per project</b> (429 <code>QUOTA_EXCEEDED</code> when exceeded) and 4096-byte payloads. APNs: 4 KB payloads, <code>apns-priority</code> 10 (now), 5 or 1 (may be batched for power), <code>apns-collapse-id</code> up to 64 bytes, storage of an undeliverable notification for up to 30 days via <code>apns-expiration</code>, and 410 for dead tokens.', src: 5 }
     ],
     lessons: [
       'Separate <b>lanes per priority</b>; never let a blast share a queue with OTPs.',
@@ -329,6 +329,7 @@ SD.register({
       { title: 'NEP: Notification System and Relevance', url: 'https://medium.com/pinterest-engineering/nep-notification-system-and-relevance-a7fff21986c7', pub: 'Pinterest Engineering, 2024' },
       { title: 'FCM Throttling and Quotas', url: 'https://firebase.google.com/docs/cloud-messaging/throttling-and-quotas', pub: 'Firebase docs' },
       { title: 'Handling error responses from APNs', url: 'https://developer.apple.com/documentation/usernotifications/handling-error-responses-from-apns', pub: 'Apple Developer docs' },
+      { title: 'Sending notification requests to APNs', url: 'https://developer.apple.com/documentation/usernotifications/sending-notification-requests-to-apns', pub: 'Apple Developer docs' },
       { title: 'Rapid Event Notification System at Netflix', url: 'https://netflixtechblog.com/rapid-event-notification-system-at-netflix-6deb1d2b57d1', pub: 'Netflix Tech Blog, 2022' }
     ]
   },
@@ -363,6 +364,7 @@ SD.register({
     { q: 'How do quiet hours and frequency caps work at scale?', a: '<p>Check them in the preference step, <b>before</b> queueing. Caps use a per-user counter with a TTL (e.g. promos sent today). Quiet hours need the user\'s time zone: delayed messages go to a <b>delay queue</b> or scheduler keyed by send time.</p>', lvl: 'deep' },
     { q: 'A 50M push campaign must finish within an hour. Is that feasible?', a: '<p>50M/hour ≈ 833K/min, which is above FCM\'s default 600K/min per project. Options: request a quota increase well in advance (Firebase asks for at least 15 days for events), spread the campaign over a longer window, or use topic or multicast sends where the targeting allows it.</p>', lvl: 'deep' },
     { q: 'What happens to a notification that is no longer relevant?', a: '<p>Give every category a <b>TTL</b>: an OTP after 5 minutes or a "driver arriving" after the trip started is harmful. Set provider expiry (<code>apns-expiration</code>, FCM <code>ttl</code>) and drop expired messages before sending. Uber\'s RAMEN retries until TTL; Netflix RENO filters stale events.</p>', lvl: 'deep' },
+    { q: 'When should a push fall back to SMS or email?', a: '<p>Only for <b>critical</b> categories (security alerts, OTP-like codes, payment problems). APNs and FCM do not confirm device delivery, so escalate on a missing <b>app-level signal</b>: the app acks or opens the notification id within N minutes, or else send by SMS.</p><p>Reuse the same notification id so the user does not see the same message twice, and respect channel opt-outs. SMS costs money per message, so promos never escalate.</p>', lvl: 'deep' },
     { q: 'Kafka or SQS for the queues?', a: '<p><b>Kafka</b> gives high throughput, replay and partition ordering, but retries and delays need extra retry topics. <b>SQS</b> has per-message visibility timeouts, delay queues and DLQs built in. Many systems use Kafka for ingestion and fan-out, and SQS-style queues per channel.</p>', lvl: 'deep' }
   ],
 
@@ -398,7 +400,7 @@ public class SmsSender {
     dlq.publish(job, t.getMessage());     // after the last attempt
   }
 }`,
-      note: 'Annotation order matters: with default aspect order, Retry wraps the RateLimiter, so every retry also waits for a permit.'
+      note: 'Nesting is set by Resilience4j\'s aspect order, not by the order of the annotations. By default Retry wraps RateLimiter, so every retry also waits for a permit.'
     },
     {
       title: 'Kafka: one topic per lane', lang: 'java',
@@ -431,8 +433,8 @@ def send_with_backoff(send, msg, base=0.5, cap=30.0, attempts=6, ttl_s=300):
         delay = random.uniform(0, min(cap, base * 2 ** n))   # full jitter
         if retry_after:
             delay = max(delay, retry_after)
-        if time.monotonic() - start + delay > ttl_s:
-            break                              # too stale to be useful
+        if n == attempts - 1 or time.monotonic() - start + delay > ttl_s:
+            break                              # out of attempts, or too stale to be useful
         time.sleep(delay)
     return False                               # caller sends to the DLQ`
     }

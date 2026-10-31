@@ -271,7 +271,7 @@ SD.register({
       if (s.len <= 5) notes.push('62⁵ ≈ 916M codes is less than two months of Bitly-scale creation.');
       let verdict;
       if (s.len <= 5 || (s.gen === 'hash' && pColl > 0.05)) verdict = '❌ <b>Keyspace too small</b> for this volume. Use 7 or more characters.';
-      else if (s.gen === 'counter') verdict = '⚠ <b>Correct, but the counter is a bottleneck and a SPOF.</b> Reserve ids in blocks.';
+      else if (s.gen === 'counter') verdict = '⚠ <b>Correct, but the counter is a bottleneck and a single point of failure.</b> Reserve ids in blocks.';
       else if (!guess) verdict = '⚠ <b>Unique but enumerable.</b> Scramble the ids before encoding.';
       else if (s.redir === '301') verdict = '👍 <b>Lowest load</b>, but you lose repeat-click analytics and the ability to change a link. Bitly-style products use 301 only when analytics do not matter.';
       else if (s.gen === 'kgs') verdict = '✅ <b>Strong default:</b> id blocks + scrambled Base62, 302 redirects, cache-aside Redis.';
@@ -304,7 +304,7 @@ SD.register({
       { when: '2010', who: 'Flickr', title: 'Ticket servers', text: 'Flickr generated globally unique 64-bit ids with dedicated MySQL <b>ticket servers</b>: <code>REPLACE INTO Tickets64 (stub) VALUES (\'a\'); SELECT LAST_INSERT_ID();</code>. Two servers split the space into <b>odd and even</b> ids (auto-increment-increment = 2) for availability.', src: 0 },
       { when: '2011', who: 'Instagram', title: 'Ids without a central server', text: 'Instagram packed <b>41 bits of time, 13 bits of logical shard and 10 bits of sequence</b> into a 64-bit id generated inside Postgres (PL/pgSQL). This is another way to avoid one counter for everything.', src: 2 },
       { when: '2014', who: 'Bitly', title: '6B clicks a month', text: 'Bitly reported <b>6 billion clicks</b> and <b>600 million shortens</b> per month, handled by dozens of small services talking over the network, on about 400 servers. Only ~30 of them took incoming traffic.', src: 1 },
-      { when: '2022', who: 'IETF', title: 'Redirect semantics (RFC 9110)', text: '<b>301</b> is heuristically cacheable, so clients may reuse it without asking again. <b>302</b> is not cached unless headers say so. 307/308 are the variants that keep the request method.', src: 3 }
+      { when: '2022', who: 'IETF', title: 'Redirect semantics (RFC 9110)', text: '<b>301</b> is heuristically cacheable (§15.4.2), so clients may reuse it without asking again unless cache headers say otherwise. <b>302</b> is not on the heuristically cacheable list, so it is cached only when headers allow it. 307/308 are the variants that keep the request method.', src: 3 }
     ],
     lessons: [
       'Uniqueness from a <b>counter</b> beats uniqueness from hashing plus collision checks.',
@@ -351,6 +351,7 @@ SD.register({
     { q: 'Should the same long URL always get the same code?', a: '<p>Only if the product wants it. Different users usually need separate links with separate analytics. If you dedup, keep a unique index on a hash of <code>(owner_id, long_url)</code> and return the existing code.</p>', lvl: 'deep' },
     { q: 'How do you avoid a race on custom aliases?', a: '<p>Do not check-then-insert. Use an <b>atomic conditional insert</b>: <code>INSERT … ON CONFLICT DO NOTHING RETURNING code</code> in Postgres, or a conditional put in DynamoDB. Zero rows means the alias is taken: return 409.</p>', lvl: 'core' },
     { q: 'How do you collect click analytics without slowing redirects?', a: '<p>Publish a small event to Kafka asynchronously (or log it at the edge), then aggregate into a columnar store by minute, country and referrer. The redirect never waits on analytics.</p>', lvl: 'core' },
+    { q: 'How do redirects survive the loss of a whole region?', a: '<p>Redirects are reads of data that almost never changes, so <b>replicate the link table to every region</b> asynchronously (DynamoDB global tables, Cassandra multi-DC) and serve each click from the nearest one.</p><p>Creates stay local: give each region its <b>own id-block range</b>, so no cross-region coordination is needed. Two gaps remain: a link created seconds ago may not have replicated yet, so on a miss ask the home region (which the id range identifies), and disabling a link must propagate and purge caches everywhere.</p>', lvl: 'deep' },
     { q: 'Postgres or a NoSQL store?', a: '<p>The access pattern is a single-key lookup plus a conditional insert, which any KV store does well. Postgres works up to billions of rows with partitioning and gives sequences and constraints for free. Choose a KV store (DynamoDB, Cassandra) when you need multi-region writes and effortless horizontal scale.</p>', lvl: 'deep' }
   ],
 
@@ -405,7 +406,7 @@ class RedirectController {
         .location(URI.create(url)).cacheControl(CacheControl.noStore()).build();
   }
 }`,
-      note: 'Before encoding, scramble the id with a bijection (see the widget) so codes are not sequential.'
+      note: 'Before encoding, scramble the id with a bijection (see the widget) so codes are not sequential. In production, cap the cache TTL at the link\'s remaining lifetime and delete <code>u:{code}</code> when a link is disabled.'
     },
     {
       title: 'Postgres: block sequence, table, alias insert', lang: 'sql',

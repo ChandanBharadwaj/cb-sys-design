@@ -1,7 +1,15 @@
 /* Row-lock simulation: N workers run "SELECT … ORDER BY id LIMIT 1 FOR UPDATE [SKIP LOCKED | NOWAIT]" on a job table. */
 SD.widget('job-scheduler', function (root, ctx) {
   const { el, svg } = ctx;
-  const ROWS = 10, RH = 28, Y0 = 26, LX = 8, LW = 220, WX = 250, WW = 242;
+  const ROWS = 10;
+  // desktop: 500-wide, wide columns. phone: 360-wide, narrower columns, same 14-unit text (≈13px on screen)
+  let W, RH, Y0, LX, LW, WX, WW, narrow;
+  function geom(n) {
+    narrow = n;
+    if (n) { W = 360; RH = 30; Y0 = 28; LX = 4; LW = 148; WX = 178; WW = 178; }
+    else { W = 500; RH = 28; Y0 = 26; LX = 8; LW = 220; WX = 250; WW = 242; }
+  }
+  geom(ctx.narrow);
   let mode = 'naive', nWorkers = 4, jobs, workers, t = 0, blockedTime = 0, busyTime = 0, finished = false, running = true;
 
   // controls
@@ -25,11 +33,17 @@ SD.widget('job-scheduler', function (root, ctx) {
   const sql = el('div', { class: 'w-log', style: { maxHeight: 'none', marginTop: '0', marginBottom: '10px' } });
   root.append(sql);
 
-  const H = Y0 + ROWS * RH + 6;
-  const S_ = svg('svg', { viewBox: `0 0 500 ${H}`, role: 'img', 'aria-label': 'Job table rows and workers' });
+  const S_ = svg('svg', { role: 'img', 'aria-label': 'Job table rows and workers' });
   const gRows = svg('g'), gW = svg('g'), gLinks = svg('g');
-  S_.append(svg('text', { x: LX, y: 16, style: 'font:700 13px var(--sans)', fill: 'var(--text-2)', text: 'jobs (ORDER BY id)' }),
-    svg('text', { x: WX, y: 16, style: 'font:700 13px var(--sans)', fill: 'var(--text-2)', text: 'workers (1 txn each)' }), gLinks, gRows, gW);
+  const hJobs = svg('text', { y: 17, fill: 'var(--text-2)' }), hW = svg('text', { y: 17, fill: 'var(--text-2)' });
+  function frame() {
+    S_.setAttribute('viewBox', `0 0 ${W} ${Y0 + ROWS * RH + 6}`);
+    const f = `font:700 ${narrow ? 14 : 13}px var(--sans)`;
+    hJobs.setAttribute('x', LX); hJobs.setAttribute('style', f); hJobs.textContent = narrow ? 'jobs by id' : 'jobs (ORDER BY id)';
+    hW.setAttribute('x', WX); hW.setAttribute('style', f); hW.textContent = narrow ? 'workers' : 'workers (1 txn each)';
+  }
+  frame();
+  S_.append(hJobs, hW, gLinks, gRows, gW);
   root.append(el('div', { class: 'w-stage' }, S_));
   const stats = el('div', { class: 'w-stats' });
   const log = el('div', { class: 'w-log', 'aria-live': 'polite' });
@@ -105,17 +119,18 @@ SD.widget('job-scheduler', function (root, ctx) {
     jobs.forEach((j, i) => {
       const y = Y0 + i * RH;
       const fill = j.status === 'done' ? 'color-mix(in srgb, var(--ok) 22%, var(--surface))' : j.lock ? 'color-mix(in srgb, var(--warn) 30%, var(--surface))' : 'var(--surface-2)';
+      const ty = y + (RH - 5) / 2 + 5;
       gRows.append(svg('rect', { x: LX, y, width: LW, height: RH - 5, rx: 5, fill, stroke: 'var(--border)' }),
-        svg('text', { x: LX + 8, y: y + 17, style: 'font:600 14px var(--mono)', fill: 'var(--text)', text: `#${j.id}` }),
-        svg('text', { x: LX + 46, y: y + 17, style: 'font:14px var(--mono)', fill: 'var(--text-2)', text: j.status === 'done' ? 'done' : j.lock ? `🔒 W${j.lock.n}` : 'queued' }));
+        svg('text', { x: LX + 7, y: ty, style: 'font:600 14px var(--mono)', fill: 'var(--text)', text: `#${j.id}` }),
+        svg('text', { x: LX + (narrow ? 42 : 46), y: ty, style: 'font:14px var(--mono)', fill: 'var(--text-2)', text: j.status === 'done' ? 'done' : j.lock ? `🔒 W${j.lock.n}` : 'queued' }));
       const waiters = workers.filter((w) => w.wait === j).length;
-      if (waiters) gRows.append(svg('text', { x: LX + LW - 8, y: y + 17, 'text-anchor': 'end', style: 'font:700 13px var(--mono)', fill: 'var(--err)', text: `${waiters} waiting` }));
+      if (waiters) gRows.append(svg('text', { x: LX + LW - 7, y: ty, 'text-anchor': 'end', style: `font:700 ${narrow ? 14 : 13}px var(--mono)`, fill: 'var(--err)', text: narrow ? `+${waiters}` : `${waiters} waiting` }));
     });
     workers.forEach((w) => {
       const color = { run: 'var(--ok)', blocked: 'var(--err)', error: 'var(--warn)', dead: 'var(--text-3)', idle: 'var(--border)' }[w.st];
       gW.append(svg('rect', { x: WX, y: w.y, width: WW, height: w.h, rx: 7, fill: `color-mix(in srgb, ${color} 18%, var(--surface))`, stroke: color }));
-      const label = { run: `running #${w.job && w.job.id}`, blocked: `BLOCKED on #${w.wait && w.wait.id}`, error: 'lock error, retry', dead: 'killed', idle: 'polling' }[w.st];
-      gW.append(svg('text', { x: WX + 10, y: w.y + w.h / 2 + 4, style: 'font:700 14px var(--sans)', fill: 'var(--text)', text: `W${w.n}` }),
+      const label = { run: `running #${w.job && w.job.id}`, blocked: `BLOCKED on #${w.wait && w.wait.id}`, error: narrow ? 'lock error' : 'lock error, retry', dead: 'killed', idle: 'polling' }[w.st];
+      gW.append(svg('text', { x: WX + (narrow ? 8 : 10), y: w.y + w.h / 2 + 4, style: 'font:700 14px var(--sans)', fill: 'var(--text)', text: `W${w.n}` }),
         svg('text', { x: WX + 40, y: w.y + w.h / 2 + 4, style: 'font:14px var(--mono)', fill: 'var(--text-2)', text: label }));
       if (w.st === 'run' && w.job) gW.append(svg('rect', { x: WX + 4, y: w.y + w.h - 5, width: Math.max(0, (WW - 8) * (1 - w.left / w.job.dur)), height: 3, rx: 1.5, fill: 'var(--ok)' }));
       const target = w.st === 'run' ? w.job : w.st === 'blocked' ? w.wait : null;
@@ -131,6 +146,7 @@ SD.widget('job-scheduler', function (root, ctx) {
       .forEach(([k, v]) => stats.append(el('span', { class: 'w-stat', html: `${k}: <b>${v}</b>` })));
   }
 
+  ctx.onResize((n) => { geom(n); frame(); reset(); });
   reset();
   if (!ctx.reduced) ctx.loop((dt) => { if (!running || finished) return; step(Math.min(dt, 100) / 1000 * 1.2); draw(); });
 });

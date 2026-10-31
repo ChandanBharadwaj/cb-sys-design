@@ -1,0 +1,11 @@
+# unique-id review
+
+- **Widget, phone:** added a `build(narrow)` layout. Phones get a 360-wide viewBox, 8 rows × 8 bits, 15-unit bit text and a two-column legend; desktop keeps 4 × 16 rows. Rebuilt via `ctx.onResize`. Fonts went from min 6.9 / p25 9.0 px to min 12.3 / p25 14.2 px. The generator, burst and decode logic are unchanged.
+- **Widget epochs:** replaced the placeholder 2024 epoch with real ones. Instagram uses `1314220021721` (24 Aug 2011), the `our_epoch` in its 2011 post's PL/pgSQL, as quoted in copies of the code. Sonyflake uses the v1 default StartTime of 2014-09-01 UTC; the v2 docs say the default is now 2025-01-01, and a code comment notes this.
+- **Sources:** the Twitter "Announcing Snowflake" link now points at the canonical `blog.x.com` URL that appeared in search, not the old blog.twitter.com one. A search confirmed the post is by Ryan King, Jun 2010, but its full text was still not readable (WebFetch is blocked). The bit layout therefore keeps citing the GitHub README.
+- **Real world:** added a Sonyflake timeline card: 39-bit 10 ms time, 8-bit sequence, 16-bit machine id from the private IP, and the v1/v2 default epochs. Previously the Sonyflake source was listed but unused. Added the sonyflake v2 docs as a source.
+- **Instagram timeline:** now mentions the post's 2011 custom epoch constant.
+- **Interview:** the Snowflake layout answer now notes that Twitter's code split the 10 machine bits into 5 datacenter + 5 worker bits (seen in several copies of `IdWorker.scala`). Added one question on running the generator across several datacenters (per-region id ranges, no failover of live ids).
+- **Clarity:** replaced "SPOF" with "single point of failure" in the knob meter and the trade-off table.
+- **Code:** ran the Python snippet: the UUIDv7 version and variant are correct, and the decoder works. Compiled and ran the Java Snowflake with a 200K-ID uniqueness and monotonicity test, which passed. The SQL is unchanged; it is Instagram's function with a 2024 epoch, and Postgres was not available to run it.
+- **Checked, left alone:** bit maths (69.7 yrs, 174 yrs, 4,096/ms), the Discord layout and epoch, Flickr odd/even ticket servers, RFC 9562, PG18 `uuidv7()`, Python 3.14 `uuid.uuid7()`, the calculator formulas, and that every knob option changes the verdict.

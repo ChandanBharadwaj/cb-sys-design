@@ -135,8 +135,8 @@ SD.register({
       { label: 'Peak dequeue rate', unit: '/s', f: (v) => v.jobs * (1 + v.retry / 100) / 86400 * v.peak },
       { label: 'Busy worker slots at peak (Little\'s law)', f: (v) => v.jobs * (1 + v.retry / 100) / 86400 * v.peak * v.dur },
       { label: 'Heartbeat writes/s (every 10 s)', unit: '/s', f: (v) => v.jobs * (1 + v.retry / 100) / 86400 * v.peak * v.dur / 10 },
-      { label: 'Rows retained', f: (v) => v.jobs * (1 + v.retry / 100) * v.days },
-      { label: 'Job-store size (one copy)', fmt: 'bytes', f: (v) => v.jobs * (1 + v.retry / 100) * v.days * v.payload }
+      { label: 'Rows retained (one per job; retries reuse it)', f: (v) => v.jobs * v.days },
+      { label: 'Job-store size (one copy, estimate)', fmt: 'bytes', f: (v) => v.jobs * v.days * v.payload }
     ],
     note: 'Little\'s law: <b>slots in use = arrival rate × time in system</b>. All inputs are <em>estimates</em> to play with. Notice how long tasks, not job count, drive worker and heartbeat load. A single Postgres primary handles thousands of claim/complete pairs per second (<em>estimate</em>, depends heavily on hardware and batching).'
   },
@@ -285,7 +285,7 @@ SD.register({
       if (amo) verdict = '⚠ <b>Work silently disappears when a worker dies.</b> Use at-least-once with idempotent tasks.';
       else if (short) verdict = '❌ <b>The lease is shorter than the task.</b> Running tasks get duplicated. Lengthen it or heartbeat.';
       else if (s.backend === 'kafka') verdict = '⚠ <b>A log is not a job queue.</b> Head-of-line blocking and no per-job retries. Put a real queue or table behind it.';
-      else if (s.ha === 'single') verdict = '⚠ <b>The scheduler is a SPOF.</b> Add a second scheduler (active-active with row locks is simplest).';
+      else if (s.ha === 'single') verdict = '⚠ <b>The scheduler is a single point of failure.</b> Add a second scheduler (active-active with row locks is simplest).';
       else if (s.backend === 'pg' && hb && s.ha === 'active') verdict = '✅ <b>Simple and robust:</b> a Postgres job table with SKIP LOCKED, leases with heartbeats, idempotent tasks and several active schedulers (Airflow 2 style). It is enough for thousands of jobs per second.';
       else if (s.backend === 'redis') verdict = '👍 <b>The classic Celery/Sidekiq setup.</b> It has high throughput. Keep tasks idempotent and the visibility timeout above p99.';
       else verdict = '👍 Workable. Check the duplicate and failover meters for the trade-off you are making.';
@@ -370,6 +370,7 @@ SD.register({
     { q: 'How would you implement priorities without starving low-priority jobs?', a: '<p>Use separate queues per priority, and have workers take from them with <b>weighted</b> selection (e.g. 70/20/10), not strict priority. Add <b>aging</b> (priority rises with wait time) and <b>per-tenant quotas</b>, so one noisy customer cannot fill the queue.</p>', lvl: 'deep' },
     { q: 'How are DAG dependencies resolved?', a: '<p>Store task instances per run with a state. After each completion, find tasks in the run whose upstream tasks are all <code>success</code> (a NOT EXISTS query, or in-memory counters of remaining deps) and queue them.</p><p>Trigger rules (all_success, one_failed…) generalise this.</p>', lvl: 'core' },
     { q: 'What is a backfill and what can go wrong?', a: '<p>A backfill runs a DAG for past logical dates, for example to fill 90 days of a new table. Risks: flooding the cluster (use a concurrency cap per DAG), <b>non-idempotent tasks</b> (each run must overwrite its own date partition, never append), and tasks that wrongly read "now" instead of the logical date.</p>', lvl: 'deep' },
+    { q: 'How do you handle time zones and daylight-saving changes in cron?', a: '<p>Store the cron expression with an <b>IANA time zone</b> (<code>Europe/Berlin</code>), compute the next fire time in local time, then convert it to UTC for <code>next_fire_at</code>. Never store a fixed UTC offset.</p><p>Twice a year local time breaks: in spring a time such as 02:30 <b>does not exist</b>, and in autumn it <b>happens twice</b>. Pick an explicit policy, usually "run once, at the next valid instant" for skipped times and "run only the first occurrence" for repeated ones. Test both transitions, or schedule critical jobs in UTC.</p>', lvl: 'deep' },
     { q: 'Why not just use Kafka as the job queue?', a: '<p>Kafka commits <b>offsets per partition</b>. One slow or failing job blocks everything behind it in that partition, and you cannot ack or retry it individually, delay it, or prioritise it.</p><p>Kafka is great for feeding events into a scheduler, but the jobs themselves want per-message acks and leases (a broker or a table).</p>', lvl: 'deep' },
     { q: 'A worker paused for 90 s and its job was given to another worker. How do you stop the first one corrupting state?', a: '<p>Use a <b>fencing token</b>: every claim increments <code>attempts</code>, and every write includes <code>WHERE attempts = :mine</code>. The stale worker\'s update matches zero rows.</p><p>For external side effects, pass an idempotency key so the second call is a no-op.</p>', lvl: 'deep' },
     { q: 'Task queue (Celery) vs durable execution (Temporal)?', a: '<p>A <b>task queue</b> runs independent functions. Multi-step flows, timers and compensation are your problem.</p><p><b>Temporal/Cadence</b> persist the workflow\'s event history, so a workflow can sleep for 30 days, survive crashes by replaying, and call activities with retries. It is worth it for long business processes, and overkill for a thumbnail job.</p>', lvl: 'core' }
@@ -379,7 +380,7 @@ SD.register({
     {
       title: 'Spring Boot: claim with SKIP LOCKED, lease, fencing', lang: 'java',
       code: `@Component
-public class JobWorker {                     // needs @EnableScheduling
+public class JobWorker {   // needs @EnableScheduling + spring.task.scheduling.pool.size >= 2
   private final JdbcTemplate jdbc;
   private final JobHandler handler;          // your idempotent business logic
   private final String me = "w-" + UUID.randomUUID();
@@ -421,7 +422,7 @@ public class JobWorker {                     // needs @EnableScheduling
         + "WHERE locked_by = ? AND status = 'running'", me);
   }
 }`,
-      note: 'The claim commits at once (short transaction), so no lock is held while the job runs. The lease and the fencing check provide safety instead.'
+      note: 'The claim commits at once (short transaction), so no lock is held while the job runs. The lease and the fencing check provide safety instead. Spring\'s default scheduler has <b>one thread</b>: without a pool size of 2 or more, <code>heartbeat()</code> cannot run while <code>poll()</code> is busy, leases expire and long jobs get duplicated.'
     },
     {
       title: 'Postgres: table, reaper and DAG readiness', lang: 'sql',

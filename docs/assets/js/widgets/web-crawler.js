@@ -21,10 +21,13 @@ SD.widget('web-crawler', function (root, ctx) {
   root.append(el('div', { class: 'w-controls' }, autoBtn, stepBtn, resetBtn));
   root.append(el('div', { class: 'w-controls' }, ...mBtns, el('label', null, 'k ', kOut, ' ', kIn), el('label', null, 'host delay ', dOut, ' ', dIn)));
 
-  const COLS = 32, CS = 15, BX = 10, BY = 22;
+  // desktop: 500-wide, 32 bit columns, one-line lanes. phone: 360-wide, 16 columns, two-line lanes, bigger text
+  let G;
+  const layout = (narrow) => { G = narrow ? { W: 360, COLS: 16, CS: 21, BX: 6, BY: 26, fT: 15, fU: 14, uMax: 38, LH: 52 } : { W: 500, COLS: 32, CS: 15, BX: 10, BY: 22, fT: 13, fU: 13, uMax: 48, LH: 38 }; };
+  layout(ctx.narrow);
   const S_ = svg('svg', { viewBox: '0 0 500 330', role: 'img', 'aria-label': 'Bloom filter bits and host queues' });
-  const gBits = svg('g'), gLanes = svg('g'), title = svg('text', { x: BX, y: 14, style: 'font:700 13px var(--sans)', fill: 'var(--text-2)' });
-  const urlTxt = svg('text', { x: BX, y: 0, style: 'font:13px var(--mono)', fill: 'var(--text)' });
+  const gBits = svg('g'), gLanes = svg('g'), title = svg('text', { y: 16, fill: 'var(--text-2)' });
+  const urlTxt = svg('text', { y: 0, fill: 'var(--text)' });
   S_.append(title, gBits, urlTxt, gLanes);
   root.append(el('div', { class: 'w-stage' }, S_));
   const stats = el('div', { class: 'w-stats' });
@@ -53,7 +56,7 @@ SD.widget('web-crawler', function (root, ctx) {
   }
   function discover(url, quiet) {
     const pos = positions(url); lastPos = pos;
-    urlTxt.textContent = url.replace('https://', '').slice(0, 48);
+    urlTxt.textContent = url.replace('https://', '').slice(0, G.uMax);
     const allSet = pos.every((p) => bits[p]);
     if (allSet) {
       if (truth.has(url)) { dupOk++; if (!quiet) say(`<span style="color:var(--text-3)">seen ✓ ${url.replace('https://', '')}</span>`); }
@@ -81,7 +84,10 @@ SD.widget('web-crawler', function (root, ctx) {
   function fpTheory() { return Math.pow(1 - Math.exp(-k * n / m), k); }
 
   function draw() {
+    const { W, COLS, CS, BX, BY, LH } = G, narrow = W < 400;
     const rows = m / COLS;
+    title.setAttribute('x', BX); title.setAttribute('style', `font:700 ${G.fT}px var(--sans)`);
+    urlTxt.setAttribute('x', BX); urlTxt.setAttribute('style', `font:${G.fU}px var(--mono)`);
     title.textContent = `Bloom filter: ${m} bits · k = ${k}`;
     gBits.innerHTML = '';
     for (let i = 0; i < m; i++) {
@@ -92,17 +98,23 @@ SD.widget('web-crawler', function (root, ctx) {
     const uy = BY + rows * CS + 18;
     urlTxt.setAttribute('y', uy);
     gLanes.innerHTML = '';
-    const ly0 = uy + 18, LH = 38;
-    S_.setAttribute('viewBox', `0 0 500 ${Math.ceil(ly0 + 12 + lanes.length * LH + 2)}`);
-    gLanes.append(svg('text', { x: BX, y: ly0 + 4, style: 'font:700 13px var(--sans)', fill: 'var(--text-2)', text: 'Back queues: one per host, ≤ 1 fetch / ' + delay + ' s' }));
+    const ly0 = uy + 22, LW = W - 2 * BX;
+    S_.setAttribute('viewBox', `0 0 ${W} ${Math.ceil(ly0 + 12 + lanes.length * LH + 2)}`);
+    gLanes.append(svg('text', { x: BX, y: ly0 + 2, style: `font:700 ${G.fT}px var(--sans)`, fill: 'var(--text-2)', text: (narrow ? 'Host queues: 1 fetch / ' : 'Back queues: one per host, ≤ 1 fetch / ') + delay + ' s' }));
     lanes.forEach((l, i) => {
       const y = ly0 + 12 + i * LH;
       const wait = Math.max(0, l.next - now);
-      gLanes.append(svg('rect', { x: BX, y, width: 480, height: LH - 6, rx: 6, fill: l.flash ? 'color-mix(in srgb, var(--ok) 20%, var(--surface))' : 'var(--surface)', stroke: 'var(--border)' }),
-        svg('text', { x: BX + 8, y: y + LH / 2 + 1, style: 'font:600 14px var(--mono)', fill: 'var(--text)', text: l.host }),
-        svg('text', { x: BX + 128, y: y + LH / 2 + 1, style: 'font:13px var(--mono)', fill: 'var(--text-2)', text: `${l.q.length} queued · ${l.done} fetched` }),
-        svg('text', { x: BX + 330, y: y + LH / 2 + 1, style: 'font:12px var(--mono)', fill: 'var(--text-3)', text: (l.q[0] || '').slice(0, 18) }),
-        svg('rect', { x: BX + 4, y: y + LH - 10, width: Math.max(0, 472 * (wait / delay)), height: 3, rx: 1.5, fill: 'var(--warn)' }));
+      gLanes.append(svg('rect', { x: BX, y, width: LW, height: LH - 6, rx: 6, fill: l.flash ? 'color-mix(in srgb, var(--ok) 20%, var(--surface))' : 'var(--surface)', stroke: 'var(--border)' }));
+      if (narrow) {
+        gLanes.append(svg('text', { x: BX + 8, y: y + 19, style: 'font:600 15px var(--mono)', fill: 'var(--text)', text: l.host }),
+          svg('text', { x: BX + LW - 8, y: y + 19, 'text-anchor': 'end', style: 'font:14px var(--mono)', fill: 'var(--text-3)', text: (l.q[0] || '').slice(0, 14) }),
+          svg('text', { x: BX + 8, y: y + 37, style: 'font:14px var(--mono)', fill: 'var(--text-2)', text: `${l.q.length} queued · ${l.done} fetched` }));
+      } else {
+        gLanes.append(svg('text', { x: BX + 8, y: y + LH / 2 + 1, style: 'font:600 14px var(--mono)', fill: 'var(--text)', text: l.host }),
+          svg('text', { x: BX + 128, y: y + LH / 2 + 1, style: 'font:13px var(--mono)', fill: 'var(--text-2)', text: `${l.q.length} queued · ${l.done} fetched` }),
+          svg('text', { x: BX + 330, y: y + LH / 2 + 1, style: 'font:12px var(--mono)', fill: 'var(--text-3)', text: (l.q[0] || '').slice(0, 18) }));
+      }
+      gLanes.append(svg('rect', { x: BX + 4, y: y + LH - 10, width: Math.max(0, (LW - 8) * (wait / delay)), height: 3, rx: 1.5, fill: 'var(--warn)' }));
     });
     const setPct = bits.reduce((a, b) => a + b, 0) / m;
     stats.innerHTML = '';
@@ -110,6 +122,7 @@ SD.widget('web-crawler', function (root, ctx) {
       .forEach(([a, b]) => stats.append(el('span', { class: 'w-stat', html: `${a}: <b>${b}</b>` })));
   }
 
+  ctx.onResize((n) => { layout(n); draw(); });
   reset();
   if (!ctx.reduced) ctx.loop((dt) => { if (!auto) return; tick(Math.min(dt, 100) / 1000); draw(); });
   say('Watch the filter fill up: once about half the bits are set, false positives start dropping genuinely new URLs.');

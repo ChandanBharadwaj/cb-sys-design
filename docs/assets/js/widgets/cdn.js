@@ -64,7 +64,17 @@ SD.widget('cdn', function (root, ctx) {
   cIn.addEventListener('input', () => { cap = +cIn.value; pops.forEach((p) => { p.c.size = cap; }); tier.size = cap * 5; paint(); });
   root.append(el('div', { class: 'w-controls' }, purgeBtn, tierBtn, utmBtn, el('label', null, 'TTL ', tOut, ' ', tIn), el('label', null, 'Cache/PoP ', cOut, ' ', cIn)));
 
-  // drawing
+  // drawing. Texts register desktop/phone sizes so the 380-wide map stays legible at 340px (phone sizes ≥ 14 units)
+  const fonts = [];
+  const ft = (node, desk, phone, weight, fam) => { fonts.push({ node, desk, phone, weight, fam }); return node; };
+  const tierBox = svg('rect', { y: TIER[1] - 13, height: 24, rx: 6, fill: 'var(--k-cache)', opacity: 0.9 });
+  const origBox = svg('rect', { y: ORIGIN[1] - 13, height: 24, rx: 6, fill: 'var(--k-external)' });
+  function applyFonts(narrow) {
+    fonts.forEach((f) => f.node.setAttribute('style', `font:${f.weight} ${narrow ? f.phone : f.desk}px var(${f.fam})`));
+    const tw = narrow ? 92 : 76, ow = narrow ? 70 : 64;
+    tierBox.setAttribute('x', TIER[0] - tw / 2); tierBox.setAttribute('width', tw);
+    origBox.setAttribute('x', ORIGIN[0] - ow / 2); origBox.setAttribute('width', ow);
+  }
   const S = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'CDN points of presence, upper tier and origin' });
   S.append(svg('rect', { x: 2, y: 2, width: W - 4, height: 214, rx: 10, fill: 'var(--surface-2)', stroke: 'var(--border)' }));
   for (let x = 38; x < W; x += 38) S.append(svg('line', { x1: x, x2: x, y1: 4, y2: 214, stroke: 'var(--border)', 'stroke-dasharray': '2 5' }));
@@ -72,26 +82,26 @@ SD.widget('cdn', function (root, ctx) {
   const gFx = svg('g');
   S.append(gFx);
   const tierG = svg('g');
-  tierG.append(svg('rect', { x: TIER[0] - 38, y: TIER[1] - 13, width: 76, height: 24, rx: 6, fill: 'var(--k-cache)', opacity: 0.9 }),
-    svg('text', { x: TIER[0], y: TIER[1] + 5, 'text-anchor': 'middle', style: 'font:700 13px var(--sans)', fill: '#fff', text: 'upper tier' }));
+  tierG.append(tierBox, ft(svg('text', { x: TIER[0], y: TIER[1] + 5, 'text-anchor': 'middle', fill: '#fff', text: 'upper tier' }), 13, 14.5, 700, '--sans'));
   const origG = svg('g');
-  origG.append(svg('rect', { x: ORIGIN[0] - 32, y: ORIGIN[1] - 13, width: 64, height: 24, rx: 6, fill: 'var(--k-external)' }),
-    svg('text', { x: ORIGIN[0], y: ORIGIN[1] + 5, 'text-anchor': 'middle', style: 'font:700 13px var(--sans)', fill: '#fff', text: 'origin' }));
+  origG.append(origBox, ft(svg('text', { x: ORIGIN[0], y: ORIGIN[1] + 5, 'text-anchor': 'middle', fill: '#fff', text: 'origin' }), 13, 14.5, 700, '--sans'));
   S.append(tierG, origG);
   pops.forEach((p) => {
     p.dot = svg('circle', { cx: p.x, cy: p.y, r: 6 + p.w * 3, stroke: 'var(--surface)', 'stroke-width': 2 });
-    S.append(p.dot, svg('text', { x: p.x, y: p.y + 25, 'text-anchor': 'middle', style: 'font:700 13px var(--mono)', fill: 'var(--text-2)', text: p.id }));
+    S.append(p.dot, ft(svg('text', { x: p.x, y: p.y + 25, 'text-anchor': 'middle', fill: 'var(--text-2)', text: p.id }), 13, 15, 700, '--mono'));
   });
   // meters
   const meter = (y, label) => {
-    S.append(svg('text', { x: 4, y, style: 'font:600 14px var(--sans)', fill: 'var(--text-2)', text: label }));
+    S.append(ft(svg('text', { x: 4, y, fill: 'var(--text-2)', text: label }), 14, 15, 600, '--sans'));
     S.append(svg('rect', { x: 118, y: y - 12, width: 150, height: 14, rx: 4, fill: 'var(--surface-2)', stroke: 'var(--border)' }));
     const bar = svg('rect', { x: 118, y: y - 12, width: 0, height: 14, rx: 4 });
-    const val = svg('text', { x: W - 4, y, 'text-anchor': 'end', style: 'font:700 14px var(--mono)', fill: 'var(--text)' });
+    const val = ft(svg('text', { x: W - 4, y, 'text-anchor': 'end', fill: 'var(--text)' }), 14, 15, 700, '--mono');
     S.append(bar, val); return { bar, val };
   };
   const mHit = meter(240, 'Edge hit ratio'), mOrig = meter(264, 'Origin req/s');
-  S.append(svg('text', { x: 4, y: 290, style: 'font:600 13px var(--sans)', fill: 'var(--text-3)', text: 'Origin load, last 60 s' }));
+  S.append(ft(svg('text', { x: 4, y: 290, fill: 'var(--text-3)', text: 'Origin load, last 60 s' }), 13, 15, 600, '--sans'));
+  applyFonts(ctx.narrow);
+  ctx.onResize(applyFonts);
   S.append(svg('rect', { x: 4, y: 296, width: W - 8, height: 30, rx: 5, fill: 'var(--surface-2)', stroke: 'var(--border)' }));
   const sparkL = svg('polyline', { fill: 'none', stroke: 'var(--err)', 'stroke-width': 2 });
   S.append(sparkL);

@@ -45,8 +45,9 @@ SD.widget('url-shortener', function (root, ctx) {
   setScr();
   root.append(el('div', { class: 'w-controls' }, prev, next, rnd, scr, el('label', null, 'Length ', lOut, ' ', lIn)));
 
-  const W = 400, H = 330;
-  const S = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Base62 division steps' });
+  // desktop 400-wide; phone 360-wide with 14-unit rows (≈13px on screen) and the scramble line split in two
+  let narrow = ctx.narrow, W = narrow ? 360 : 400;
+  const S = svg('svg', { viewBox: `0 0 ${W} 330`, role: 'img', 'aria-label': 'Base62 division steps' });
   const g = svg('g');
   S.append(g);
   root.append(el('div', { class: 'w-stage', style: { maxWidth: '520px', margin: '0 auto' } }, S));
@@ -63,18 +64,22 @@ SD.widget('url-shortener', function (root, ctx) {
     const tooBig = id >= m;
     const e = encode(id);
     T(4, 22, 'id = ' + fmtBig(id), 'font:700 15px var(--mono)', 'var(--text)');
-    T(4, 42, scramble ? '× ' + fmtBig(P) + ' mod 62^' + L + ' = ' + fmtBig(e.start) : 'no scramble: encode the id itself', 'font:500 12px var(--mono)', scramble ? 'var(--accent)' : 'var(--text-3)');
+    const fs = narrow ? 14 : 13, RH = narrow ? 24 : 22, sub = `font:500 ${narrow ? 14 : 12}px var(--mono)`, subFill = scramble ? 'var(--accent)' : 'var(--text-3)';
+    let y0 = 70;
+    if (!scramble) T(4, 42, 'no scramble: encode the id itself', sub, subFill);
+    else if (!narrow) T(4, 42, '× ' + fmtBig(P) + ' mod 62^' + L + ' = ' + fmtBig(e.start), sub, subFill);
+    else { T(4, 44, '× ' + fmtBig(P) + ' mod 62^' + L, sub, subFill); T(4, 64, '= ' + fmtBig(e.start), sub, subFill); y0 = 92; }
     const rows = e.rows.slice(0, 9);
     const rowEls = rows.map((r, i) => {
-      const y = 70 + i * 22;
-      const t = svg('text', { x: 4, y, style: 'font:500 13px var(--mono);opacity:0;transition:opacity .25s', fill: 'var(--text-2)' });
+      const y = y0 + i * RH;
+      const t = svg('text', { x: 4, y, style: `font:500 ${fs}px var(--mono);opacity:0;transition:opacity .25s`, fill: 'var(--text-2)' });
       t.append(svg('tspan', { text: fmtBig(r.x) + ' ÷ 62 → r ' }), svg('tspan', { style: 'font-weight:800', fill: 'var(--accent)', text: String(r.r).padStart(2, ' ') + ' = ' + r.ch }));
       g.append(t);
       return t;
     });
     // code boxes, least significant digit on the right
-    const n = e.code.length, bw = Math.min(40, 392 / n), x0 = (W - n * bw) / 2;
-    const by = 70 + rows.length * 22;
+    const n = e.code.length, bw = Math.min(40, (W - 8) / n), x0 = (W - n * bw) / 2;
+    const by = y0 + rows.length * RH;
     S.setAttribute('viewBox', `0 0 ${W} ${by + 62}`);
     const boxes = [];
     for (let i = 0; i < n; i++) {
@@ -82,7 +87,7 @@ SD.widget('url-shortener', function (root, ctx) {
       boxes.push(T(x0 + i * bw + bw / 2, by + 23, '', 'font:800 18px var(--mono)', 'var(--text)', 'middle'));
     }
     const used = Number(id) / Number(m);
-    T(200, by + 54, '62^' + L + ' = ' + SD.fmt.num(Number(m)) + ' codes' + (tooBig ? ' · id too large!' : ' · id is ' + (used * 100).toPrecision(2) + '% in'), 'font:600 12px var(--mono)', tooBig ? 'var(--err)' : 'var(--text-3)', 'middle');
+    T(W / 2, by + 56, '62^' + L + ' = ' + SD.fmt.num(Number(m)) + ' codes' + (tooBig ? ' · id too large!' : ' · id is ' + (used * 100).toPrecision(2) + '% in'), `font:600 ${narrow ? 14 : 12}px var(--mono)`, tooBig ? 'var(--err)' : 'var(--text-3)', 'middle');
     const show = (i) => {
       if (my !== run) return;
       if (rowEls[i]) rowEls[i].style.opacity = 1;
@@ -99,5 +104,6 @@ SD.widget('url-shortener', function (root, ctx) {
     else if (!scramble && n > L) say(`Without scrambling, id ${fmtBig(id)} needs ${n} characters, more than ${L}.`);
     else say(`${fmtBig(id)} → <b>${e.code}</b>. Next codes: ${nb.join(', ')}` + (scramble ? ' (unrelated: hard to enumerate)' : ' (sequential: easy to enumerate)'));
   }
+  ctx.onResize((nw) => { narrow = nw; W = nw ? 360 : 400; draw(false); });
   draw(true);
 });
