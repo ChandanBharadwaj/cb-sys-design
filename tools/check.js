@@ -7,7 +7,7 @@ const DOCS = path.join(__dirname, '..', 'docs');
 const BASE = 'http://127.0.0.1:8765/';
 const OUT = path.join(__dirname, '..', '.shots'); fs.mkdirSync(OUT, { recursive: true });
 const args = process.argv.slice(2);
-const full = args.includes('--full'); const requireIntro = args.includes('--require-intro'); const slugs0 = args.filter(a => !a.startsWith('--'));
+const full = args.includes('--full'); const requireIntro = args.includes('--require-intro'); const checkFonts = args.includes('--fonts'); const slugs0 = args.filter(a => !a.startsWith('--'));
 const slugs = slugs0.length ? slugs0 : fs.readdirSync(path.join(DOCS, 'data')).map(f => f.replace('.js', ''));
 (async () => {
   const browser = await chromium.launch();
@@ -67,6 +67,21 @@ const slugs = slugs0.length ? slugs0 : fs.readdirSync(path.join(DOCS, 'data')).m
         });
         // reset scroll+reload for clean screenshot
         await page.goto(url, { waitUntil: 'load' }); await page.waitForTimeout(400);
+        // effective on-screen size of SVG text inside the deep-dive widget
+        if (await page.locator('#deep-dive').count()) {
+          await page.locator('#deep-dive').scrollIntoViewIfNeeded(); await page.waitForTimeout(700);
+          interact.fonts = await page.evaluate(() => {
+            const ts = [...document.querySelectorAll('#deep-dive svg text')].filter((t) => {
+              if (!t.textContent.trim()) return false;
+              const r = t.getBoundingClientRect(); if (!r.width || !r.height) return false;
+              let e = t; while (e && e !== document.body) { const cs = getComputedStyle(e); if (cs.display === 'none' || cs.visibility === 'hidden' || +cs.opacity === 0) return false; e = e.parentElement; }
+              return true;
+            });
+            const px = ts.map((t) => { const fs = parseFloat(getComputedStyle(t).fontSize); const m = t.getScreenCTM(); return fs * (m ? Math.hypot(m.a, m.b) : 1); }).sort((a, b) => a - b);
+            const n = px.length;
+            return { n, min: n ? +px[0].toFixed(1) : 0, p25: n ? +px[Math.floor(n * 0.25)].toFixed(1) : 0, under11: px.filter((x) => x < 11).length, okShare: n ? px.filter((x) => x >= 12).length / n : 1 };
+          });
+        }
       }
       if (!args.includes('--noshot') && (full || slugs0.length)) {
         // scroll through to trigger reveals then shoot
@@ -99,10 +114,11 @@ const slugs = slugs0.length ? slugs0 : fs.readdirSync(path.join(DOCS, 'data')).m
       if (r.theme !== 'light') problems.push('default theme is ' + r.theme);
       if (!r.darkOk || !r.lightBack) problems.push('theme switch broken');
       if (requireIntro && !r.intro) problems.push('no intro');
+      if (checkFonts && r.size === 'phone' && r.fonts && r.fonts.n && (r.fonts.under11 > 0 || r.fonts.okShare < 0.75)) problems.push(`widget text too small on phone (min ${r.fonts.min}px, p25 ${r.fonts.p25}px, ${r.fonts.under11} under 11px, ${Math.round(r.fonts.okShare * 100)}% ≥12px)`);
       if (r.intro && (r.storyFrames !== 3 || r.storySvgs !== 3 || r.gloss < 5 || r.what < 40 || r.problem < 40)) problems.push(`intro incomplete (frames ${r.storyFrames}, svgs ${r.storySvgs}, glossary ${r.gloss}, what ${r.what}, problem ${r.problem})`);
     }
     if (problems.length) bad++;
-    console.log((problems.length ? '✗ ' : '✓ ') + r.slug + ' [' + r.size + ']' + (problems.length ? ' — ' + problems.join(' ; ') : ` scen=${r.scen ?? '-'} knobs=${r.knobs ?? '-'}/${r.knobChanges ?? '-'} iq=${r.iq ?? '-'} src=${r.src ?? '-'}`));
+    console.log((problems.length ? '✗ ' : '✓ ') + r.slug + ' [' + r.size + ']' + (problems.length ? ' — ' + problems.join(' ; ') : ` scen=${r.scen ?? '-'} knobs=${r.knobs ?? '-'}/${r.knobChanges ?? '-'} iq=${r.iq ?? '-'} src=${r.src ?? '-'}` + (r.fonts && r.size === 'phone' ? ` font(min ${r.fonts.min} p25 ${r.fonts.p25})` : '')));
   }
   console.log(bad ? `${bad} page-size combos with problems` : 'ALL OK');
 })();
