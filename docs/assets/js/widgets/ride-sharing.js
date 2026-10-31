@@ -1,9 +1,16 @@
 /* H3-style k-ring search on a hex grid, ranked by ETA (with optional river). */
 SD.widget('ride-sharing', function (root, ctx) {
   const { el, svg } = ctx;
-  const COLS = 11, ROWS = 8, S = 24, SQ3 = Math.sqrt(3);
+  let loopH = null, gen = 0;
+  // Desktop: 11×8 hexes, 22 drivers. Phone: 7×10 hexes, 16 drivers, so the viewBox is ~320 wide and labels stay ≥ 13 px.
+  function build(narrow) {
+  const my = ++gen;
+  if (loopH) loopH.stop();
+  root.innerHTML = '';
+  const COLS = narrow ? 7 : 11, ROWS = narrow ? 10 : 8, S = 24, SQ3 = Math.sqrt(3), NDRV = narrow ? 16 : 22;
   const W = Math.ceil(S * SQ3 * (COLS + 0.5)) + 8, H = Math.ceil(S * 1.5 * (ROWS - 1) + 2 * S) + 8;
-  const RIVER_COL = 6;
+  const RIVER_COL = narrow ? 3 : 6;
+  const DOT = narrow ? 6.5 : 5.5, FLBL = narrow ? 13.5 : 10, FPIN = narrow ? 12 : 10, PIN = narrow ? 10.5 : 9;
 
   // controls
   let need = 3, river = false, busy = false;
@@ -22,6 +29,7 @@ SD.widget('ride-sharing', function (root, ctx) {
   S_.append(gCells, gLines, gDrivers, gTop);
   stage.append(S_);
   root.append(stage);
+  stage.append(el('p', { class: 'muted', style: { margin: '6px 0 0', fontSize: '13px' }, html: 'Dots: <b style="color:var(--ok)">●</b> free · <b style="color:var(--warn)">●</b> candidate · <b style="color:var(--accent)">●</b> offered · <b style="color:var(--text-3)">●</b> on a trip. <b>R</b> = rider; labels on the lines are ETAs in minutes.' }));
   const stats = el('div', { class: 'w-stats' });
   const log = el('div', { class: 'w-log', 'aria-live': 'polite' });
   root.append(stats, log);
@@ -56,9 +64,9 @@ SD.widget('ride-sharing', function (root, ctx) {
 
   // drivers
   const drivers = [];
-  for (let i = 0; i < 22; i++) {
+  for (let i = 0; i < NDRV; i++) {
     const cell = cells[Math.floor(Math.random() * cells.length)];
-    const dot = svg('circle', { r: 5.5, fill: 'var(--ok)', stroke: 'var(--surface)', 'stroke-width': 1.5 });
+    const dot = svg('circle', { r: DOT, fill: 'var(--ok)', stroke: 'var(--surface)', 'stroke-width': 1.5 });
     gDrivers.append(dot);
     drivers.push({ id: i + 1, cell, from: cell, to: cell, t: 1, dot, state: 'free', x: cell.x, y: cell.y });
   }
@@ -71,10 +79,10 @@ SD.widget('ride-sharing', function (root, ctx) {
     d.x = d.from.x + (d.to.x - d.from.x) * k; d.y = d.from.y + (d.to.y - d.from.y) * k;
     d.dot.setAttribute('cx', d.x); d.dot.setAttribute('cy', d.y);
     d.dot.setAttribute('fill', d.state === 'free' ? 'var(--ok)' : d.state === 'cand' ? 'var(--warn)' : d.state === 'busy' ? 'var(--text-3)' : 'var(--accent)');
-    d.dot.setAttribute('r', d.state === 'match' ? 8 : 5.5);
+    d.dot.setAttribute('r', d.state === 'match' ? DOT + 2.5 : DOT);
   }
   drivers.forEach(placeDriver);
-  ctx.loop((dt) => {
+  loopH = ctx.loop((dt) => {
     drivers.forEach((d) => {
       if (busy && d.state !== 'free') { placeDriver(d); return; }
       if (d.t >= 1) {
@@ -89,7 +97,7 @@ SD.widget('ride-sharing', function (root, ctx) {
     stats.innerHTML = '';
     Object.entries(o).forEach(([k, v]) => stats.append(el('span', { class: 'w-stat', html: `${k}: <b>${v}</b>` })));
   }
-  function say(t) { log.prepend(el('div', { html: t })); while (log.children.length > 30) log.lastChild.remove(); }
+  function say(t) { if (my !== gen) return; log.prepend(el('div', { html: t })); while (log.children.length > 30) log.lastChild.remove(); }
   setStats({ 'free drivers': drivers.length, 'tap a hex': 'to request' });
   say('Tip: turn the river on and request near it. The closest dot is not always the fastest pickup.');
 
@@ -102,7 +110,7 @@ SD.widget('ride-sharing', function (root, ctx) {
     busy = true; randBtn.disabled = true;
     gLines.innerHTML = ''; gTop.innerHTML = '';
     drivers.forEach((d) => { if (d.t < 1) { d.t = 1; d.cell = d.to; d.from = d.to; } if (d.state !== 'busy') d.state = 'free'; placeDriver(d); });
-    const pin = svg('g', null, svg('circle', { cx: rider.x, cy: rider.y, r: 9, fill: 'var(--accent)' }), svg('text', { x: rider.x, y: rider.y + 4, 'text-anchor': 'middle', fill: '#fff', style: 'font:700 10px var(--sans)', text: 'R' }));
+    const pin = svg('g', null, svg('circle', { cx: rider.x, cy: rider.y, r: PIN, fill: 'var(--accent)' }), svg('text', { x: rider.x, y: rider.y + FPIN * 0.36, 'text-anchor': 'middle', fill: '#fff', style: `font:700 ${FPIN}px var(--sans)`, text: 'R' }));
     gTop.append(pin);
     say(`Rider at hex (${rider.c},${rider.r}). Searching ring k = 0…`);
     const ringOf = new Map();
@@ -125,7 +133,7 @@ SD.widget('ride-sharing', function (root, ctx) {
     ranked.forEach((x, i) => {
       gLines.append(svg('line', { x1: rider.x, y1: rider.y, x2: x.d.x, y2: x.d.y, stroke: i === 0 ? 'var(--accent)' : 'var(--border)', 'stroke-width': i === 0 ? 2.5 : 1.5, 'stroke-dasharray': i === 0 ? '' : '4 4' }));
       const tx = (rider.x + x.d.x) / 2, ty = (rider.y + x.d.y) / 2;
-      gLines.append(svg('text', { x: tx, y: ty - 3, 'text-anchor': 'middle', style: 'font:700 10px var(--mono);paint-order:stroke;stroke:var(--bg);stroke-width:3px', fill: i === 0 ? 'var(--accent)' : 'var(--text-3)', text: x.eta + 'm' }));
+      gLines.append(svg('text', { x: tx, y: ty - 3, 'text-anchor': 'middle', style: `font:700 ${FLBL}px var(--mono);paint-order:stroke;stroke:var(--bg);stroke-width:3px`, fill: i === 0 ? 'var(--accent)' : 'var(--text-3)', text: x.eta + 'm' }));
     });
     say('Ranked by ETA: ' + ranked.map((x) => `#${x.d.id} ${x.eta}m`).join(' · '));
     if (nearest && nearest.d !== ranked[0].d) say(`<b>Note:</b> driver #${nearest.d.id} is closest in a straight line but has an ETA of ${eta(nearest.d, rider)}m (river). ETA ranking picks #${ranked[0].d.id}.`);
@@ -153,4 +161,7 @@ SD.widget('ride-sharing', function (root, ctx) {
     // free the busy driver after a while (trip ends)
     drivers.filter((d) => d.state === 'busy').forEach((d) => setTimeout(() => { d.state = 'free'; placeDriver(d); }, 8000));
   }
+  }
+  build(ctx.narrow);
+  ctx.onResize(build);
 });

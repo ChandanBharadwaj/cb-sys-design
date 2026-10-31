@@ -371,6 +371,7 @@ SD.register({
     { q: 'I post and immediately refresh. Why might I not see my post, and how do you fix it?', a: '<p>Fan-out is asynchronous, so your own timeline may not have it yet. Fix it with <b>read-your-own-writes</b>: the timeline service always merges your own author timeline (which is written synchronously), or the client inserts the new post locally.</p>', lvl: 'core' },
     { q: 'What happens on follow and unfollow?', a: '<p><b>Follow:</b> write the edge, then optionally backfill the followee\'s recent posts into your cached timeline so the change is visible at once.</p><p><b>Unfollow:</b> delete the edge and filter that author at read time. Purge their ids from your list lazily.</p>', lvl: 'deep' },
     { q: 'How would you shard the data?', a: '<ul><li><b>Posts</b> by post id.</li><li><b>Home timelines</b> by the reader\'s user id, so one feed load hits one shard.</li><li><b>Follow edges</b> stored twice: by follower (who do I follow) and by followee (who follows me), because the read path and the fan-out path need different indexes.</li></ul>', lvl: 'deep' },
+    { q: 'A reader follows 400 celebrities. What happens to the hybrid read?', a: '<p>The pull side explodes: 1 + 400 list reads per feed load, and the slowest shard sets the p99. The threshold was tuned for the <b>average</b> reader, not this one.</p><p>Fixes: cap the number of pulled sources per read (for example, the celebrities this reader engages with most) and fold the rest in less often; cache the merged result per reader for a short time; or fan out celebrity posts to their <b>most active</b> followers only, so heavy readers get them pushed.</p>', lvl: 'deep' },
     { q: 'How do you scale the fan-out workers?', a: '<p>Partition the <code>PostCreated</code> topic in Kafka and run a consumer group. Each worker pages through followers in batches and <b>pipelines</b> Redis commands per shard. Large fan-outs can be split into chunks so many workers share one post. Monitor consumer lag as the key health signal.</p>', lvl: 'deep' }
   ],
 
@@ -416,7 +417,7 @@ public class FanoutWorker {
     }
   }
 }`,
-      note: 'Keyset pagination over followers avoids large OFFSETs. An index on <code>follows(followee_id, follower_id)</code> makes each page an index range scan.'
+      note: 'Keyset pagination over followers avoids large OFFSETs. An index on <code>follows(followee_id, follower_id)</code> makes each page an index range scan. Entries here hold only the post id; also packing the author id (as the data model does) lets the read path drop muted authors without hydrating.'
     },
     {
       title: 'Postgres: follow graph and cursor pagination', lang: 'sql',
