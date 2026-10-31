@@ -12,16 +12,16 @@ window.SD_CATALOG = {
     { id: 9, name: 'Storage & Data Foundations', icon: '▦', blurb: 'The databases and stores underneath it all.' }
   ],
   systems: [
-    { slug: 'rate-limiter', domain: 1, title: 'Distributed Rate Limiter', examples: 'Stripe, Cloudflare, Envoy', tags: ['token bucket', 'redis', 'lua'] },
-    { slug: 'message-queue', domain: 1, title: 'Distributed Message Queue', examples: 'Kafka, Pulsar', tags: ['log', 'partitions', 'ISR'] },
-    { slug: 'distributed-cache', domain: 1, title: 'Distributed Cache', examples: 'Memcache @ Facebook, Redis', tags: ['consistent hashing', 'leases'] },
-    { slug: 'lock-manager', domain: 1, title: 'Distributed Lock Manager', examples: 'Chubby, ZooKeeper, etcd', tags: ['raft', 'fencing', 'lease'] },
+    { slug: 'rate-limiter', domain: 1, title: 'Distributed Rate Limiter', one: 'Stops one caller from flooding your servers by capping how many requests each one can make.', examples: 'Stripe, Cloudflare, Envoy', tags: ['token bucket', 'redis', 'lua'] },
+    { slug: 'message-queue', domain: 1, title: 'Distributed Message Queue', one: 'Passes events between services reliably, so a slow or crashed service never loses or blocks them.', examples: 'Kafka, Pulsar', tags: ['log', 'partitions', 'ISR'] },
+    { slug: 'distributed-cache', domain: 1, title: 'Distributed Cache', one: 'Serves popular data from fast memory so the database is not asked the same thing over and over.', examples: 'Memcache @ Facebook, Redis', tags: ['consistent hashing', 'leases'] },
+    { slug: 'lock-manager', domain: 1, title: 'Distributed Lock Manager', one: 'Makes sure only one machine does a job at a time, even when machines crash or freeze.', examples: 'Chubby, ZooKeeper, etcd', tags: ['raft', 'fencing', 'lease'] },
 
     { slug: 'ride-sharing', domain: 2, title: 'Ride-Sharing Location & Dispatch', one: 'Finds the right nearby driver for a rider in about a second, while millions of drivers keep moving.', examples: 'Uber, Lyft', tags: ['H3', 'S2', 'matching'] },
-    { slug: 'proximity-service', domain: 2, title: 'Proximity Service', examples: 'Yelp, Tinder, Google Maps', tags: ['geohash', 'quadtree'] },
-    { slug: 'chat', domain: 2, title: 'Real-Time Chat & Messaging', examples: 'WhatsApp, Discord, Slack', tags: ['websocket', 'scylla'] },
-    { slug: 'leaderboard', domain: 2, title: 'Live Leaderboard', examples: 'Gaming, Peloton', tags: ['sorted set', 'skip list'] },
-    { slug: 'collab-editing', domain: 2, title: 'Collaborative Editing', examples: 'Google Docs, Figma', tags: ['OT', 'CRDT'], added: true },
+    { slug: 'proximity-service', domain: 2, title: 'Proximity Service', one: 'Finds the shops, restaurants or places nearest to you out of millions, in a split second.', examples: 'Yelp, Tinder, Google Maps', tags: ['geohash', 'quadtree'] },
+    { slug: 'chat', domain: 2, title: 'Real-Time Chat & Messaging', one: 'Delivers messages instantly and in order to every device, and catches you up after you were offline.', examples: 'WhatsApp, Discord, Slack', tags: ['websocket', 'scylla'] },
+    { slug: 'leaderboard', domain: 2, title: 'Live Leaderboard', one: 'Ranks millions of players by score and tells anyone their exact position the moment scores change.', examples: 'Gaming, Peloton', tags: ['sorted set', 'skip list'] },
+    { slug: 'collab-editing', domain: 2, title: 'Collaborative Editing', one: 'Lets many people edit the same document at once and always end up with the same text.', examples: 'Google Docs, Figma', tags: ['OT', 'CRDT'], added: true },
     { slug: 'multiplayer-game', domain: 2, title: 'Multiplayer Game Backend', one: 'Lets players in different places share one fair, cheat-proof game world that feels instant despite lag.', examples: 'Valorant, Agones', tags: ['tick rate', 'netcode'], added: true },
 
     { slug: 'ticket-booking', domain: 3, title: 'Ticket Booking & Flash Sales', one: 'Sells seats to a huge rush of fans so every seat goes to exactly one buyer and the site stays up.', examples: 'Ticketmaster, BookMyShow', tags: ['waiting room', 'locks'] },
