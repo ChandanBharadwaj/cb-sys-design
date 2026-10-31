@@ -133,3 +133,43 @@ Rules:
 2. Run `node tools/check.js <slug> [<slug>...]`. Every line must start with ✓, at both phone and desktop sizes: no console errors, no horizontal overflow, scenarios and knobs work, and there are ≥ 8 interview questions and ≥ 3 sources.
 3. **Look at the screenshots** with the Read tool: `.shots/<slug>-phone-architecture.png`, `-desk-architecture.png`, `-phone-knobs.png` and `-phone-deep-dive.png`. Fix overlapping boxes, cramped tall layouts and unreadable widgets.
 4. Do not run git commands. The coordinator commits.
+
+---
+
+## The `intro` block ("Start here" section)
+
+Every page starts with a beginner-friendly section. Put `intro` right after `tldr` in the data file. The reference is `docs/data/ride-sharing.js`; read its `intro` first and match its tone and depth.
+
+```js
+intro: {
+  what: 'Plain-English definition. 2–3 short sentences. Say what the system IS and what it DOES for its users.',
+  analogy: { icon: '🚕', title: 'A short everyday comparison', text: '3–4 sentences mapping the analogy onto the real system.' },
+  problem: 'What goes wrong without it. Use one concrete scenario. 2–4 sentences. Bold the core question it answers.',
+  story: [   // exactly 3 frames, in this order
+    { stage: 'naive',  title: '…', text: 'The obvious first design and why people try it.', scene: {...} },
+    { stage: 'breaks', title: '…', text: 'What breaks at scale or under failure, concretely.', scene: {...} },
+    { stage: 'fix',    title: '…', text: 'The key idea of the real design, in plain words.', scene: {...} }
+  ],
+  usedBy: ['Well-known product or company', ...],   // 4–7 items; only well-known, uncontroversial public uses
+  whenToUse: ['…', '…', '…'],                       // exactly 3
+  whenNot:   ['…', '…', '…'],                       // exactly 3; link related pages: <a href="slug.html">Title</a>
+  glossary: [{ term: '…', def: 'One sentence.' }]  // 6–8 terms that appear later on the page
+}
+```
+
+### Story scenes (mini animated diagrams)
+- `scene: { nodes, edges, flow, err?, warn?, ok?, badges?, hot? }`, using the same node/edge/flow/badge format as the architecture diagram.
+- Nodes use **`at: [x, y]`** on a single compact canvas **420 units wide**. Node size is 128×50.
+  - **Columns:** x = **70 / 210 / 350**.
+  - **Rows:** y = 0, 110, 220 (max 3 rows).
+  - **Nodes:** at most **7**, ideally 3–5.
+  - **Text:** labels ≤ 14 chars, subs ≤ 18 chars.
+- **Tone:** the `breaks` frame should show the failure (`err` / `warn` nodes, red badges such as `['overloaded', 'err']`). The `fix` frame should show the remedy (`ok` nodes, a green badge).
+- **Flow:** the `flow` loops while the frame is visible, so keep it to 2–5 hops. Use an inner array for parallel hops: `[['a>b', 'c>b']]`.
+- **Continuity:** reuse node ids across frames so the reader sees the same picture evolve.
+
+### Writing style for the intro
+- Write for a smart developer who has **never** studied this system. Define every term the first time it appears, and avoid acronyms there.
+- Short sentences, active voice. Bold only the 2–3 phrases that matter.
+- **No company-specific numbers in the intro.** Those live in "Real world" with sources. The intro is conceptual, so it needs little or no web search.
+- Be accurate. The analogy must not imply something technically false. If the analogy breaks down somewhere important, say so in one clause.
