@@ -518,7 +518,8 @@ table.t td:first-child { font-weight: 600; }
 .sys-card .seen { width: 20px; height: 20px; border-radius: 50%; background: var(--ok); color: #fff; font-size: 12px; display: grid; place-items: center; }
 .sys-card .num { font-family: var(--mono); font-size: 11px; color: var(--text-3); }
 .empty { padding: 30px; text-align: center; color: var(--text-3); }
-.howto { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 26px; }
+.howto { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-top: 26px; }
+@media (max-width: 1000px) { .howto { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 760px) { .howto { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .howto .stat .v { font-size: 18px; }
 

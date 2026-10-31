@@ -26,12 +26,13 @@
       <span class="pill">sourced from papers &amp; engineering blogs</span>
     </div>
     <h1>System design you can <span class="grad">watch, tweak and break.</span></h1>
-    <p>Each design has an animated architecture, step-through scenarios including failures, design knobs that show how a different choice changes the outcome, how real companies built it (with sources), and interview questions.</p>
+    <p>Every page opens with a plain-English <b>Start here</b> section: what the system is, what problem it solves and why the obvious design breaks. Then each design has an animated architecture, step-through scenarios including failures, design knobs that show how a different choice changes the outcome, how real companies built it (with sources), and interview questions.</p>
     <div class="ix-tools">
       <label class="search" for="q"><span aria-hidden="true">⌕</span><input id="q" type="search" placeholder="Search: kafka, H3, idempotency, HNSW…" autocomplete="off"></label>
       <button class="btn" id="onlyNew" aria-pressed="false">★ Only added systems</button>
     </div>
     <div class="howto" id="howto">
+      <div class="stat"><div class="v">① Start here</div><div class="l">Plain-English intro: what it is, the problem it solves, an animated before/after story</div></div>
       <div class="stat"><div class="v">▶ Scenarios</div><div class="l">Step through happy paths and failures as packets move</div></div>
       <div class="stat"><div class="v">⇄ Knobs</div><div class="l">Change one decision and the diagram and metrics update</div></div>
       <div class="stat"><div class="v">↗ Real world</div><div class="l">How Uber, Netflix, Stripe and others actually built it</div></div>
@@ -69,10 +70,11 @@
           visited.has(s.slug) ? el('span', { class: 'seen', title: 'Visited', text: '✓' }) : null),
         el('span', { class: 'num', text: String(n).padStart(2, '0') }),
         el('h3', { text: s.title }),
-        el('div', { class: 'ex', text: s.examples }),
+        s.one ? el('div', { class: 'one', text: s.one }) : null,
+        el('div', { class: 'ex', text: 'e.g. ' + s.examples }),
         el('div', { class: 'tags' }, s.tags.map((t) => el('span', { text: t }))));
       grid.append(a);
-      cards.push({ a, s, sec, text: [s.title, s.examples, s.tags.join(' '), d.name].join(' ').toLowerCase() });
+      cards.push({ a, s, sec, text: [s.title, s.one || '', s.examples, s.tags.join(' '), d.name].join(' ').toLowerCase() });
     });
     host.append(sec);
   });
