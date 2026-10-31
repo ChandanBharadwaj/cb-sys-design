@@ -294,9 +294,11 @@ SD.register({
   realWorld: {
     intro: 'Facebook\'s memcache paper is the classic reference; Redis Cluster and Twitter\'s caches show other choices.',
     timeline: [
+      { when: '1997', who: 'MIT (Karger et al.)', title: 'Consistent hashing (STOC \'97)', text: 'Karger, Lehman, Leighton, Panigrahy, Levine and Lewin define a hash that <b>changes minimally when the set of caches changes</b>, and use it to spread web-cache load without every client knowing the full, current set of servers. The idea behind Akamai and every hash ring since.', src: 6 },
       { when: '2013', who: 'Facebook', title: 'Scaling Memcache at Facebook (NSDI \'13)', text: 'A look-aside memcache tier serving <b>billions of requests per second</b> and holding <b>trillions of items</b>. Writes go to MySQL, then delete the key. The paper introduces <b>leases</b> against stale sets and herds (peak DB query rate 17K/s → 1.3K/s in their measurement), <b>gutter</b> servers for failed hosts and <b>mcsqueal</b>, which reads the MySQL commit log to broadcast deletes.', src: 0 },
       { when: '2013', who: 'Facebook', title: 'Engineering blog companion', text: 'Facebook\'s own summary of the paper: regions, clusters and how invalidations reach every cache.', src: 1 },
       { when: '2014', who: 'Facebook', title: 'mcrouter open-sourced', text: 'A memcached-protocol router used across thousands of cache servers in dozens of clusters, handling close to <b>5 billion requests per second</b> at peak. Any memcached client can talk to it unchanged, because it speaks the memcached protocol.', src: 2 },
+      { when: '2015', who: 'Vattani et al.', title: 'XFetch: optimal probabilistic early expiry (VLDB)', text: 'Vattani, Chierichetti and Lowenstein show that refreshing early with probability rising towards expiry, scaled by how long the value takes to <b>recompute</b>, prevents stampedes with no locks or coordination, and prove the scheme optimal in their model.', src: 7 },
       { when: '2012', who: 'Twitter', title: 'Twemcache', text: 'Twitter forked Memcached into <b>Twemcache</b> to make it a reliable building block for its production environment.', src: 3 },
       { when: 'Later', who: 'Twitter', title: 'Twemcache → Pelikan', text: 'Twemcache is no longer maintained; Twitter\'s later caching work moved to <b>Pelikan</b>, a framework for building cache servers.', src: 4 },
       { when: 'Spec', who: 'Redis', title: 'Redis Cluster: 16384 hash slots', text: '<code>HASH_SLOT = CRC16(key) mod 16384</code>. Nodes gossip over a cluster bus, do not proxy requests, and redirect clients with <code>-MOVED</code> / <code>-ASK</code>. Hash tags <code>{…}</code> force related keys into one slot.', src: 5 }
@@ -313,7 +315,9 @@ SD.register({
       { title: 'Introducing mcrouter: a memcached protocol router', url: 'https://engineering.fb.com/2014/09/15/web/introducing-mcrouter-a-memcached-protocol-router-for-scaling-memcached-deployments/', pub: 'Facebook Engineering, 2014' },
       { title: 'Caching with Twemcache', url: 'https://blog.x.com/engineering/en_us/a/2012/caching-with-twemcache', pub: 'Twitter Engineering, 2012' },
       { title: 'twitter/twemcache (see Pelikan)', url: 'https://github.com/twitter/twemcache', pub: 'GitHub' },
-      { title: 'Redis cluster specification', url: 'https://redis.io/docs/latest/operate/oss_and_stack/reference/cluster-spec/', pub: 'Redis docs' }
+      { title: 'Redis cluster specification', url: 'https://redis.io/docs/latest/operate/oss_and_stack/reference/cluster-spec/', pub: 'Redis docs' },
+      { title: 'Consistent Hashing and Random Trees: Distributed Caching Protocols for Relieving Hot Spots on the World Wide Web', url: 'https://cs.brown.edu/courses/csci2950-u/f09/papers/chash97stoc.pdf', pub: 'Karger et al., ACM STOC 1997 (doi 10.1145/258533.258660)' },
+      { title: 'Optimal Probabilistic Cache Stampede Prevention', url: 'https://mail.vldb.org/pvldb/volumes/8/paper/Optimal%20Probabilistic%20Cache%20Stampede%20Prevention', pub: 'Vattani, Chierichetti, Lowenstein · PVLDB 8(8), 2015' }
     ]
   },
 
@@ -342,9 +346,9 @@ SD.register({
     { q: 'How can cache-aside leave stale data in the cache?', a: '<p>Reader A misses and reads the old row. Writer B updates the DB and deletes the key. A then <code>set</code>s the old value. The cache is stale until the TTL.</p><p>Fixes: <b>leases</b> (the delete voids A\'s token), <b>versioned sets</b> (reject older versions), and short TTLs as a backstop.</p>', lvl: 'core' },
     { q: 'On a write, why delete the key instead of updating it?', a: '<p>Two concurrent writers can update the DB in one order and the cache in the other, leaving the cache wrong indefinitely. A <b>delete</b> is idempotent and order-independent: the next reader loads whatever the DB holds.</p>', lvl: 'core' },
     { q: 'How do you handle a hot key?', a: '<ul><li><b>L1 in-process cache</b> with a 1–5 s TTL on every app server.</li><li><b>Replicate</b> the key under several names (<code>key#0..7</code>) on different shards and read a random one.</li><li><b>Coalesce</b> misses (leases / single-flight) so expiry does not cause a herd.</li></ul>', lvl: 'core' },
-    { q: 'Why do consistent-hash rings use virtual nodes?', a: '<p>With one point per server, the arcs between points are uneven, so some servers own far more keys. When a server leaves, its whole arc lands on one neighbour.</p><p>With <b>many virtual nodes</b> per server, ownership averages out, and a removed server\'s keys spread across all others.</p>', lvl: 'core' },
+    { q: 'Why do consistent-hash rings use virtual nodes?', a: '<p>With one point per server, the arcs between points are uneven, so some servers own far more keys. When a server leaves, its whole arc lands on one neighbour.</p><p>With <b>many virtual nodes</b> per server, ownership averages out, and a removed server\'s keys spread across all others. (Consistent hashing itself comes from Karger et al., STOC 1997.)</p>', fu: 'How many vnodes? (Enough that max/avg load is close to 1, often in the low hundreds per server (ketama uses 160); more costs ring memory and lookup time. Try the deep-dive slider.)', lvl: 'core' },
     { q: 'Redis or Memcached?', a: '<p><b>Memcached</b>: plain key → blob, multithreaded, very predictable. Good for huge simple look-aside caches.</p><p><b>Redis</b>: data structures (hashes, sorted sets, streams), atomic scripts, replication and Redis Cluster. Good when the cache also does counters, leaderboards, rate limits or queues.</p>', lvl: 'core' },
-    { q: 'Cache penetration vs avalanche vs stampede?', a: '<ul><li><b>Penetration</b>: requests for keys that do not exist always miss. Cache "not found" briefly or use a Bloom filter.</li><li><b>Avalanche</b>: many keys expire at once (same TTL, cold restart). Add TTL jitter and warm up.</li><li><b>Stampede</b>: one hot key expires and every reader hits the DB. Leases, single-flight, early refresh.</li></ul>', lvl: 'core' },
+    { q: 'Cache penetration vs avalanche vs stampede?', a: '<ul><li><b>Penetration</b>: requests for keys that do not exist always miss. Cache "not found" briefly or use a Bloom filter.</li><li><b>Avalanche</b>: many keys expire at once (same TTL, cold restart). Add TTL jitter and warm up.</li><li><b>Stampede</b>: one hot key expires and every reader hits the DB. Leases, single-flight, or <b>probabilistic early refresh</b> (XFetch, Vattani et al. 2015): each reader refreshes early with a probability that rises near expiry, so one reader usually refreshes first.</li></ul>', lvl: 'core' },
     { q: 'How does Facebook keep caches consistent across regions?', a: '<p>One region holds the MySQL primary; others hold replicas. In every region, <b>mcsqueal</b> reads the local MySQL commit log and sends deletes to local caches, so caches are invalidated only after the local DB has the change.</p><p>For a user\'s own writes from a non-primary region, a <b>remote marker</b> tells reads to go to the primary region until replication catches up.</p>', lvl: 'deep' },
     { q: 'What happens when you add a node with hash % N?', a: '<p>Almost every key changes owner: going from N to N+1 remaps about <b>N/(N+1)</b> of keys. The cache behaves as if flushed and the DB takes all misses.</p><p>Consistent hashing or hash slots move only about <b>1/(N+1)</b>.</p>', lvl: 'core' },
     { q: 'How do Redis Cluster hash slots work?', a: '<p><code>slot = CRC16(key) mod 16384</code>. Each primary owns ranges of slots. Clients cache the slot map; a wrong node replies <code>MOVED</code> (permanent) or <code>ASK</code> (during migration, one request).</p><p>Multi-key operations need all keys in one slot, which <code>{hash tags}</code> provide.</p>', lvl: 'deep' },
@@ -397,26 +401,31 @@ class ProductService {
       code: `import json
 import random
 import time
+import uuid
 import redis
 
 r = redis.Redis()
+# release the lease only if we still hold it (it may have expired and moved on)
+RELEASE = r.register_script(
+    "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0")
 
 def get_or_load(key: str, load, ttl: int = 600, lease_ttl: int = 5):
     for _ in range(100):                       # ~5 s max wait
         cached = r.get(key)
         if cached is not None:
             return json.loads(cached)
+        token = uuid.uuid4().hex
         # miss: only one caller per key wins the lease and hits the DB
-        if r.set(f"lease:{key}", "1", nx=True, ex=lease_ttl):
+        if r.set(f"lease:{key}", token, nx=True, ex=lease_ttl):
             try:
                 value = load()                 # e.g. SELECT ... FROM products WHERE id = %s
                 jitter = random.randint(0, ttl // 10)
                 r.set(key, json.dumps(value), ex=ttl + jitter)
                 return value
             finally:
-                r.delete(f"lease:{key}")
+                RELEASE(keys=[f"lease:{key}"], args=[token])
         time.sleep(0.05)                       # someone else is loading
-    return load()                              # lease holder died: fall back`,
+    return load()                              # lease holder stuck: fall back`,
       note: 'Unlike Facebook\'s leases, this does not stop stale sets; pair it with delete-on-write and the TTL.'
     },
     {
