@@ -11,3 +11,4 @@
   - Knob maths: hit, shield and origin RPS; every option changes the meters.
   - Calculator (labelled estimates), and the Spring `CacheControl` builder methods, which exist in Spring 6.
   - The cURL and Cloudflare purge API shape. The Spring Java was not compiled because it needs Spring.
+- **Compile check (Spring Boot 3.5.16):** the controller compiled clean, with stub types `ProductDto` and `ProductService`. Ran it in embedded Tomcat: the 200 response sends `ETag`, `Cache-Control: max-age=60, public, s-maxage=86400, stale-while-revalidate=60` and `Cache-Tag`, and `If-None-Match` returns 304 with no body. All four `spring.web.resources.*` keys in the comment exist in the Boot metadata. No change.

@@ -307,7 +307,7 @@ SD.register({
       { when: 'Since 2016', who: 'NPCI', title: 'Pay and collect over a central switch', text: 'UPI connects many bank accounts behind one interface. A <b>pay request</b> pushes money to a payee; a <b>collect request</b> lets a payee pull money after the payer approves, using a virtual payment address instead of account details.', src: 6 },
       { when: 'Sep 2019', who: 'RBI', title: 'Turnaround times for failed transactions', text: 'RBI harmonised TATs across payment systems. For a UPI transfer where the account is debited but the beneficiary is not credited, the beneficiary bank must <b>auto-reverse by T+1</b>, or pay <b>₹100 per day</b> of delay, without waiting for a complaint. Merchant cases get T+5.', src: 0 },
       { when: 'Jun 2025', who: 'NPCI', title: 'Faster API deadlines', text: 'As reported, from 16 June 2025 NPCI cut the response time for pay requests from <b>30 s to 15 s</b>, and for check-status and reversal from 30 s to 10 s, so stuck transactions resolve sooner.', src: 1 },
-      { when: 'Aug 2025', who: 'NPCI', title: 'Caps on status checks and balance enquiries', text: 'After repeated outages, an NPCI circular (May 2025, effective <b>1 August 2025</b>) reportedly requires PSPs to wait at least <b>90 seconds</b> after a payment before the first status check, and to make <b>at most 3 checks within 2 hours</b>. It also caps balance enquiries at 50 per app per user per day. These details come from press and law-firm summaries; the circular itself did not surface in search.', src: 8 },
+      { when: 'Apr–Aug 2025', who: 'NPCI', title: 'Caps on status checks and balance enquiries', text: 'In <b>UPI OC No. 214</b> (26 April 2025), NPCI told PSP and acquiring banks to send the first <b>check-transaction-status</b> call no earlier than <b>90 seconds</b> after a payment is initiated, to make <b>at most 3</b> such calls, preferably within <b>2 hours</b>, and to stop once a final error code comes back. A May 2025 follow-up (OC 215A) capped other high-frequency APIs, e.g. <b>50 balance enquiries per app per user per day</b>, with compliance due by 31 July 2025.', src: 9 },
       { when: 'Oct 2025', who: 'NPCI', title: 'Person-to-person collect switched off', text: 'An NPCI circular dated 29 July 2025 said P2P collect would no longer be processed from <b>1 October 2025</b>, closing a channel long abused for fraud. Merchant collect requests continue.', src: 2 },
       { when: 'H1 FY26', who: 'PhonePe', title: 'Peak of ~22K TPS for one app', text: 'Press coverage of PhonePe\'s IPO filing reported a platform peak of <b>22,369 transactions per second</b> in the first half of FY26, on an in-house stack.', src: 3 },
       { when: 'Aug 2026', who: 'NPCI', title: 'Record month: 24.51 billion', text: 'UPI processed a record <b>24.51 billion</b> transactions in August 2026.', src: 5 },
@@ -328,7 +328,9 @@ SD.register({
       { title: 'UPI hits highest-ever monthly volume: 24.51 billion transactions in August 2026', url: 'https://startuptalky.com/india-upi-transactions-august-2026-record-volume/', pub: 'StartupTalky, Sep 2026' },
       { title: 'UPI product overview', url: 'https://www.npci.org.in/what-we-do/upi/product-overview', pub: 'NPCI' },
       { title: 'UPI processes 24.07 billion transactions worth ₹29.37 lakh crore in September', url: 'https://www.outlookmoney.com/banking/upi-processes-2407-billion-transactions-worth-rs-2937-lakh-crore-in-september', pub: 'Outlook Money, Oct 2026' },
-      { title: 'NPCI tightens UPI API rules from August 1 after repeated outages', url: 'https://www.outlookmoney.com/banking/npci-tightens-upi-api-rules-from-august-1-after-repeated-outages', pub: 'Outlook Money, 2025' }
+      { title: 'NPCI tightens UPI API rules from August 1 after repeated outages', url: 'https://www.outlookmoney.com/banking/npci-tightens-upi-api-rules-from-august-1-after-repeated-outages', pub: 'Outlook Money, 2025' },
+      { title: 'UPI API guidelines: NPCI springs to action with two new circulars to contain UPI outages', url: 'https://www.business-standard.com/finance/news/npci-springs-to-action-with-two-new-circulars-to-contain-upi-outages-125042901208_1.html', pub: 'Business Standard, Apr 2025 (on NPCI UPI OC 214)' },
+      { title: 'NPCI issued a circular regarding the Initial Streamlining of the Check Transaction usage in UPI', url: 'https://teamleaseregtech.com/updates/article/42023/npci-issued-a-circular-regarding-the-initial-streamlining-of-the-check/', pub: 'TeamLease RegTech, quoting NPCI UPI OC 214 (26 Apr 2025)' }
     ]
   },
 
@@ -444,7 +446,7 @@ public void resolvePending() {
     }
   }
 }`,
-      note: '<code>next_check_at</code> defaults to 90 s after insert (see the table below), and later checks back off 90 s → 180 s, so all 3 land well inside 2 hours. That matches the reported Aug 2025 limits (first check ≥ 90 s, ≤ 3 checks in 2 hours); confirm against the current NPCI circular. After the cap, reconciliation and the T+1 reversal rule take over.'
+      note: '<code>next_check_at</code> defaults to 90 s after insert (see the table below), and later checks back off 90 s → 180 s, so all 3 land well inside 2 hours. That matches NPCI UPI OC 214 (first check ≥ 90 s after the payment, at most 3 checks, preferably within 2 hours); check for later NPCI revisions. After the cap, reconciliation and the T+1 reversal rule take over.'
     },
     {
       title: 'Postgres: transaction table and reconciliation', lang: 'sql',

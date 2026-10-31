@@ -376,10 +376,10 @@ class IdBlock {                       // sequence is INCREMENT BY 1000
 final class Base62 {
   private static final char[] A =
       "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ".toCharArray();
-  static String encode(long n) {
-    if (n == 0) return "0";
+  static String encode(long n) {      // fixed 7 chars, so ids < 62^3 still match {4,12}
     StringBuilder sb = new StringBuilder();
     for (; n > 0; n /= 62) sb.append(A[(int) (n % 62)]);
+    while (sb.length() < 7) sb.append('0');                // left-pad with '0'
     return sb.reverse().toString();
   }
 }

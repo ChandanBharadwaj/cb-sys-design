@@ -10,3 +10,4 @@
 - Interview: added "rename a 10 GB folder: what gets uploaded?" (metadata-only commit, move detection, cross-namespace moves); the dedup-security answer now cites the 2010 paper, proofs of ownership, and convergent encryption vs E2E. CDC answer credits LBFS.
 - Code: Python CDC snippet run (prints "1 new chunks"); the Java blocklist method was compiled and run with JDK 17+ in isolation (the Spring RestClient part needs Spring, so it was not run). No bugs found.
 - Left alone: knobs (every option already moves a meter; numbers consistent), calculator (all inputs labelled estimates), architecture and other scenarios.
+- **Compile check (Spring Framework 6.2 `RestClient`, JDK 21):** compiled clean. Ran it on a 4 MiB + 4 MiB + 100 B file against a fake HTTP server: it produced 3 blocks, and two identical blocks were uploaded only once. No change.

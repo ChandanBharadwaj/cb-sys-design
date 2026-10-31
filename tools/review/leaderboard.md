@@ -7,3 +7,4 @@
 - Java: the weekly key now zero-pads the ISO week (`%d-W%02d`), so it matches `lb:weekly:2026-W44` everywhere and sorts correctly. Not compiled, because it needs Spring jars.
 - Python: I ran the tie-break plus score-range-shard snippet against a local redis-server (redis-py in a temp dir). Ranks across bands come out correct, and the 2²¹ precision bound holds. I added a guard so a missing player raises `KeyError` instead of a `TypeError` on `None + int`.
 - Checked and left alone: Redis t_zset.c description (Pugh's paper, repeated scores, span), the O(log N + M) ZRANGE cost, the ZCOUNT shared-rank formula, and the knob model (illustrative and labelled as such).
+- **Compile check (Spring Data Redis, Boot 3.5.16):** compiled clean. Ran it against a local Redis. The pipelined `ZINCRBY` updated both boards, rank is 1-based with null for unknown players, `top` and `around` returned the right members, and the weekly key `lb:weekly:2026-W44` got a 21-day TTL. No change.

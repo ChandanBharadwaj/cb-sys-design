@@ -435,7 +435,8 @@ public class ChargeService {
     IdemKey k = jdbc.sql("""
         INSERT INTO idempotency_keys (user_id, idem_key, request_hash, locked_at)
         VALUES (:u, :k, :h, now())
-        ON CONFLICT (user_id, idem_key) DO UPDATE SET locked_at = now()
+        ON CONFLICT (user_id, idem_key) DO UPDATE      -- a finished key is replayed, not locked
+           SET locked_at = CASE WHEN idempotency_keys.recovery_point = 'finished' THEN NULL ELSE now() END
          WHERE idempotency_keys.locked_at IS NULL
             OR idempotency_keys.locked_at < now() - interval '60 seconds'
         RETURNING id, request_hash, recovery_point, response_code, response_body""")

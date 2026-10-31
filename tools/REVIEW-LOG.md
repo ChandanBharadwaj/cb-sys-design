@@ -6,6 +6,24 @@ Each page was reviewed on its own, one after another. Every page had:
 
 Each entry lists what changed and what was deliberately left as it was.
 
+## Follow-up verification
+
+- **Chubby grace period:** confirmed in the OSDI'06 paper itself (§2.8: jeopardy, then a grace period of 45 s by default). The lock-manager page now cites the paper rather than course notes.
+- **UPI status-check limits:** now attributed to **NPCI circular UPI OC No. 214 (26 Apr 2025)**, as quoted in Business Standard and TeamLease RegTech coverage. The rules are: first check no sooner than 90 s, at most 3 checks, preferably within 2 hours, and stop on a final error code. The balance-enquiry caps come from the May 2025 follow-up circular, OC 215A. NPCI's own site cannot be reached from the build environment, so the PDF itself was not opened.
+- **Library-dependent Java snippets (36):** all compiled with `javac 21 -Xlint:deprecation,removal` against the real libraries (Spring Boot 3.5.16, Spring Cloud Gateway 2025.0, Spring Data Elasticsearch/Cassandra, Spring Kafka, Spring Integration JDBC, Resilience4j, Flink 1.20.5, AWS SDK v2, Jedis, H3, Disruptor 4, Guava). Most were also run against local Postgres 16 / Redis 7, or a local Flink cluster. Only three were not run, because they need services that are not available locally: the Cassandra and Redis Top-K snippets, and the stream-analytics Flink job, which reads from Kafka.
+  - **Bugs found and fixed:**
+    - payment idempotency replay re-locked finished keys;
+    - URL shortener codes were not padded, so the route rejected them;
+    - S3 multipart parts were not sorted;
+    - food-delivery zone loop aborted on the first lost race.
+  - **Config fixed:** the Spring Kafka YAML was missing its JSON value deserializer.
+  - **Note corrected:** ticket-booking's concurrent retry fails as "seats unavailable", not at the unique index.
+- **Config files:**
+  - The Spring Boot, Spring Cloud Gateway and Spring Kafka YAML keys were checked against the jars' configuration metadata.
+  - The OpenTelemetry Collector pipeline was checked for structure.
+  - The Agones Fleet, FleetAutoscaler and GameServerAllocation were checked against the v1 spec.
+  - The LiteLLM config was loaded with the real LiteLLM proxy loader. Its comment now says the semantic cache needs Redis credentials.
+
 
 ---
 
@@ -17,6 +35,7 @@ Each entry lists what changed and what was deliberately left as it was.
 - Added the classic follow-up "How is a leaky bucket different?" to the token-bucket question. The knobs already include leaky bucket, but no answer explained it.
 - Checked and left alone: Stripe's four limiter types and token buckets in Redis; Cloudflare's 0.003% on 400M requests from 270K sources; GitHub's 2021 move from Memcached to sharded Redis with stored reset times; and Envoy/Lyft ratelimit. Terms match across intro, glossary, knobs and interview (token bucket = rate + capacity; window counter formula `prev × (1 − elapsed/window) + curr`).
 - Knobs: when counters are local, the "If Redis fails" option has no effect. That is inherent to the design (no Redis). The default (central Redis) shows the open/closed difference in both the meter and the verdict. Calculator units and estimate labels are fine.
+- **Compile check:** The interceptor compiles cleanly (Boot 3.5, Spring Data Redis 3.5). I ran it with the page's Lua script against a local Redis 7.0: 20 allowed, then 429 with `Retry-After: 1` and remaining 0. After 1.1 s the bucket refilled to 10. With Redis unreachable it fails open. No changes.
 
 
 ---
@@ -29,6 +48,7 @@ Each entry lists what changed and what was deliberately left as it was.
 - Updated an outdated fact: the interview answer said share groups (KIP-932) were early access in Kafka 4.0. The Apache Kafka 4.2.0 release announcement (2026) says Queues for Kafka are production-ready. I added a 2026 timeline item and a source, and updated the "queue vs log" answer.
 - Checked and left alone: LinkedIn 2019 figures (7T msgs/day, 100+ clusters, 4,000+ brokers), Kafka 3.9 tiered storage GA, Kafka 4.0 KRaft-only, acks=all default since 3.0, and the knob logic (min ISR = RF blocks writes on one broker loss; EOS requires acks=all). The knob meters and verdicts are consistent with the interview answers.
 - Calculator is sound (bytes/s, retention × RF, partitions from per-partition MB/s marked as an estimate). Left as is. YAML and the Spring Kafka DLQ Java (`DefaultErrorHandler`, `DeadLetterPublishingRecoverer`, `FixedBackOff`) use current spring-kafka 3.x APIs. Not compiled (needs Spring jars).
+- **Compile check (spring-kafka 3.3, Boot 3.5.16):** the DLQ/listener Java compiled clean. YAML keys were checked against Boot metadata and Kafka `ProducerConfig`/`ConsumerConfig` names, then bound into `KafkaProperties`. **Fixed a real bug:** the consumer had no `value-deserializer`, so it defaulted to `StringDeserializer` and `rec.value().eventId()` in the listener would throw `ClassCastException`. Added `JsonDeserializer` and `spring.json.trusted.packages`. A JsonSerializer → JsonDeserializer round trip with type headers was verified.
 
 
 ---
@@ -41,6 +61,7 @@ Each entry lists what changed and what was deliberately left as it was.
 - Bug fix in the Python lease snippet: `finally: r.delete(lease)` could delete a lease that had expired and been taken by another loader. It now stores a random token and releases with a compare-and-delete Lua script. Tested against a local redis-server: 8 concurrent threads → 1 DB load, no lease left behind, and a stale holder cannot delete someone else's lease.
 - Ran the XFetch snippet with an in-memory cache: no early recomputes far from expiry, and about 44% of reads refresh when 10 ms from expiry with delta ≈ 10 ms. This matches the expected exp(−gap/(δ·β)) behaviour. The Spring `RedisCacheManager.transactionAware()` + `@Cacheable(sync = true)` Java uses current Spring Data Redis 3 APIs; it was not compiled because it needs Spring jars.
 - Checked and left alone: the Facebook NSDI '13 figures (leases cut peak DB queries from 17K/s to 1.3K/s), mcrouter ~5B req/s (2014), Redis Cluster's CRC16 mod 16384 with MOVED/ASK, and Redis's default `noeviction`. Knob meters are consistent with the widget (`hash % N` moves N/(N+1) of keys; the ring and slots move 1/(N+1)). The calculator note "a 1-point hit-ratio drop *can* double DB load" holds at 99% hit, so it was left as is.
+- **Compile check (Spring Boot 3.5.16, Spring Data Redis):** compiled clean, with no deprecation warnings for `GenericJackson2JsonRedisSerializer`. Ran it with a real Redis and a transaction manager. The second `get` was a cache hit, the record round-tripped as JSON with `@class` and a 600 s TTL, the key was still cached inside the `@Transactional` update, and it was gone after commit. No change.
 
 
 ---
@@ -53,6 +74,7 @@ Each entry lists what changed and what was deliberately left as it was.
 - Added a classic follow-up to "Why is a lease alone not enough?": re-checking the lease right before writing does not help, because the pause can fall between the check and the write.
 - Ran the code: the SQL snippet on a temporary Postgres 16 (advisory xact lock returns true; fenced UPDATE with token 34 updates 1 row, a stale token 33 updates 0). The Python SET NX PX + compare-and-delete lock ran against a local redis-server (second acquire fails, foreign release refused, owner release works). The Spring Integration `JdbcLockRegistry` Java needs Spring jars and was not compiled; its API calls match Spring Integration 6.
 - Checked and left alone: Chubby's 5 replicas and 12 s default lease, the Jepsen etcd 3.4.3 summary, Redlock/Kleppmann/antirez framing, the knob model (every option moves Safety, Latency, Failure or Ops meters), and the calculator (Little's law, KeepAlive every TTL/3, (n−1)/2 failures tolerated).
+- **Compile check (Spring Integration JDBC 6.5):** compiled clean. Ran two Spring contexts ("nodes") on Postgres 16 with the `schema-postgresql.sql` shipped in the jar. Node 1 ran the batch, node 2's `tryLock(2 s)` returned after about 2 s without running it, and `INT_LOCK` was empty after unlock. No change.
 
 
 ---
@@ -71,6 +93,7 @@ Each entry lists what changed and what was deliberately left as it was.
 - Shortened the shard-down scenario's last caption from 226 to under 220 characters.
 - Code: ran the scipy batched-matching snippet on a 3×2 case. It picks the globally cheaper assignment and drops the forbidden > 15-minute pair. Ran the Postgres accept SQL: the first accept wins, the second returns 0 rows, and the partial unique index blocks a second active ride. The Java/H3 snippet needs h3-java and Spring Data Redis, so it was not run; the H3 v4 method names were checked.
 - Left alone: the 2015 talk figures (4 s pings, 1M writes/s), the H3 facts (122 base cells, 16 resolutions, res 9 ≈ 0.1 km²), the Redis GEO 52-bit geohash note and the timeline.
+- **Compile check:** The H3 + Redis snippet compiles cleanly against h3 4.5.1 and Spring Data Redis 3.5. I ran it against a local Redis: moving a driver between cells updates the sets, and the k-ring search returns the nearest drivers first. No changes.
 
 
 ---
@@ -85,6 +108,7 @@ Each entry lists what changed and what was deliberately left as it was.
 - Defined "LBS" (location-based service) on first use in the search scenario. Noted that geohash cell sizes are at the equator.
 - Ran the Python geohash snippet: `encode(57.64911, 10.40744, 11)` gives the canonical `u4pruydqqvj`; neighbour set is correct. Left the SQL and the Spring Data Redis `GeoOperations.search(...)` snippet as is (APIs exist in Spring Data Redis 2.6+/3.x; no Spring jars to compile against).
 - Left alone: calculator (sensible units, labelled estimates), the knob model (illustrative and says so), Redis 52-bit geohash and S2 level facts.
+- **Compile check:** The Redis GEO snippet compiles cleanly against Spring Data Redis 3.5. I ran it against a local Redis 7.0: GEOADD + GEOSEARCH returned the two places inside 5 km, nearest first, with distances in km. No changes.
 
 
 ---
@@ -98,6 +122,7 @@ Each entry lists what changed and what was deliberately left as it was.
 - Gap: added one interview question on draining stateful gateways (deploys and scale-down without a reconnect storm), with the "gateway dies instead" follow-up.
 - Ran the Python ordering/dedup snippet (hold-back, duplicate drop, gap range): correct. The Java needs Spring jars and was not compiled; the API calls were checked by reading them.
 - Checked for consistency and left alone: the heartbeat/TTL numbers (30 s / 60 s, TTL = 2× heartbeat) match across knobs, interview and glossary; Discord 177 → 72 nodes, 10-day buckets, and the Slack 4M connections / 16M channels per host figures match their cited posts. Calculator units are fine and labelled as estimates.
+- **Compile check (Spring Boot 3.5.16: websocket + data-redis):** compiled clean with stub types (`MessageStore`, `Envelope`, `Stored`, `Ack`, `Delivery`). Ran two handler "nodes" against a local Redis with fake sessions. The sender got its ack, an online member on the other node got the delivery over pub/sub, and the offline member was queued for push. A client retry re-sent the same seq, which the client dedups. No change.
 
 
 ---
@@ -111,6 +136,7 @@ Each entry lists what changed and what was deliberately left as it was.
 - Java: the weekly key now zero-pads the ISO week (`%d-W%02d`), so it matches `lb:weekly:2026-W44` everywhere and sorts correctly. Not compiled, because it needs Spring jars.
 - Python: I ran the tie-break plus score-range-shard snippet against a local redis-server (redis-py in a temp dir). Ranks across bands come out correct, and the 2²¹ precision bound holds. I added a guard so a missing player raises `KeyError` instead of a `TypeError` on `None + int`.
 - Checked and left alone: Redis t_zset.c description (Pugh's paper, repeated scores, span), the O(log N + M) ZRANGE cost, the ZCOUNT shared-rank formula, and the knob model (illustrative and labelled as such).
+- **Compile check (Spring Data Redis, Boot 3.5.16):** compiled clean. Ran it against a local Redis. The pipelined `ZINCRBY` updated both boards, rank is 1-based with null for unknown players, `top` and `around` returned the right members, and the weekly key `lb:weekly:2026-W44` got a 21-day TTL. No change.
 
 
 ---
@@ -136,6 +162,7 @@ Each entry lists what changed and what was deliberately left as it was.
 - Code, Python: the matchmaker removed matched tickets from the sorted set but left their `ticket:{id}` hashes behind forever. They are now deleted in the same pipeline. Ran it against a local redis-server with redis-py: a group of 10 is matched, and the far-off ticket and leftovers stay queued.
 - Code, Java: compiled and ran the fixed-timestep loop with stub types. The rewind maths is correct: 60 ms + 15.6 ms at 128 Hz gives 10 ticks back. The Agones YAML was checked by reading only, against current `agones.dev/v1` Fleet, Buffer FleetAutoscaler and `selectors`-based GameServerAllocation.
 - Checked and left alone: Valorant 128 Hz / ~7.8 ms frame, 35 ms for 70% of players, Source's 100 ms interpolation and 1 s `sv_maxunlag`, and the Agones 2018 launch. All are sourced to Riot, Valve and Google pages.
+- **Compile check:** The Agones YAML (item 2) parses as 3 documents: `agones.dev/v1` Fleet (replicas, GameServer template with a UDP port and pod template), `autoscaling.agones.dev/v1` FleetAutoscaler (Buffer policy with a percentage `bufferSize` plus `minReplicas`/`maxReplicas`), and `allocation.agones.dev/v1` GameServerAllocation using `selectors[].matchLabels` on `agones.dev/fleet` and the propagated `build` label. All fields match the Agones v1 spec. No changes.
 
 
 ---
@@ -150,6 +177,7 @@ Each entry lists what changed and what was deliberately left as it was.
 - Clarity: shortened the "sweeper" scenario step to under 220 characters.
 - Code: ran the SQL snippet (hold, confirm, SKIP LOCKED sweep, `make_interval(mins => …)`) on Postgres 16. Ran the Lua hold script on redis-server, checking all-or-nothing and that an overlapping hold is rejected. Both are correct. The Spring snippet needs Spring Data, so it was not compiled. It was reviewed by eye and is fine.
 - Checked and left alone: the Eras Tour figures (3.5B requests, 4× peak, 3.5M registered / 1.5M invited, ~15% of interactions with issues), the Queue-it pre-queue randomisation, SeatGeek's Lambda + DynamoDB + Fastly design, and the READ COMMITTED re-check explanation. All are correct as written.
+- **Compile check:** The JPA repository + hold service compile cleanly (Spring Data JPA 3.5) with only imports and stub types added. I tested the native UPDATE with `make_interval(mins => ?)` on Postgres 16. **Fixed the note:** a two-session test showed that a concurrent retry with the same key blocks on the seat row locks and then updates 0 rows. So it usually fails with `SeatsUnavailableException`, not at the unique index. The note now says to re-read the hold by key on either error.
 
 
 ---
@@ -164,6 +192,7 @@ Each entry lists what changed and what was deliberately left as it was.
 - Gap filled: a follow-up on the reconciliation question about the PSP webhook racing the synchronous response (one forward-only state machine keyed by PSP charge id), without adding a 13th question.
 - Code: ran the ledger DDL on a scratch Postgres 16. A balanced 3-entry transaction commits and an unbalanced one is rejected at COMMIT by the deferred trigger. Ran the Python reconciliation against that DB with psycopg 3, and it classifies missing, extra and mismatched charges correctly. The Spring `JdbcClient` snippet needs Spring, so it was not run; its API calls (`optional()`, `ON CONFLICT … DO UPDATE … WHERE … RETURNING`) were checked by reading.
 - Left alone: architecture, scenarios (the wallet debit/credit sign convention is correct for liability accounts), calculator (estimates already labelled) and the interview answers.
+- **Compile check:** The JdbcClient charge snippet compiles cleanly (Spring 6.2). Only imports, stub types and the constructor the snippet says it omits were added. **Fixed:** running Phase 0 against Postgres 16 showed that a replay of a *finished* key re-locked it (`locked_at IS NULL` matched), so a second replay within 60 s got 409 "request in progress". The upsert now sets `locked_at = CASE WHEN recovery_point = 'finished' THEN NULL ELSE now() END`. Re-tested: concurrent request → 409, replays → stored response, every time.
 
 
 ---
@@ -177,6 +206,7 @@ Each entry lists what changed and what was deliberately left as it was.
 - Gaps: added the failure row "hold expires while the payment commits", with its detection and fix. It ties the SQL fix to the widget's "hold expired while paying" case.
 - Correctness: the "100+ pods at Shopify" figure could not be found in Shopify's pods post or elsewhere in search, so it was removed from the tl;dr and the timeline. The pods, Sorting Hat (Lua in the load balancer) and checkout-throttle claims are verified and were kept.
 - Checked and left alone: the Dynamo cart (sloppy quorum, hinted handoff, vector clocks, resurrected deletes), Flipkart's 2014 Big Billion Day apology, and the microservices.io saga and outbox description. The calculator's Little's-law hold estimate is labelled as an estimate.
+- **Compile check (Spring Boot 3.5.16 JDBC, Jackson):** both Java snippets compiled clean, with stub types `StaleTransitionException` and `OutOfStockException`. The transition table matches the page. On Postgres 16 with this page's schema: a retried checkout returned the same order, an out-of-stock line rolled back the order and the earlier holds, a stale `move` threw `StaleTransitionException`, and the order change and its outbox row committed together. No change.
 
 
 ---
@@ -189,6 +219,7 @@ Each entry lists what changed and what was deliberately left as it was.
 - Gaps: added an interview question on broadcast offers ("first accept wins") vs. targeted solver offers. This is a classic follow-up the page had not covered.
 - Code: ran the scipy Hungarian round (Python 3.12, scipy 1.18) with a forbidden pair and a rectangular matrix. Results are correct, and a forbidden order is dropped without stealing a useful rider. The Spring snippet (advisory lock per zone plus conditional updates) was checked by reading only. PostGIS is not installed here, so the KNN query was checked by reading only. The `<->` ordering on geography with a GiST index is valid.
 - Checked and left alone: Swiggy's max(assignment + first mile, prep) + last mile decomposition, Zomato's prep-time model, and DoorDash's 2020 MIP/Gurobi (34× CBC, ≤10× Hungarian) and 2021 DeepRed. The calculator formulas (Little's law, ping writes/s) are consistent and labelled as estimates.
+- **Compile check (Spring Boot 3.5.16 JDBC):** compiled clean with stub types (`Order`, `Rider`, `CostModel`, `Solver`). **Fixed a logic bug:** the "lost race" `IllegalStateException` escaped the `for` loop in `run()`, so one contested zone skipped every zone after it that round. The loop now catches it per zone. Verified on Postgres 16: the contested zone rolled back, and the next zone still got its offer and outbox row.
 
 
 ---
@@ -203,6 +234,7 @@ Each entry lists what changed and what was deliberately left as it was.
 - Code, Python: the MoldUDP64 gap detector would crash on the end-of-session packet (count `0xFFFF`), because it tried to parse 65,535 messages. Added that check, plus a note on heartbeats. Tested with a fake socket covering a gap, a duplicate, a heartbeat and end of session.
 - Code, Java: compiled and ran the OrderBook on JDK 17+ (price-time fills, trade at the resting price, cancel). The output is correct. The Disruptor snippet needs the LMAX jar and was not compiled. Its API calls match Disruptor 4.x by inspection.
 - Checked and left alone: LMAX's 6M orders/s on one thread (Fowler), the HN clarification, the Island/Instinet/Nasdaq deal figures, and ITCH nanosecond timestamps over MoldUDP64. The knob meters are internally consistent, and every option changes the meters or the verdict.
+- **Compile check:** Both Java snippets compile cleanly. The order book was run through crosses, FIFO within a level, partial fill + cancel, and an IOC market order, all as the comments describe. The Disruptor 4.0 pipeline compiles; its public classes were put in separate files, and `Journal`/`Replicator`/`Codec` were stubbed as the note says. Over 1M events the matcher never ran ahead of the journal or the replicator, and flushes were batched (about 19K flushes for 1M events). No changes.
 
 
 ---
@@ -216,6 +248,7 @@ Each entry lists what changed and what was deliberately left as it was.
 - Calculator: renamed the status-check output to "worst case: 3 each", because the formula multiplies by 3.
 - Clarity: shortened the status-check-storm scenario caption to under 220 characters. Added a follow-up on what the app shows during the 90 s wait.
 - Checked and left alone: the RBI 2019 TAT (UPI credit not received means reversal by T+1, else ₹100/day; T+5 for merchant cases). Also the Sep 2026 volume of 24.07B (≈ 9,300 TPS average and > 800M/day) and the Aug 2026 record of 24.51B, which are consistent. The knob breaker threshold (50%) matches the Resilience4j config in the code. Every knob option changes the meters or the verdict.
+- **Compile check:** Both Java snippets compile cleanly (Resilience4j 2.2, Spring JDBC 6.2). The `@Scheduled` method was wrapped in a class. Both were run against Postgres 16 using the page's table. A client retry returned the original status without calling NPCI again. Business declines were ignored by the breaker. After 20 timeouts the breaker opened, and later payments were marked FAILED without being sent. Txn ids are 35 chars. The resolver backed off 90 s → 180 s → 360 s and stopped at 3 checks. No changes.
 
 
 ---
@@ -232,6 +265,7 @@ Each entry lists what changed and what was deliberately left as it was.
 - Interview: added a codec-choice follow-up (H.264 first; HEVC/AV1 ladders for popular titles and capable devices) to the per-title question, rather than adding a 13th question.
 - Code: ran the BBA-0 snippet against a 7-rung ladder; it matches the paper's rules and the widget. Ran the ffmpeg split/encode snippet on a generated 8 s test clip with ffmpeg; it works. The Java S3 presign snippet needs the AWS SDK, so it was not compiled; the API calls were checked by reading.
 - Left alone: BBA "10–20% fewer rebuffers" (matches the SIGCOMM 2014 abstract), the Open Connect and VCU cards, the architecture and the scenarios.
+- **Compile check:** The presigned multipart controller compiles cleanly against AWS SDK v2 2.57, and presigning a part URL works offline. **Fixed:** `complete` passed the client's part list to S3 unsorted, and S3 rejects parts that are not in ascending order (`InvalidPartOrder`). It now sorts by part number first.
 
 
 ---
@@ -245,6 +279,7 @@ Each entry lists what changed and what was deliberately left as it was.
 - Knobs: every option moves a meter; the εN-vs-#10 percentages are consistent with the calculator. No change.
 - Code: ran the Python CMS + top-K on a 50K-event Zipf stream; it recovers the exact top 5 and never under-counts (asserted). The w × d = 27,183 × 7 comment is correct. Ran the batch SQL twice on scratch Postgres 16: it is idempotent via ON CONFLICT and ranks correctly. The Jedis Top-K snippet needs Jedis and Redis 8, so it was not run; the method names (`topkReserve`, `topkIncrBy` with a map, `topkListWithCount`) were checked by reading.
 - Not changed: architecture, scenarios (all ≤ 220 chars), glossary and calculator (estimates already labelled).
+- **Compile check:** The Jedis Top-K snippet compiles cleanly against Jedis 6.0. The `topkReserve(key,k,width,depth,decay)`, `topkIncrBy(key, Map)` and `topkListWithCount` signatures match. It was not run, because no RedisBloom/Redis 8 module is available locally. No changes.
 
 
 ---
@@ -261,6 +296,7 @@ Each entry lists what changed and what was deliberately left as it was.
 - Interview: added "rename a 10 GB folder: what gets uploaded?" (metadata-only commit, move detection, cross-namespace moves); the dedup-security answer now cites the 2010 paper, proofs of ownership, and convergent encryption vs E2E. CDC answer credits LBFS.
 - Code: Python CDC snippet run (prints "1 new chunks"); the Java blocklist method was compiled and run with JDK 17+ in isolation (the Spring RestClient part needs Spring, so it was not run). No bugs found.
 - Left alone: knobs (every option already moves a meter; numbers consistent), calculator (all inputs labelled estimates), architecture and other scenarios.
+- **Compile check (Spring Framework 6.2 `RestClient`, JDK 21):** compiled clean. Ran it on a 4 MiB + 4 MiB + 100 B file against a fake HTTP server: it produced 3 blocks, and two identical blocks were uploaded only once. No change.
 
 
 ---
@@ -279,6 +315,7 @@ Each entry lists what changed and what was deliberately left as it was.
   - Python HLL + ladder: ran against a scratch redis-server (5,000 sessions counted as 4,988, ladder levels correct).
   - Spring/Resilience4j snippet: needs Spring, so not run; the bulkhead/fallback signature was checked.
 - Checked and left: the 25.3M and 18.6M figures (Akamai press release, re:Invent session report), the LL-HLS details (PART-HOLD-BACK ≥ 3 part targets), the 12 KB / 0.81% figures for Redis HLL, the calculator formulas, and the knobs (every option moves a meter or the verdict).
+- **Compile check (resilience4j-spring-boot3 2.4.0):** compiled clean. Ran it in a minimal Spring context with the bulkhead and AOP auto-config and `max-concurrent-calls: 2`, `max-wait-duration: 0ms`. Two calls got personal rails, and the other three got the private `fallback` result straight away. The bulkhead keys in the comment match `InstanceProperties`. (The shared classpath mixes resilience4j 2.4.0 and 2.2.0; the run used aligned 2.4.0 jars.) No change.
 
 
 ---
@@ -292,6 +329,7 @@ Each entry lists what changed and what was deliberately left as it was.
 - Left alone: Facebook Multifeed (2012), TAO (≈ 1B reads/s), Twitter's 2023 ranking pipeline (~1,500 candidates, ~half in-network) and Instagram's per-surface rankers. These are standard, well-sourced figures, so no web searches were spent on them.
 - Code: ran the Python hybrid merge against a scratch redis-server. It merges pushed and pulled lists newest-first, deduplicates, and paginates correctly by cursor. Ran the follow-graph DDL and the cursor query on scratch Postgres 16; it skips tombstoned posts and pages by id. The Spring Kafka/Redis worker needs Spring, so it was not run; `queryForList(sql, Long.class, …)`, `executePipelined` and `listCommands()` were checked by reading.
 - Scenarios are all ≤ 220 chars. The knobs already move every meter and label their numbers as illustrative; no change.
+- **Compile check (spring-kafka, Spring Data Redis, JDBC):** compiled clean. Ran it on Postgres 16 and Redis with 2,500 followers, 10% of them inactive. Keyset pages of 1000 wrote 2,250 timelines, a celebrity post was skipped, and 805 posts trimmed a timeline to 800 (newest first). No change.
 
 
 ---
@@ -307,6 +345,7 @@ Each entry lists what changed and what was deliberately left as it was.
   - The Resilience4j note said "annotation order matters". Nesting is actually set by Resilience4j's aspect order (Retry wraps RateLimiter by default), so the note now says that.
 - **Interview:** added one deep question on when to fall back from push to SMS or email. Escalate critical categories only, on a missing app-level ack, reusing the notification id; APNs and FCM give no device-delivery receipt.
 - **Checked, left alone:** the FCM 600K/min default quota and 4096-byte payload (Firebase docs), the knob maths (FIFO OTP wait = drain time of the backlog at 10K/s), the calculator (labelled estimates), and the Uber RAMEN and Airbnb/Pinterest cards. The Spring/Kafka Java needs Spring and Resilience4j, so it was not compiled.
+- **Compile check:** Both Java snippets (SMS sender + Resilience4j, Kafka lanes) compile cleanly with javac 21 (`--release 21 -Xlint:deprecation,removal`) against Spring Boot 3.5.16, spring-kafka 3.3 and Resilience4j 2.2. Only imports and stub `SmsJob`/`DeadLetters` types were added. I checked the commented `resilience4j.retry` keys against the starter's metadata. Turning on both exponential backoff and randomized wait gives `ofExponentialRandomBackoff` in 2.x. No changes.
 
 
 ---
@@ -341,6 +380,7 @@ Each entry lists what changed and what was deliberately left as it was.
   - Ran the SQL on a temporary PG 16. The sequence hands out 1000, 2000…, and the alias conflict returns 0 rows.
   - Compiled and ran Java `Base62.encode` (gives `2crtgef`, matching the scenario). The Spring parts were not compiled.
 - **Checked, left alone:** keyspace maths (62⁶ ≈ 57B, 62⁷ ≈ 3.5T), the knob numbers (2.3K redirects/s and 230 creates/s from Bitly's 6B/600M per month, the Zipf hit-ratio approximation), the Bitly 2014 figures (High Scalability), Flickr and Instagram ids, and the calculator note's estimate labels.
+- **Compile check:** The id-block/Base62/redirect snippet compiles cleanly. **Fixed:** `Base62.encode` did not pad, and the sequence starts at 1000, so the first ~237K ids encoded to 2–3 chars (1000 → `g8`). Spring's `PathPatternParser` confirmed the `{4,12}` route rejects such codes, so those links would 404. It now left-pads to a fixed 7 chars, like the Python snippet: 1000 → `00000g8` and 125,000,000,123 → `2crtgef`, both matching the route. IdBlock hands out [1000, 2000) and then 2000.
 
 
 ---
@@ -370,6 +410,7 @@ Each entry lists what changed and what was deliberately left as it was.
 - **Clarity:** replaced "SPOF" in a knob verdict with "single point of failure".
 - **Code tests:** ran the Postgres SQL (table, partial index, reaper, DAG readiness) on a temporary PG 16. The DAG query returns `clean_a`, `clean_b`. Also ran the Java claim and backoff statements verbatim. Imported the Celery snippet with celery in a temp venv; config and task options resolve. Spring Java was not compiled because it needs Spring on the classpath.
 - **Checked, left alone:** PG 9.5 SKIP LOCKED (Jan 2016), Airflow 2.0 active-active schedulers, Cadence (2017) → Temporal (2019), Dropbox ATF guarantees and the InfoQ 9,000 tasks/s figure, FOQS. Every knob option changes the meters or the verdict.
+- **Compile check (Spring Boot 3.5.16 JDBC):** compiled clean, with a `JobHandler` stub. Ran it on Postgres 16 with this page's `jobs` table. The `UPDATE … SKIP LOCKED … RETURNING` claim worked, and success marked the job `done`. A failure re-queued it with backoff (`run_at` in the future), and a stale attempt's ack updated 0 rows. `spring.task.scheduling.pool.size` exists in the Boot metadata. No change.
 
 
 ---
@@ -384,6 +425,7 @@ Each entry lists what changed and what was deliberately left as it was.
 - **Verified by search:** Common Crawl Aug 2026 has 2.14B pages and 360 TiB uncompressed, per the official blog. Left as is.
 - **Checked from memory, left alone:** RFC 9309 details (24 h cache, 4xx allow, 5xx disallow, 500 KiB), IRLbot (6.3B pages / 41 days / 1,789 pages/s / 319 Mb/s), Manku et al. SimHash (64-bit, k = 3, 8B pages), Brin & Page (~300 connections, DNS cache), and the Bloom sizing answer (9.6 bits/URL, k ≈ 7, ~12 GB).
 - **Code:** ran the Bloom filter. Its measured FP rate is 0.99% against a theoretical 1.0%. Ran the asyncio crawler skeleton end to end against the local server with aiohttp 3.14 in a temp venv. It also checks how `RobotFileParser` behaves with empty and disallow-all files. The Java SimHash needs Guava, so it was not compiled; the logic was reviewed by hand.
+- **Compile check:** The Guava SimHash snippet compiles cleanly. On a 400-word page, one changed word moved the fingerprint 3 bits (near-duplicate), while an unrelated page was 27 bits away. No changes.
 
 
 ---
@@ -401,6 +443,7 @@ Each entry lists what changed and what was deliberately left as it was.
   - Knob maths: hit, shield and origin RPS; every option changes the meters.
   - Calculator (labelled estimates), and the Spring `CacheControl` builder methods, which exist in Spring 6.
   - The cURL and Cloudflare purge API shape. The Spring Java was not compiled because it needs Spring.
+- **Compile check (Spring Boot 3.5.16):** the controller compiled clean, with stub types `ProductDto` and `ProductService`. Ran it in embedded Tomcat: the 200 response sends `ETag`, `Cache-Control: max-age=60, public, s-maxage=86400, stale-while-revalidate=60` and `Cache-Tag`, and `If-None-Match` returns 304 with no body. All four `spring.web.resources.*` keys in the comment exist in the Boot metadata. No change.
 
 
 ---
@@ -414,6 +457,7 @@ Each entry lists what changed and what was deliberately left as it was.
 - Gaps: added the interview question "How does the gateway handle WebSockets and other long-lived connections?" (connections as the capacity unit, Upgrade/idle timeouts, draining and jittered reconnects on deploy), with a cross-node delivery follow-up.
 - Code: ran the PyJWT snippet in a temp venv with a generated RSA key and a stubbed JWKS fetch. A valid token decodes to sub/scopes, and a wrong audience is rejected. The Spring Java snippet was reviewed only, since there are no Spring jars: `RedisRateLimiter(10,20,1)`, `weight(group, n)`, `requestRateLimiter`/`circuitBreaker` config setters, and RedisRateLimiter failing open are all correct.
 - Checked and left alone: Tomcat 200 default threads, AWS 10,000 rps / 5,000 burst per account per Region, Envoy (Sept 2016), the Zuul 2 2016 "connection scaling" lesson, the Little's-law calculator (estimates labelled) and Resilience4j config keys.
+- **Compile check (Spring Cloud Gateway 4.3.5 / Cloud 2025.0.3, Boot 3.5.16):** the Java route config compiled clean with no deprecation warnings. Every YAML key was checked against the jars' config metadata and Resilience4j `InstanceProperties` setters, then bound with Boot's `Binder`. The breaker opens after 20 failures, because `minimumNumberOfCalls` is capped at the window size. `spring.cloud.gateway.server.webflux.httpclient.*` is the current prefix. No change.
 
 
 ---
@@ -427,6 +471,7 @@ Each entry lists what changed and what was deliberately left as it was.
 - Gaps: added the interview question "How do you keep the search index in sync with the source database?" (CDC/outbox → Kafka keyed by id, `version_type=external`, reindex + alias swap; deletes follow-up). Added the matching failure row "Index drifts from the database".
 - Code: ran the Python BM25 class on 3 docs; the ranking is correct. Reviewed the Spring Data Elasticsearch snippet (`NativeQuery`, `withSearchAfter`, `@Setting`), which is valid for Spring Data ES 5.x / Boot 3. It was not compiled because there are no jars.
 - Checked and left alone: Earlybird (10 s, 2B queries/day, ~50 ms) from the ICDE paper, the translog fsync-per-request default, the refresh/flush/translog explanation, the knob model (every option changes meters/verdict; illustrative and says so), and the calculator.
+- **Compile check:** The Spring Data Elasticsearch 5.5 snippet compiles cleanly. The two public types were put in separate files. Running the record through `MappingBuilder` produced the expected keyword/text/english mapping and 3 shards / 1 replica / 1s refresh, and a document reads back into the record. No changes.
 
 
 ---
@@ -441,6 +486,7 @@ Each entry lists what changed and what was deliberately left as it was.
 - Clarity: defined two-phase commit (2PC) in the exactly-once note and SST files in the checkpoint scenario.
 - Gaps: added one interview question on enrichment / stream-table joins (broadcast state or temporal join from CDC, keyed state, Async I/O with cache), with a replay follow-up.
 - Checked and left alone: Uber "20+ ES clusters per region, millions of logs/s, several PB" (confirmed in search), Flink 1.3 incremental checkpoints, 1.4 TwoPhaseCommitSinkFunction, the Kafka `transaction.timeout.ms` 900000 (= broker default max), the Duration-based window APIs (Flink 1.19+), ReplacingMergeTree + FINAL, and the calculator (estimates already labelled). The Java snippet needs Flink jars, so it was reviewed but not compiled. There is no Python.
+- **Compile check:** The Flink snippet compiles cleanly against Flink 1.20.5 and flink-connector-kafka 3.4, with no deprecation warnings when `CheckpointingMode` is `org.apache.flink.core.execution`. I added imports, a `main` wrapper, and stub types plus `lateSink`. `TumblingEventTimeWindows.of(Duration)` and `allowedLateness(Duration)` are the current APIs. It was not run (it needs Kafka). No changes.
 
 
 ---
@@ -455,6 +501,7 @@ Each entry lists what changed and what was deliberately left as it was.
 - Clarity: defined exemplar (trace scenario), head block (calculator note) and OTLP (API row) on first use.
 - Gaps: added the interview question "How does a Prometheus-style TSDB lay data out on disk?" (WAL, head, 2 h blocks, compaction, with a long-retention follow-up). Added the failure "out-of-order / late samples" with Prometheus 2.39's `out_of_order_time_window` (experimental, off by default; verified in search).
 - Checked and left alone: Gorilla 1.37 B/point and the dod/XOR bit layout, Dapper 1/1024, M3 6.6B series, Monarch "TB/s", the OTel tail-sampling and memory_limiter config keys, the calculator formulas (estimates are already labelled), and the knob cost model (illustrative, labelled as estimates).
+- **Compile check:** Both YAML items parse. Every Boot key in item 0 exists in the Boot 3.5.16 configuration metadata and none is deprecated: `management.tracing.sampling.probability`, `management.otlp.tracing.endpoint`, `management.otlp.metrics.export.url/step`, `management.metrics.distribution.percentiles-histogram.*`, `management.metrics.tags.*` and `logging.structured.format.console` (3.4+). The Boot 4 rename to `management.opentelemetry.tracing.export.otlp.*` matches the Boot 4.0 tracing docs. Item 1 is a valid Collector config: every pipeline component is defined, none is unused, memory_limiter comes first and batch last, and the tail_sampling policy fields are correct. No changes.
 
 
 ---
@@ -469,6 +516,7 @@ Each entry lists what changed and what was deliberately left as it was.
 - Gaps: added the failure "Kafka unreachable from the click tracker" (local bounded spool, safe replay thanks to the upstream click_id) and the matching interview question with a follow-up.
 - Code: ran the DuckDB reconciliation script (DuckDB 2.0, in a temp venv) against local Parquet and an in-memory stand-in for the Postgres table. Dedup, fraud filter, missing-row detection and the drift alert all behave correctly. Ran the Postgres upsert DDL/DML on a temp PG 16: re-fires overwrite, and `WHERE source = 'stream'` protects reconciled rows. The Flink Java needs Flink jars, so it was reviewed only (`open(OpenContext)`, `StateTtlConfig.newBuilder(Duration)`, keyed filter state are valid for 1.19+).
 - Left alone: Photon (<10 s, millions of events/min), Kafka 0.11 EOS, the calculator (estimates labelled) and the knob numbers (illustrative, labelled).
+- **Compile check (Flink 1.20.5, flink-connector-kafka 3.4.0-1.20, JDK 21):** the Java snippet compiled clean with `-Xlint:deprecation,removal`; only stub types were added (`Click`, `ClickSchema`, `CountClicks`, `ToAdMinute`). Ran it on a local MiniCluster, swapping the Kafka source for a bounded one. A repeated `click_id` was dropped, a late click within 5 min re-fired its window with the new count, and a later click went to the `too-late` side output. No change.
 
 
 ---
@@ -522,6 +570,7 @@ Each entry lists what changed and what was deliberately left as it was.
 - Knobs: swept every option. The similarity slider changes the outcome only when the semantic cache is on, which is inherent, so its label now says "(semantic cache only)". All other options change the meters or the verdict.
 - Code: ran the Lua token bucket in a real redis-server (four 3000-token takes against a 10K burst grant three and refuse one; the TTL is set; the HINCRBYFLOAT refund works). Did not compile the WebFlux class, which needs Spring; reviewed its reactive API usage, and the signatures are right.
 - Checked and left alone: the Anthropic rate-limit dimensions (RPM, ITPM, OTPM) and 429 + retry-after, re-confirmed via the support article. Also unchanged: FrugalGPT "up to 98%" and the calculator's Little's-law concurrency. No model versions are named anywhere; the YAML uses placeholders.
+- **Compile check (Spring WebFlux + reactive Redis, Boot 3.5.16):** the SSE proxy compiled clean. Ran it with the page's Lua script on a local Redis and a fake SSE provider. A request was granted, streamed 5 events and refunded the unused tokens with `HINCRBYFLOAT`. A request larger than the burst got 429. **LiteLLM YAML:** loaded with `litellm` 1.106.6 `ProxyConfig.load_config`; it built 4 deployments, the fallbacks and the retry/cooldown settings, and a `RedisSemanticCache` (threshold 0.95, embedding model `embed`). **Fixed** the cache comment: the semantic cache also needs `REDIS_PASSWORD` (or a redis_url), and startup fails without it.
 
 
 ---
@@ -535,6 +584,7 @@ Each entry lists what changed and what was deliberately left as it was.
 - Interview: added "How do you avoid showing already-seen items?" (per-user seen set or Bloom filter, filtering before ranking, what counts as "seen"). This is a common follow-up the page lacked.
 - Code: ran the PyTorch two-tower + logQ snippet for 50 steps on synthetic skewed data in a temp venv. Ran the pgvector SQL on Postgres 16 + pgvector 0.6; the watched filter, region filter and inner-product order all work, and the `iterative_scan` line is already marked 0.8+. Compiled and ran the Spring controller with JDK stubs; the 80 ms `orTimeout` falls back to the popular feed as described.
 - Left alone: the PinSage figures (3B nodes, 18B edges, 7.5B examples), Monolith, the sampling-bias correction and the calculator formulas. All match their sources or are labelled estimates. The widget's 150 ms model-stage budget and the page's ~200 ms feed budget differ on purpose, and both are labelled illustrative.
+- **Compile check:** The feed controller compiles cleanly with only imports and stub interfaces added. A small main confirmed it: a slow ranker (500 ms) and a failed ranker both return the popular fallback within ~80 ms via `CompletionException`, and a fast ranker returns the ranked page. No changes.
 
 
 ---
@@ -549,6 +599,7 @@ Each entry lists what changed and what was deliberately left as it was.
 - Gaps: added the failure "Queue-like table drowns in tombstones" (time-bucketed partitions, TTL + time-window compaction).
 - Code: ran the Python vector-clock snippet; it prints `['a', 'book', 'pen'] {'Sx': 3, 'Sy': 1, 'Sz': 1}` as commented. Ran the Postgres half of the CQL/Postgres snippet on a temp PG 16. The Spring Data Cassandra Java (`@Consistency`, `InsertOptions`, `CqlOperations.execute(Statement)` → applied) was reviewed but not compiled, since there are no jars.
 - Left alone: DynamoDB 89.2M req/s (Prime Day 2021, ATC 2022), the Cassandra 5.0 UCS recommendation, the R + W > N explanations and caveats, and the calculator (estimates labelled).
+- **Compile check (Spring Data Cassandra 4.5 / DataStax driver 4.x):** compiled clean, split into one file per public type. `@Consistency`, `InsertOptions.consistencyLevel/ttl(Duration)` and `CqlOperations.execute(Statement)` (returns `wasApplied`) all exist. `spring.cassandra.request.consistency` exists in the Boot metadata. Not run (needs Cassandra). No change.
 
 
 ---
@@ -562,6 +613,7 @@ Each entry lists what changed and what was deliberately left as it was.
 - Gaps: added the failure "Orphaned fragments" (data written but metadata commit failed → mark-and-sweep GC with a grace period), the natural counterpart of "metadata commit is the visibility point".
 - Code runs: the Python durability model prints the commented 9.4 / 11.0 / 13.4 nines, and ~12.2 with a 1 h repair, as the comment claims. The Postgres versioned-metadata DDL plus PUT commit plus LIST-by-prefix ran on a temp PG 16, and a second PUT correctly leaves one latest version. The AWS SDK v2 Java was reviewed only (`presignUploadPart`, `completeMultipartUpload`), since there are no jars.
 - Checked and left alone: 11 nines (AWS 2010 RRS post), the Dec 2020 strong-consistency announcement, f4 3.6× → 2.1× (2.8× without XOR), HDFS RS-6-3-1024k default, GFS 64 MB / 3 replicas, LIST 1,000 keys per page, and the calculator and knobs (every option changes the meters; estimates are labelled).
+- **Compile check:** The AWS SDK v2 (2.57) presigned multipart snippet compiles cleanly with javac 21 (`--release 21 -Xlint:deprecation,removal`) with only imports added. The MinIO comment's `forcePathStyle` exists on the S3 client builder. No changes.
 
 
 ---
@@ -575,3 +627,4 @@ Each entry lists what changed and what was deliberately left as it was.
 - Interview: added the ambiguous-commit question (SQLSTATE 40003 vs 40001, and idempotency via a client request id with a unique constraint). It is a classic follow-up to the retry-loop answer and is directly useful for agent tool calls that write to a database. The Java note now mentions 40003.
 - Ran the HLC snippet: causality across a 300 ns-skewed peer, logical-counter bumps and max-offset refusal all behave as documented.
 - Checked and left alone: the knob sweep (every option changes the meters) and Spanner ε ≈ 1–7 ms with a typical 4 ms. Also unchanged: the commit wait max(0, 2ε − consensus), the 3-replica default, 40001 semantics, READ COMMITTED 23.2 preview / 24.1 GA, and the multi-region SQL syntax. There is no CockroachDB binary here, so the SQL was reviewed rather than executed.
+- **Compile check (JDK 21):** `CrdbTx` compiled clean. With a fake DataSource, three 40001 commits retried and then succeeded, a constant 40001 gave up after 6 attempts, and 23505 was not retried. On Postgres 16, "insufficient funds" (P0001) was not retried, and concurrent opposite transfers hit real 40P01 deadlocks that the loop retried with balances conserved. Under an 8-thread hammer on two rows, a few transfers used up all 6 attempts, which is the intended give-up. No change.

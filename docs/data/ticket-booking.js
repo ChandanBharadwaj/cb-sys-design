@@ -451,7 +451,7 @@ public class HoldService {
         Instant.now().plus(TTL_MIN, ChronoUnit.MINUTES)));
   }
 }`,
-      note: 'Two concurrent retries with the same key can both miss <code>findByIdempotencyKey</code>; the unique index makes the second <code>save</code> fail, and the caller then returns the stored hold. With JPA entities, <code>@Version</code> gives the optimistic variant of the same check.'
+      note: 'Two concurrent retries with the same key can both miss <code>findByIdempotencyKey</code>. The second then waits on the seat row locks and updates 0 rows, or its <code>save</code> hits the unique index. On either error, the caller re-reads the hold by key and returns it if it exists. With JPA entities, <code>@Version</code> gives the optimistic variant of the same check.'
     },
     {
       title: 'Redis Lua: atomic multi-seat hold', lang: 'lua',

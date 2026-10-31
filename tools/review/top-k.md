@@ -7,3 +7,4 @@
 - Knobs: every option moves a meter; the εN-vs-#10 percentages are consistent with the calculator. No change.
 - Code: ran the Python CMS + top-K on a 50K-event Zipf stream; it recovers the exact top 5 and never under-counts (asserted). The w × d = 27,183 × 7 comment is correct. Ran the batch SQL twice on scratch Postgres 16: it is idempotent via ON CONFLICT and ranks correctly. The Jedis Top-K snippet needs Jedis and Redis 8, so it was not run; the method names (`topkReserve`, `topkIncrBy` with a map, `topkListWithCount`) were checked by reading.
 - Not changed: architecture, scenarios (all ≤ 220 chars), glossary and calculator (estimates already labelled).
+- **Compile check:** The Jedis Top-K snippet compiles cleanly against Jedis 6.0. The `topkReserve(key,k,width,depth,decay)`, `topkIncrBy(key, Map)` and `topkListWithCount` signatures match. It was not run, because no RedisBloom/Redis 8 module is available locally. No changes.

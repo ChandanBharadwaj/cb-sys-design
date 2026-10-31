@@ -401,6 +401,7 @@ public class UploadController {
   @PostMapping("/complete")
   public void complete(@RequestBody CompleteUpload req) {
     List<CompletedPart> parts = req.parts().stream()
+        .sorted(Comparator.comparingInt(p -> p.number()))      // S3 wants ascending part order
         .map(p -> CompletedPart.builder().partNumber(p.number()).eTag(p.etag()).build())
         .toList();
     s3.completeMultipartUpload(b -> b.bucket(BUCKET).key(req.key()).uploadId(req.uploadId())
