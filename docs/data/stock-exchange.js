@@ -15,6 +15,91 @@ SD.register({
     ]
   },
 
+  intro: {
+    what: 'A matching engine is the heart of a stock exchange. For each stock it keeps an <b>order book</b>: a list of what buyers will pay and what sellers will accept. When a buyer and a seller agree on a price, it turns them into a trade, in a <b>strict and fair order</b>.',
+    analogy: {
+      icon: '🔔',
+      title: 'A market clerk with two boards and a numbered logbook',
+      text: 'Picture a trading-floor clerk with two boards: buyers on one, sellers on the other, each sorted by price. When a seller asks a price some buyer will pay, the clerk pairs them: best price first, and among equal prices, whoever spoke first. The clerk writes every call in a numbered logbook, so the whole day can be replayed exactly. The engine is that clerk, working millions of times faster.'
+    },
+    problem: 'Thousands of trading firms send orders for the same stock in the same millisecond. Who was first? If several servers each match part of the book, they can disagree, sell the same shares twice, or produce different trades when the day is replayed for an audit. The system answers <b>"in exactly what order did the orders arrive, and which trades follow from that?"</b>',
+    story: [
+      {
+        stage: 'naive',
+        title: 'Many app servers sharing one database',
+        text: 'Each order lands on one of many app servers. The server locks that stock\'s rows in a database, looks for a matching order, and writes the trade. More traffic? Add more servers. It is how most web apps are built.',
+        scene: {
+          nodes: [
+            { id: 'brk', label: 'Brokers', sub: 'BUY / SELL', kind: 'client', at: [210, 0] },
+            { id: 's1', label: 'App server 1', sub: 'lock + match', kind: 'service', at: [70, 110] },
+            { id: 's2', label: 'App server 2', sub: 'lock + match', kind: 'service', at: [350, 110] },
+            { id: 'db', label: 'Orders DB', sub: 'rows + locks', kind: 'store', at: [210, 220] }
+          ],
+          edges: [{ from: 'brk', to: 's1' }, { from: 'brk', to: 's2' }, { from: 's1', to: 'db' }, { from: 's2', to: 'db' }],
+          flow: [['brk>s1', 'brk>s2'], ['s1>db', 's2>db']]
+        }
+      },
+      {
+        stage: 'breaks',
+        title: 'Lock fights, and no single answer to "who was first?"',
+        text: 'Every order for a popular stock fights for the <b>same locks</b>, so servers spend their time waiting. Each server sees orders in a slightly different sequence, so fairness depends on thread timing. Replaying the day can give <b>different trades</b>, and a database write per order is far too slow.',
+        scene: {
+          nodes: [
+            { id: 'brk', label: 'Brokers', sub: 'market open burst', kind: 'client', at: [210, 0] },
+            { id: 's1', label: 'App server 1', sub: 'waiting on lock', kind: 'service', at: [70, 110] },
+            { id: 's2', label: 'App server 2', sub: 'saw B before A', kind: 'service', at: [350, 110] },
+            { id: 'db', label: 'Orders DB', sub: 'lock contention', kind: 'store', at: [210, 220] }
+          ],
+          edges: [{ from: 'brk', to: 's1' }, { from: 'brk', to: 's2' }, { from: 's1', to: 'db' }, { from: 's2', to: 'db' }],
+          flow: [['brk>s1', 'brk>s2'], ['s1>db', 's2>db'], ['s1>db', 's2>db']],
+          err: ['db'],
+          warn: ['s1', 's2'],
+          badges: { db: ['too slow 🔒', 'err'], s2: ['who first?', 'warn'] }
+        }
+      },
+      {
+        stage: 'fix',
+        title: 'Number every order, then match on one thread',
+        text: 'A <b>sequencer</b> gives every message one global number, and that number <i>is</i> its place in line. The numbered input is written to a <b>journal</b> and copied to a standby. Then a <b>single thread per stock</b> applies it to an order book held in memory. There are no locks, and replaying the journal always gives the same trades.',
+        scene: {
+          nodes: [
+            { id: 'brk', label: 'Brokers', sub: 'BUY / SELL', kind: 'client', at: [70, 0] },
+            { id: 'seq', label: 'Sequencer', sub: '#1, #2, #3 …', kind: 'service', at: [210, 0] },
+            { id: 'jrnl', label: 'Journal', sub: 'append + copy', kind: 'store', at: [350, 0] },
+            { id: 'me', label: 'Match engine', sub: 'one thread · RAM', kind: 'compute', at: [210, 110] },
+            { id: 'repl', label: 'Hot standby', sub: 'replays journal', kind: 'compute', at: [350, 110] },
+            { id: 'md', label: 'Market data', sub: 'to every firm', kind: 'service', at: [210, 220] }
+          ],
+          edges: [{ from: 'brk', to: 'seq' }, { from: 'seq', to: 'jrnl' }, { from: 'seq', to: 'me' }, { from: 'jrnl', to: 'repl' }, { from: 'me', to: 'md' }],
+          flow: ['brk>seq', ['seq>jrnl', 'seq>me'], ['jrnl>repl', 'me>md']],
+          ok: ['me', 'repl'],
+          badges: { me: ['fair + exact ✓', 'ok'] }
+        }
+      }
+    ],
+    usedBy: ['Nasdaq', 'NYSE', 'LMAX Exchange', 'NSE (India)', 'Coinbase Exchange'],
+    whenToUse: [
+      'Many parties compete for the same thing and <b>arrival order</b> decides who wins',
+      'Every result must be reproducible exactly, for audits or disputes',
+      'Latency is measured in microseconds and must be predictable'
+    ],
+    whenNot: [
+      'Ordinary shopping, where one database transaction per order is fast enough (see <a href="ecommerce-orders.html">E-commerce Orders</a>)',
+      'A ranking that only needs to be roughly current (see <a href="leaderboard.html">Live Leaderboard</a>)',
+      'Work with no shared order between requests: a normal stateless service scales more easily'
+    ],
+    glossary: [
+      { term: 'Order book', def: 'For one stock, all waiting buy orders and sell orders, sorted by price.' },
+      { term: 'Bid / ask', def: 'A bid is a price a buyer will pay; an ask is a price a seller will accept.' },
+      { term: 'Limit / market order', def: 'A limit order names a worst acceptable price; a market order takes whatever the best price is now.' },
+      { term: 'Price-time priority', def: 'The matching rule: better price goes first, and at the same price, the earlier order goes first.' },
+      { term: 'Sequencer', def: 'The component that stamps every incoming message with one global, increasing number.' },
+      { term: 'Journal', def: 'An append-only log of every sequenced input, written to disk and copied before orders are acknowledged.' },
+      { term: 'Hot standby', def: 'A second engine that applies the same journal in step, ready to take over with an identical book.' },
+      { term: 'Market data', def: 'The public feed of every book change and trade, sent to all subscribers at once.' }
+    ]
+  },
+
   requirements: {
     functional: [
       'New, cancel and replace orders (limit, market, IOC)',

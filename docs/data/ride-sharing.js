@@ -15,6 +15,89 @@ SD.register({
     ]
   },
 
+  intro: {
+    what: 'A ride-sharing dispatch system is the brain behind a ride-hailing app. It knows where every available driver is <b>right now</b>. When someone taps <b>Request</b>, it decides which driver should go and pick them up.',
+    analogy: {
+      icon: '🚕',
+      title: 'A taxi radio dispatcher with a live wall map',
+      text: 'Old taxi companies had a dispatcher with a radio and a map covered in pins, one per cab. When a customer called, the dispatcher looked at the pins near the caller and radioed the closest free cab. This system does the same job automatically, for a million cabs at once, and moves the pins every few seconds.'
+    },
+    problem: 'Drivers never stop moving, so the answer to "where is everyone?" changes every few seconds. Thousands of times per second you must answer <b>"which free drivers are near this spot?"</b> using fresh positions. You must never send one driver to two riders, and you must keep working when a server dies.',
+    story: [
+      {
+        stage: 'naive',
+        title: 'Store every position in one database table',
+        text: 'Each driver app <b>updates its row</b> every few seconds. To find a driver, the rider\'s request runs a query like <code>WHERE distance &lt; 2 km</code> over the whole table. Simple, and it works for a small fleet.',
+        scene: {
+          nodes: [
+            { id: 'd', label: 'Drivers', sub: 'GPS every 4 s', kind: 'client', at: [70, 0] },
+            { id: 'r', label: 'Rider', sub: 'taps Request', kind: 'client', at: [350, 0] },
+            { id: 'db', label: 'One SQL table', sub: 'all drivers', kind: 'store', at: [210, 120] }
+          ],
+          edges: [{ from: 'd', to: 'db' }, { from: 'r', to: 'db' }],
+          flow: [['d>db', 'r>db']]
+        }
+      },
+      {
+        stage: 'breaks',
+        title: 'Writes pile up and every search scans the city',
+        text: 'A million drivers each sending a ping every 4 s is about <b>250,000 writes per second</b>, and each one also updates indexes and the database log. Every rider search scans the whole city. The database falls behind, positions go stale, and riders wait.',
+        scene: {
+          nodes: [
+            { id: 'd', label: 'Drivers ×1M', sub: '250K writes/s', kind: 'client', at: [70, 0] },
+            { id: 'r', label: 'Riders', sub: 'thousands/s', kind: 'client', at: [350, 0] },
+            { id: 'db', label: 'One SQL table', sub: 'overloaded', kind: 'store', at: [210, 120] }
+          ],
+          edges: [{ from: 'd', to: 'db' }, { from: 'r', to: 'db' }],
+          flow: [['d>db', 'r>db'], ['d>db', 'r>db']],
+          err: ['db'],
+          badges: { db: ['overloaded', 'err'], r: ['slow ⏳', 'warn'] }
+        }
+      },
+      {
+        stage: 'fix',
+        title: 'Cut the map into cells and keep them in memory',
+        text: 'Split the map into small <b>hexagon cells</b>. Each server keeps the drivers in its own cells <b>in RAM</b>. A ride request searches only the rider\'s cell and the ring of cells around it, then ranks those drivers by <b>drive time</b>.',
+        scene: {
+          nodes: [
+            { id: 'd', label: 'Drivers', sub: 'GPS every 4 s', kind: 'client', at: [70, 0] },
+            { id: 'r', label: 'Rider', sub: 'taps Request', kind: 'client', at: [350, 0] },
+            { id: 'loc', label: 'Location svc', sub: 'lat/lng → cell', kind: 'service', at: [70, 110] },
+            { id: 'disp', label: 'Dispatch', sub: 'nearby + ETA', kind: 'service', at: [350, 110] },
+            { id: 'c1', label: 'Cells A–F', sub: 'server 1 · RAM', kind: 'cache', at: [70, 220] },
+            { id: 'c2', label: 'Cells G–M', sub: 'server 2 · RAM', kind: 'cache', at: [210, 220] },
+            { id: 'c3', label: 'Cells N–T', sub: 'server 3 · RAM', kind: 'cache', at: [350, 220] }
+          ],
+          edges: [{ from: 'd', to: 'loc' }, { from: 'loc', to: 'c1' }, { from: 'r', to: 'disp' }, { from: 'disp', to: 'c3' }, { from: 'disp', to: 'c2' }],
+          flow: ['d>loc', 'loc>c1', 'r>disp', ['disp>c3', 'disp>c2']],
+          ok: ['c1', 'c2', 'c3'],
+          badges: { disp: ['best: 3 min', 'ok'] }
+        }
+      }
+    ],
+    usedBy: ['Uber', 'Lyft', 'Ola', 'Grab', 'Didi', 'Food-delivery courier dispatch'],
+    whenToUse: [
+      'Many <b>moving</b> things (cars, couriers, scooters) must be found by location in real time',
+      'Supply has to be matched to demand within seconds',
+      'Location updates far outnumber reads of location history'
+    ],
+    whenNot: [
+      'The places do not move, such as restaurants or shops (see <a href="proximity-service.html">Proximity Service</a>)',
+      'Only a few hundred vehicles: one Postgres + PostGIS table is plenty',
+      'Trips are booked hours ahead: an ordinary booking system works'
+    ],
+    glossary: [
+      { term: 'Geospatial index', def: 'A data structure that answers "what is near this point?" without checking every item.' },
+      { term: 'H3 cell', def: 'One hexagon in Uber\'s open-source grid that covers the Earth. Every lat/lng falls in exactly one cell at each size.' },
+      { term: 'k-ring', def: 'A cell plus all cells within k steps of it. k = 1 is the cell and its 6 neighbours.' },
+      { term: 'ETA', def: 'Estimated time of arrival: how long the driver needs to reach the rider on real roads.' },
+      { term: 'Dispatch / matching', def: 'Deciding which driver gets which ride request.' },
+      { term: 'Soft lock', def: 'A short reservation on a driver while an offer is pending, so no one else is offered the same driver.' },
+      { term: 'Surge pricing', def: 'Raising prices in an area when demand exceeds supply, to balance the two.' },
+      { term: 'Ephemeral state', def: 'Data that is only useful briefly and can be rebuilt (like current positions), so it does not need a durable database.' }
+    ]
+  },
+
   requirements: {
     functional: [
       'Drivers stream their GPS location while online',

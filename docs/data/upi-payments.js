@@ -15,6 +15,91 @@ SD.register({
     ]
   },
 
+  intro: {
+    what: 'UPI (Unified Payments Interface) is India\'s system for sending money instantly from one bank account to another with a phone app. You pay to a simple address like <code>name@bank</code> or a QR code. A central <b>switch</b> run by NPCI connects all the apps and banks, so <b>any app can pay into any bank</b>, day or night.',
+    analogy: {
+      icon: '📮',
+      title: 'One central sorting office every bank trusts',
+      text: 'Imagine every bank agreed to send all transfer slips through one central sorting office. You hand your slip to any counter (your app). The office finds out where the receiver banks, asks your bank to take the money out and the receiver\'s bank to put it in, then stamps the slip "done" for both sides. The banks settle the totals between themselves later. Unlike a real post office, the whole trip has to finish in seconds.'
+    },
+    problem: 'You pay ₹500 at a tea stall by scanning a QR code. Your money is in one bank, the stall owner\'s is in another, and you each use a different app. Without a shared switch, every app would need a direct link to every bank. And if the stall owner\'s bank goes quiet after your bank has taken the money, you must neither lose it nor pay twice. The system answers <b>"how does money move between any two banks in seconds, and what happens when one of them does not answer?"</b>',
+    story: [
+      {
+        stage: 'naive',
+        title: 'Each app talks to each bank directly',
+        text: 'The payer\'s app calls the payer\'s bank to take the money out, then calls the payee\'s bank to put it in. If a call times out, it tries again. With two or three banks this seems fine.',
+        scene: {
+          nodes: [
+            { id: 'payer', label: 'Payer app', sub: 'pays ₹500', kind: 'client', at: [70, 0] },
+            { id: 'payee', label: 'Payee app', sub: 'tea stall', kind: 'client', at: [350, 0] },
+            { id: 'rem', label: 'Payer bank', sub: 'debit', kind: 'external', at: [70, 220] },
+            { id: 'ben', label: 'Payee bank', sub: 'credit', kind: 'external', at: [350, 220] }
+          ],
+          edges: [{ from: 'payer', to: 'rem' }, { from: 'payer', to: 'ben' }, { from: 'payee', to: 'rem' }, { from: 'payee', to: 'ben' }],
+          flow: ['payer>rem', 'payer>ben']
+        }
+      },
+      {
+        stage: 'breaks',
+        title: 'A tangle of links, and money stuck halfway',
+        text: 'Hundreds of banks times dozens of apps means <b>thousands of separate links</b>, each with its own rules. Worse, the debit can succeed while the credit times out. A blind retry <b>takes the money twice</b>; giving up leaves ₹500 missing. Nobody has the final word on what happened.',
+        scene: {
+          nodes: [
+            { id: 'payer', label: 'Payer app', sub: 'retries ₹500', kind: 'client', at: [70, 0] },
+            { id: 'payee', label: 'Payee app', sub: 'not paid', kind: 'client', at: [350, 0] },
+            { id: 'rem', label: 'Payer bank', sub: '−₹500 twice', kind: 'external', at: [70, 220] },
+            { id: 'ben', label: 'Payee bank', sub: 'no reply', kind: 'external', at: [350, 220] }
+          ],
+          edges: [{ from: 'payer', to: 'rem' }, { from: 'payer', to: 'ben' }, { from: 'payee', to: 'rem' }, { from: 'payee', to: 'ben' }],
+          flow: ['payer>rem', 'payer>ben', 'payer>rem'],
+          err: ['rem', 'ben'],
+          warn: ['payer', 'payee'],
+          badges: { rem: ['double debit', 'err'], ben: ['timeout', 'err'] }
+        }
+      },
+      {
+        stage: 'fix',
+        title: 'One central switch and one id per payment',
+        text: 'Every app and bank connects once, to a <b>central switch</b>. The payment gets one <b>transaction id</b> that every hop carries. The switch asks the payer\'s bank to check the PIN and debit, asks the payee\'s bank to credit, then gives both sides one final answer. On a timeout, the app <b>checks status on the same id</b> instead of paying again, and a debit with no credit is reversed.',
+        scene: {
+          nodes: [
+            { id: 'payer', label: 'Payer app', sub: 'txn id T1', kind: 'client', at: [70, 0] },
+            { id: 'payee', label: 'Payee app', sub: 'gets ₹500', kind: 'client', at: [350, 0] },
+            { id: 'npci', label: 'UPI switch', sub: 'routes T1', kind: 'edge', at: [210, 110] },
+            { id: 'rem', label: 'Payer bank', sub: 'PIN + debit', kind: 'external', at: [70, 220] },
+            { id: 'recon', label: 'Reconcile', sub: 'match every id', kind: 'compute', at: [210, 220] },
+            { id: 'ben', label: 'Payee bank', sub: 'credit', kind: 'external', at: [350, 220] }
+          ],
+          edges: [{ from: 'payer', to: 'npci' }, { from: 'npci', to: 'payee' }, { from: 'npci', to: 'rem' }, { from: 'npci', to: 'ben' }, { from: 'npci', to: 'recon', dashed: true }],
+          flow: ['payer>npci', 'npci>rem', 'npci>ben', ['npci>payer', 'npci>payee']],
+          ok: ['npci', 'rem', 'ben'],
+          badges: { npci: ['one answer ✓', 'ok'] }
+        }
+      }
+    ],
+    usedBy: ['PhonePe', 'Google Pay (India)', 'Paytm', 'BHIM', 'Indian banks\' own mobile apps'],
+    whenToUse: [
+      'Many independent banks and apps must all be able to pay <b>each other</b>',
+      'Payments must complete for the user in <b>seconds</b>, at any hour',
+      'Each payment crosses systems you do not control, so every timeout needs a defined outcome'
+    ],
+    whenNot: [
+      'One company moving money inside its own wallet: one ledger is enough (see <a href="payment-gateway.html">Payment Gateway</a>)',
+      'Card payments, which run on card networks with their own rules',
+      'Large business transfers that can wait for a scheduled batch'
+    ],
+    glossary: [
+      { term: 'UPI ID (VPA)', def: 'A payment address like name@bank that stands in for an account number. VPA means virtual payment address.' },
+      { term: 'PSP', def: 'Payment service provider: the app company and its partner bank that connect a user to UPI.' },
+      { term: 'NPCI switch', def: 'The central system run by the National Payments Corporation of India that routes every UPI payment.' },
+      { term: 'Debit / credit leg', def: 'The two halves of a payment: taking money from the payer\'s bank, and adding it at the payee\'s bank.' },
+      { term: 'Transaction id', def: 'One unique id for a payment that every app, bank and the switch use to refer to it.' },
+      { term: 'Status check', def: 'Asking the switch for the outcome of an existing transaction id, instead of sending a new payment.' },
+      { term: 'Reversal', def: 'Returning a debit to the payer when the credit failed. RBI rules require it within one day of the payment (T+1).' },
+      { term: 'Settlement', def: 'Banks paying each other the net totals of many UPI payments in periodic cycles, not one by one.' }
+    ]
+  },
+
   requirements: {
     functional: [
       'Pay to a UPI ID (VPA), QR code or mobile number',

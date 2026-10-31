@@ -15,6 +15,91 @@ SD.register({
     ]
   },
 
+  intro: {
+    what: 'A Top-K system watches a never-ending stream of events, such as hashtags, searches or product clicks. It answers one question: <b>which K items are the most frequent right now?</b> "K" is just the length of the list, like the top 10. A variant answers "which items are rising fastest?", which is how trending lists work.',
+    analogy: {
+      icon: '📋',
+      title: 'Counting song requests with a small tally sheet',
+      text: 'A radio station gets thousands of song requests an hour. The clerk cannot keep a page for every song ever named, so she uses a sheet with a fixed number of tally boxes. A simple rule sends each song to a box, so a few rare songs may share one. Hits still stand out because their box fills much faster, and she copies the 10 biggest onto a short leaderboard. The real version uses several such sheets with different rules and trusts the smallest tally, which keeps the over-count small.'
+    },
+    problem: 'Imagine showing "Trending now" on a social app. Every second, a huge number of posts mention hashtags, and new hashtags appear all the time. You must answer <b>"what are the top 10 in the last hour?"</b> within about a minute, without storing a counter for every hashtag ever seen. You must also tell the difference between something that is <b>always big</b> and something that is <b>suddenly big</b>.',
+    story: [
+      {
+        stage: 'naive',
+        title: 'Keep one counter per hashtag',
+        text: 'Every post goes to one server that keeps a <b>hash map</b>: hashtag → count. To show the list, sort the map and take the top 10. It is exact and easy, and it works for a small app.',
+        scene: {
+          nodes: [
+            { id: 'src', label: 'Posts', sub: 'hashtags', kind: 'client', at: [70, 0] },
+            { id: 'agg', label: 'Hash map', sub: 'tag → count', kind: 'store', at: [210, 110] },
+            { id: 'app', label: 'Trends panel', sub: 'sort, take 10', kind: 'client', at: [350, 220] }
+          ],
+          edges: [{ from: 'src', to: 'agg' }, { from: 'agg', to: 'app' }],
+          flow: ['src>agg', 'agg>app']
+        }
+      },
+      {
+        stage: 'breaks',
+        title: 'Memory explodes and merged lists miss winners',
+        text: 'The map gets a new entry for every typo and one-off tag, so memory grows <b>without limit</b>, once per window and per region. Sorting it is slow. Splitting the stream randomly over many servers does not help: a tag that is #11 on every server makes no local top 10, yet it may be #1 in total. <b>Merging the short lists misses it.</b>',
+        scene: {
+          nodes: [
+            { id: 'src', label: 'Posts', sub: 'endless stream', kind: 'client', at: [70, 0] },
+            { id: 'agg', label: 'Hash map 1', sub: 'every tag ever', kind: 'store', at: [70, 110] },
+            { id: 'agg2', label: 'Hash map 2', sub: 'every tag ever', kind: 'store', at: [350, 110] },
+            { id: 'merge', label: 'Merge top 10s', sub: 'per-server lists', kind: 'service', at: [210, 220] },
+            { id: 'app', label: 'Trends panel', sub: 'wrong list', kind: 'client', at: [350, 220] }
+          ],
+          edges: [{ from: 'src', to: 'agg' }, { from: 'src', to: 'agg2' }, { from: 'agg', to: 'merge' }, { from: 'agg2', to: 'merge' }, { from: 'merge', to: 'app' }],
+          flow: [['src>agg', 'src>agg2'], ['agg>merge', 'agg2>merge'], 'merge>app'],
+          err: ['agg', 'agg2'],
+          warn: ['merge'],
+          badges: { agg: ['out of memory', 'err'], merge: ['missed #1', 'warn'] }
+        }
+      },
+      {
+        stage: 'fix',
+        title: 'Small sketches, keyed by tag, plus a short heap',
+        text: 'Send each tag to <b>one fixed worker</b>, so no tag is split. Each worker keeps a <b>sketch</b>: a small, fixed grid of counters that estimates any tag\'s count and never under-counts. Next to it sits a <b>heap</b> of the K best candidates. A merger combines the workers\' lists and compares each tag with its normal rate to find what is trending.',
+        scene: {
+          nodes: [
+            { id: 'src', label: 'Posts', sub: 'hashtags', kind: 'client', at: [70, 0] },
+            { id: 'kfk', label: 'Log by tag', sub: 'split by tag', kind: 'queue', at: [210, 0] },
+            { id: 'agg', label: 'Worker 1', sub: 'sketch + heap', kind: 'compute', at: [70, 110] },
+            { id: 'agg2', label: 'Worker 2', sub: 'sketch + heap', kind: 'compute', at: [350, 110] },
+            { id: 'merge', label: 'Merger', sub: 'global top 10', kind: 'service', at: [210, 220] },
+            { id: 'app', label: 'Trends panel', sub: 'fresh list', kind: 'client', at: [350, 220] }
+          ],
+          edges: [{ from: 'src', to: 'kfk' }, { from: 'kfk', to: 'agg' }, { from: 'kfk', to: 'agg2' }, { from: 'agg', to: 'merge' }, { from: 'agg2', to: 'merge' }, { from: 'merge', to: 'app' }],
+          flow: ['src>kfk', ['kfk>agg', 'kfk>agg2'], ['agg>merge', 'agg2>merge'], 'merge>app'],
+          ok: ['agg', 'agg2', 'merge'],
+          badges: { merge: ['top 10 ✓', 'ok'] }
+        }
+      }
+    ],
+    usedBy: ['Twitter / X Trends', 'Redis Top-K data type', 'Apache DataSketches', 'Network "top talkers" monitoring', 'Popular-searches lists', 'Best-seller and most-viewed lists'],
+    whenToUse: [
+      'You need the <b>most frequent</b> items from a stream with far too many distinct keys to count one by one',
+      'A small, bounded error on counts is fine for a live view',
+      'You want a "trending" list that reacts within a minute'
+    ],
+    whenNot: [
+      'Only a few thousand distinct items: an exact hash map or a SQL <code>GROUP BY</code> is simpler',
+      'Counts must be exact for money or billing (see <a href="ad-click-aggregation.html">Ad Click Aggregation</a>)',
+      'You need a ranked list of known players with exact scores (see <a href="leaderboard.html">Live Leaderboard</a>)'
+    ],
+    glossary: [
+      { term: 'Heavy hitter', def: 'An item that makes up a large share of the stream, such as a very popular hashtag.' },
+      { term: 'Sketch', def: 'A small, fixed-size data structure that summarizes a huge stream and answers questions about it approximately.' },
+      { term: 'Count-Min Sketch', def: 'A grid of counters with one hash function per row; an item\'s estimate is the smallest of its counters, so it can over-count but never under-count.' },
+      { term: 'Min-heap', def: 'A structure that keeps a set of items with the smallest one always on top, so you can quickly drop the weakest of the current top K.' },
+      { term: 'Sliding window', def: 'A time range that moves forward, like "the last 60 minutes", often built from many small time buckets.' },
+      { term: 'Hot key', def: 'One key that gets so much traffic that the single partition or worker owning it is overloaded.' },
+      { term: 'Baseline', def: 'The normal, expected rate for a term at this time of day; trending means far above it.' },
+      { term: 'Watermark', def: 'A stream job\'s marker for "events older than this time have probably all arrived", used to decide when a window can close.' }
+    ]
+  },
+
   requirements: {
     functional: [
       'Top-K hashtags / queries / products per window (1 min, 1 h, 24 h)',

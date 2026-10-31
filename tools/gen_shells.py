@@ -23,7 +23,7 @@ TEMPLATE = """<!doctype html>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../assets/css/site.css">
-<script>try{{var t=localStorage.getItem('sd-theme');if(t)document.documentElement.setAttribute('data-theme',JSON.parse(t))}}catch(e){{}}</script>
+<script>try{{var t=JSON.parse(localStorage.getItem('sd-theme')||'"light"');if(t!=='auto')document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light')}}catch(e){{document.documentElement.setAttribute('data-theme','light')}}</script>
 </head>
 <body>
 <div id="app"><noscript>This page needs JavaScript for its diagrams and animations.</noscript></div>

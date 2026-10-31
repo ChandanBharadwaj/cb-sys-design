@@ -15,6 +15,89 @@ SD.register({
     ]
   },
 
+  intro: {
+    what: 'A file sync service keeps a folder <b>identical on all your devices</b> and stores a copy in the cloud. Save a file on your laptop and it shows up on your phone a few seconds later. It also keeps old versions and lets you share folders with other people.',
+    analogy: {
+      icon: '🧱',
+      title: 'A LEGO model shipped as numbered bricks',
+      text: 'Imagine sending a big LEGO model to a friend who already has the same model. You don\'t mail the whole thing again after changing one corner. You send a parts list plus only the new bricks they lack. The service does the same: files are cut into <b>blocks</b>, each named by a fingerprint of its contents, and a file version is just the ordered list of those names.'
+    },
+    problem: 'You fix one typo in a 1 GB video project on your laptop. Your phone also edited a copy while it was offline on a plane. Without a smart design, the laptop re-uploads the whole 1 GB, and whichever device syncs last <b>silently overwrites the other\'s edit</b>. The core question is: <b>how do you move only what changed, and never lose an edit?</b>',
+    story: [
+      {
+        stage: 'naive',
+        title: 'Upload the whole file on every save',
+        text: 'When a file changes, the laptop uploads <b>the entire file</b> to a server, replacing the old copy. Other devices ask the server every so often, "anything new?", and download whole files. Easy to build, and fine for small text files.',
+        scene: {
+          nodes: [
+            { id: 'dA', label: 'Laptop', sub: 'saves a file', kind: 'client', at: [70, 0] },
+            { id: 'dB', label: 'Phone', sub: 'asks every 30 s', kind: 'client', at: [350, 0] },
+            { id: 'bs', label: 'File server', sub: 'whole files', kind: 'store', at: [210, 110] }
+          ],
+          edges: [{ from: 'dA', to: 'bs' }, { from: 'dB', to: 'bs' }],
+          flow: ['dA>bs', 'dB>bs']
+        }
+      },
+      {
+        stage: 'breaks',
+        title: 'Huge uploads, lost edits, wasted polls',
+        text: 'A one-line change re-sends the <b>whole 1 GB</b> over a slow link. If two devices edited the same file offline, the last upload replaces the first and <b>one edit is gone</b> without warning. Millions of idle devices asking "anything new?" mostly get "no", which wastes servers and still delays changes.',
+        scene: {
+          nodes: [
+            { id: 'dA', label: 'Laptop', sub: '1-line edit', kind: 'client', at: [70, 0] },
+            { id: 'dB', label: 'Phone', sub: 'offline edit', kind: 'client', at: [350, 0] },
+            { id: 'bs', label: 'File server', sub: 'last write wins', kind: 'store', at: [210, 110] }
+          ],
+          edges: [{ from: 'dA', to: 'bs' }, { from: 'dB', to: 'bs' }],
+          flow: [['dA>bs', 'dB>bs'], ['dA>bs', 'dB>bs']],
+          err: ['bs'],
+          warn: ['dA'],
+          badges: { dA: ['re-send 1 GB', 'warn'], bs: ['edit lost', 'err'] }
+        }
+      },
+      {
+        stage: 'fix',
+        title: 'Split into blocks, commit a version, push a ping',
+        text: 'Cut each file into <b>blocks</b> named by a <b>hash</b> of their bytes. Upload only blocks the server lacks; identical blocks are stored once. Then <b>commit</b> the new block list to a separate <b>metadata</b> service, which accepts it only if nobody else changed the file first; otherwise you get a conflicted copy. A notifier tells other devices "something changed" so they fetch just the new blocks.',
+        scene: {
+          nodes: [
+            { id: 'dA', label: 'Laptop', sub: '2 blocks changed', kind: 'client', at: [70, 0] },
+            { id: 'dB', label: 'Phone', sub: 'pulls 2 blocks', kind: 'client', at: [350, 0] },
+            { id: 'blk', label: 'Block service', sub: 'hash → bytes', kind: 'service', at: [70, 110] },
+            { id: 'meta', label: 'Metadata', sub: 'version check', kind: 'service', at: [210, 110] },
+            { id: 'notif', label: 'Notifier', sub: '"changed!"', kind: 'service', at: [350, 110] },
+            { id: 'bs', label: 'Block store', sub: 'each block once', kind: 'store', at: [70, 220] }
+          ],
+          edges: [{ from: 'dA', to: 'blk' }, { from: 'blk', to: 'bs' }, { from: 'dA', to: 'meta' }, { from: 'meta', to: 'notif' }, { from: 'notif', to: 'dB' }],
+          flow: ['dA>blk', 'blk>bs', 'dA>meta', 'meta>notif', 'notif>dB'],
+          ok: ['blk', 'meta', 'bs'],
+          badges: { meta: ['rev 42 ✓', 'ok'] }
+        }
+      }
+    ],
+    usedBy: ['Dropbox', 'Google Drive', 'Microsoft OneDrive', 'Apple iCloud Drive', 'Box'],
+    whenToUse: [
+      'People need the <b>same files on several devices</b>, including while offline',
+      'Files are large and edited often, so sending only changes matters',
+      'Edits must never be silently lost, and old versions must be restorable'
+    ],
+    whenNot: [
+      'Several people type in the same document at the same time (see <a href="collab-editing.html">Collaborative Editing</a>)',
+      'Apps just need to store and fetch blobs by key, with no folders or devices (see <a href="object-storage.html">Object Storage</a>)',
+      'One server and a few users: a shared network drive or <code>rsync</code> is enough'
+    ],
+    glossary: [
+      { term: 'Block', def: 'A fixed-size piece of a file (for example 4 MB); the unit that is uploaded, stored and deduplicated.' },
+      { term: 'Hash (SHA-256)', def: 'A short fingerprint computed from bytes; the same bytes always give the same hash, so it can be used as the block\'s name.' },
+      { term: 'Blocklist', def: 'The ordered list of block hashes that makes up one version of a file.' },
+      { term: 'Deduplication', def: 'Storing identical data only once, by noticing that its hash is already known.' },
+      { term: 'Metadata', def: 'Facts about files rather than their bytes: path, current version, block list, who can see it.' },
+      { term: 'Journal and cursor', def: 'An append-only log of changes per folder; each device remembers its position (cursor) and asks for everything after it.' },
+      { term: 'Long-poll', def: 'A request the server holds open until there is news, so devices hear about changes quickly without asking over and over.' },
+      { term: 'Conflicted copy', def: 'When two devices changed the same file independently, the losing edit is saved as a second file instead of being thrown away.' }
+    ]
+  },
+
   requirements: {
     functional: [
       'Upload and download files of any size, resumably',

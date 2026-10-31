@@ -15,6 +15,91 @@ SD.register({
     ]
   },
 
+  intro: {
+    what: 'A ticket booking system sells seats for concerts, sports and shows. It shows which seats are free, lets you <b>hold</b> a few while you pay, and makes sure <b>no seat is ever sold twice</b>, even when a huge crowd arrives in the same minute.',
+    analogy: {
+      icon: '🎟️',
+      title: 'A box office with a doorman and reserved tags',
+      text: 'When a popular show opens, a theatre does not let the whole crowd rush the counter. A doorman lets people in a few at a time. At the counter, the clerk puts a "reserved" tag on your seat while you find your card, and removes it if you walk away. The online system does the same: a waiting room at the door, a short hold on each seat, and one ledger that cannot sell a seat twice.'
+    },
+    problem: 'A big star announces a tour. At 10:00 sharp, fans and bots all click on the same front-row seats in the same second. Two fans may both see seat A-12 as free and both pay for it, and the flood of clicks can knock the whole site over. The system answers <b>"who gets this seat, exactly once, without crashing under the rush?"</b>',
+    story: [
+      {
+        stage: 'naive',
+        title: 'Check the seat, then sell it',
+        text: 'The app reads the seat row: is it free? If yes, it takes the payment and then marks the seat <b>sold</b>. Every fan goes straight to the app and the database. This works for a small theatre on a quiet day.',
+        scene: {
+          nodes: [
+            { id: 'f1', label: 'Fan 1', sub: 'clicks A-12', kind: 'client', at: [70, 0] },
+            { id: 'f2', label: 'Fan 2', sub: 'clicks A-12', kind: 'client', at: [350, 0] },
+            { id: 'api', label: 'Booking app', sub: 'check, then sell', kind: 'service', at: [210, 110] },
+            { id: 'db', label: 'Seats DB', sub: 'one row per seat', kind: 'store', at: [210, 220] }
+          ],
+          edges: [{ from: 'f1', to: 'api' }, { from: 'f2', to: 'api' }, { from: 'api', to: 'db' }],
+          flow: [['f1>api', 'f2>api'], 'api>db']
+        }
+      },
+      {
+        stage: 'breaks',
+        title: 'Two buyers for one seat, and a crowd at the door',
+        text: 'Both fans read "free" in the same instant, both pay, and <b>seat A-12 is sold twice</b>. Meanwhile millions of clicks and bots arrive at once. More app servers do not help, because they all fight over the same few thousand seat rows. The site slows down and falls over.',
+        scene: {
+          nodes: [
+            { id: 'f1', label: 'Fan 1', sub: 'paid for A-12', kind: 'client', at: [70, 0] },
+            { id: 'f2', label: 'Fan 2', sub: 'paid for A-12', kind: 'client', at: [350, 0] },
+            { id: 'api', label: 'Booking app', sub: 'flooded', kind: 'service', at: [210, 110] },
+            { id: 'db', label: 'Seats DB', sub: 'A-12 sold twice', kind: 'store', at: [210, 220] }
+          ],
+          edges: [{ from: 'f1', to: 'api' }, { from: 'f2', to: 'api' }, { from: 'api', to: 'db' }],
+          flow: [['f1>api', 'f2>api'], ['f1>api', 'f2>api'], 'api>db'],
+          err: ['db'],
+          warn: ['api'],
+          badges: { db: ['double sale', 'err'], api: ['overloaded', 'warn'] }
+        }
+      },
+      {
+        stage: 'fix',
+        title: 'Queue the crowd, hold the seat, then pay',
+        text: 'A <b>virtual waiting room</b> lets fans in at a steady rate the system was tested for. An admitted fan places a short <b>hold</b> with one atomic database update that only succeeds if the seat is still free, so the second fan is told "taken" at once. Payment then confirms the seats, or the hold expires and the seats go back on sale.',
+        scene: {
+          nodes: [
+            { id: 'f1', label: 'Fan 1', sub: 'clicks A-12', kind: 'client', at: [70, 0] },
+            { id: 'wr', label: 'Waiting room', sub: 'steady rate', kind: 'edge', at: [210, 0] },
+            { id: 'f2', label: 'Fan 2', sub: 'clicks A-12', kind: 'client', at: [350, 0] },
+            { id: 'api', label: 'Booking app', sub: 'hold if free', kind: 'service', at: [210, 110] },
+            { id: 'pay', label: 'Payment', sub: 'confirm or free', kind: 'external', at: [350, 110] },
+            { id: 'db', label: 'Seats DB', sub: 'A-12 → HELD', kind: 'store', at: [210, 220] }
+          ],
+          edges: [{ from: 'f1', to: 'wr' }, { from: 'f2', to: 'wr' }, { from: 'wr', to: 'api' }, { from: 'api', to: 'db' }, { from: 'api', to: 'pay' }],
+          flow: [['f1>wr', 'f2>wr'], 'wr>api', 'api>db', 'api>pay'],
+          ok: ['api', 'db'],
+          badges: { db: ['one winner ✓', 'ok'] }
+        }
+      }
+    ],
+    usedBy: ['Ticketmaster', 'BookMyShow', 'SeatGeek', 'Eventbrite', 'Queue-it (virtual waiting rooms)'],
+    whenToUse: [
+      'Each item is unique (row A, seat 12) and must go to <b>exactly one</b> buyer',
+      'Demand can be many times the supply and arrives at one announced moment',
+      'Buyers need a few minutes to pay, so items must be reserved briefly'
+    ],
+    whenNot: [
+      'Plenty of stock and no rush: an ordinary shop checkout is enough (see <a href="ecommerce-orders.html">E-commerce Orders</a>)',
+      'The spike is abuse, not real buyers: start with a <a href="rate-limiter.html">Distributed Rate Limiter</a>',
+      'Bookings trickle in with little competition, like appointment slots: a unique constraint will do'
+    ],
+    glossary: [
+      { term: 'Virtual waiting room', def: 'A queue page in front of the site that admits visitors at a fixed rate and gives each a signed pass.' },
+      { term: 'Outflow', def: 'How many people per minute the waiting room lets through to the booking system.' },
+      { term: 'Hold', def: 'A temporary reservation on a seat that expires after a few minutes if the buyer does not pay.' },
+      { term: 'Conditional UPDATE', def: 'One database statement that changes a row only if a condition is still true, such as "status is AVAILABLE".' },
+      { term: 'Double booking', def: 'Selling the same seat to two people, the one failure this system must never allow.' },
+      { term: 'Saga', def: 'A multi-step process (hold, pay, confirm) where each step has an undo step if a later one fails.' },
+      { term: 'Idempotency key', def: 'A unique id sent with a request so that retrying it does not create a second hold or charge.' },
+      { term: 'Bot', def: 'A script that pretends to be a fan to grab tickets faster than humans can.' }
+    ]
+  },
+
   requirements: {
     functional: [
       'Browse events and a live seat map',

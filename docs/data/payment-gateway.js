@@ -15,6 +15,91 @@ SD.register({
     ]
   },
 
+  intro: {
+    what: 'A payment gateway takes money from a customer\'s card or wallet and moves it to the seller. It talks to banks and card networks for you. It also keeps a <b>ledger</b>, a permanent record of every amount that moved, so <b>the books always add up</b>.',
+    analogy: {
+      icon: '🧾',
+      title: 'A bank teller with a numbered receipt book',
+      text: 'A careful teller gives every request a numbered slip. If you come back and ask "did my deposit go through?", they look up the slip and show you the stamped receipt instead of taking your money again. Every transfer is written twice in the bank\'s book: taken from one account and added to another, so the columns always balance. The gateway does the same, with an idempotency key as the slip number and a double-entry ledger as the book.'
+    },
+    problem: 'You tap <b>Pay</b> for a ₹2,000 order. The bank approves the charge, but your phone loses signal before the answer arrives. Did it work? If the app simply tries again, you may be <b>charged twice</b>. If it gives up, the shop may never record your payment. The system answers <b>"how do we move money exactly once, and prove where every rupee went?"</b>',
+    story: [
+      {
+        stage: 'naive',
+        title: 'Call the bank, then update a balance',
+        text: 'The app sends "charge this card". The server calls the card network, waits for "approved", then adds the amount to the shop\'s <b>balance</b> column. If anything times out, the app just tries again.',
+        scene: {
+          nodes: [
+            { id: 'cli', label: 'Customer app', sub: 'Pay ₹2,000', kind: 'client', at: [70, 0] },
+            { id: 'net', label: 'Card network', sub: 'customer\'s bank', kind: 'external', at: [350, 0] },
+            { id: 'pay', label: 'Payment server', sub: 'charge, then save', kind: 'service', at: [210, 110] },
+            { id: 'db', label: 'Balances DB', sub: 'shop += ₹2,000', kind: 'store', at: [210, 220] }
+          ],
+          edges: [{ from: 'cli', to: 'pay' }, { from: 'pay', to: 'net' }, { from: 'pay', to: 'db' }],
+          flow: ['cli>pay', 'pay>net', 'net>pay', 'pay>db']
+        }
+      },
+      {
+        stage: 'breaks',
+        title: 'A lost reply turns one payment into two',
+        text: 'The bank approves, but the reply is lost on the way back. The app sees a timeout and retries, so the bank <b>charges the card again</b>. If the server crashes between the bank call and the save, the money moved but your records show nothing. A balance that is simply overwritten cannot tell you which one happened.',
+        scene: {
+          nodes: [
+            { id: 'cli', label: 'Customer app', sub: 'timeout → retry', kind: 'client', at: [70, 0] },
+            { id: 'net', label: 'Card network', sub: 'charged again', kind: 'external', at: [350, 0] },
+            { id: 'pay', label: 'Payment server', sub: 'no memory', kind: 'service', at: [210, 110] },
+            { id: 'db', label: 'Balances DB', sub: 'does not match', kind: 'store', at: [210, 220] }
+          ],
+          edges: [{ from: 'cli', to: 'pay' }, { from: 'pay', to: 'net' }, { from: 'pay', to: 'db' }],
+          flow: ['cli>pay', 'pay>net', 'cli>pay', 'pay>net'],
+          err: ['net'],
+          warn: ['cli', 'db'],
+          badges: { net: ['2 charges', 'err'], cli: ['timeout', 'warn'] }
+        }
+      },
+      {
+        stage: 'fix',
+        title: 'Number every payment and write money in a ledger',
+        text: 'The app sends an <b>idempotency key</b>, a unique id for this one payment, and reuses it on every retry. The server saves its progress under that key, so a retry <b>picks up where it stopped</b> or returns the saved answer. Money is written as balanced entries in an append-only <b>ledger</b>, and a daily check compares it with the bank\'s own report.',
+        scene: {
+          nodes: [
+            { id: 'cli', label: 'Customer app', sub: 'same key on retry', kind: 'client', at: [70, 0] },
+            { id: 'net', label: 'Card network', sub: 'same key = once', kind: 'external', at: [350, 0] },
+            { id: 'pay', label: 'Payment server', sub: 'resumes by key', kind: 'service', at: [210, 110] },
+            { id: 'keys', label: 'Key store', sub: 'progress + reply', kind: 'store', at: [70, 220] },
+            { id: 'ledger', label: 'Ledger', sub: 'debits = credits', kind: 'store', at: [210, 220] },
+            { id: 'recon', label: 'Daily check', sub: 'ledger vs bank', kind: 'compute', at: [350, 220] }
+          ],
+          edges: [{ from: 'cli', to: 'pay' }, { from: 'pay', to: 'keys' }, { from: 'pay', to: 'net' }, { from: 'pay', to: 'ledger' }, { from: 'net', to: 'recon', dashed: true }, { from: 'recon', to: 'ledger', dashed: true }],
+          flow: ['cli>pay', 'pay>keys', 'pay>net', 'pay>ledger'],
+          ok: ['keys', 'ledger'],
+          badges: { ledger: ['charged once ✓', 'ok'] }
+        }
+      }
+    ],
+    usedBy: ['Stripe', 'PayPal', 'Adyen', 'Razorpay', 'Square', 'Airbnb (in-house payments)'],
+    whenToUse: [
+      'Your product moves <b>real money</b>: charges, refunds, payouts or wallet balances',
+      'You call outside providers that can time out <b>after</b> doing the work',
+      'You must show auditors where every amount came from and where it went'
+    ],
+    whenNot: [
+      'You only sell a few things online: use a hosted checkout from an existing provider instead of building one',
+      'You need the order around the payment, such as stock and shipping (see <a href="ecommerce-orders.html">E-commerce Orders</a>)',
+      'Game points or loyalty scores that are not real money: a simple counter will do'
+    ],
+    glossary: [
+      { term: 'PSP', def: 'Payment service provider: the company that connects you to card networks and banks.' },
+      { term: 'Authorize / capture', def: 'Authorize reserves the money on the card; capture actually takes it, possibly later.' },
+      { term: 'Idempotency key', def: 'A unique id the client sends with a request, so repeating the request has the same effect as sending it once.' },
+      { term: 'Recovery point', def: 'A saved marker of how far a request got, so a retry can resume from there instead of starting over.' },
+      { term: 'Double-entry ledger', def: 'A record where every transaction is a set of entries that sum to zero: money taken from one account is added to another.' },
+      { term: 'Minor units', def: 'Storing money as whole numbers of the smallest unit (paise, cents) to avoid rounding errors.' },
+      { term: 'Transactional outbox', def: 'Saving an event in the same database transaction as the change, then publishing it later, so neither is lost.' },
+      { term: 'Reconciliation', def: 'Comparing your ledger with the provider\'s settlement report to find any payment that is missing or different.' }
+    ]
+  },
+
   requirements: {
     functional: [
       'Create a payment (authorize + capture) against a card or wallet',

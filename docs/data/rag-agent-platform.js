@@ -15,6 +15,91 @@ SD.register({
     ]
   },
 
+  intro: {
+    what: 'A RAG platform lets an AI assistant answer questions from <b>your own documents</b>. RAG means retrieval-augmented generation: first find the relevant passages, then have a large language model (LLM) write the answer using only those passages, with citations. The agent part lets the model also <b>call tools</b>, such as looking up an order, in a loop until the task is done.',
+    analogy: {
+      icon: '📖',
+      title: 'An open-book exam with a helper who fetches the pages',
+      text: 'A student answering from memory may confidently make things up. In an open-book exam, a helper first finds the right pages, and the student answers only from them and notes the page numbers. The helper checks the student\'s badge, so restricted pages are never handed over. An agent is a student who may also make phone calls to look things up or get things done, but only to numbers you have approved.'
+    },
+    problem: 'An employee asks the company assistant "How many vacation days do we get in Germany?". A plain LLM has never seen your internal policy, so it guesses, and the guess sounds sure of itself. Pasting every document into each prompt is far too big and slow, and some documents are private to HR. The core question is <b>how to give the model the few right passages that this user is allowed to see, so it answers correctly and cites its sources</b>.',
+    story: [
+      {
+        stage: 'naive',
+        title: 'Just ask the model',
+        text: 'Send the user\'s question straight to the LLM and stream back its answer. It is one API call, and it works well for general knowledge such as "what is a mutex?".',
+        scene: {
+          nodes: [
+            { id: 'user', label: 'Employee', sub: 'asks a question', kind: 'client', at: [210, 0] },
+            { id: 'llm', label: 'LLM', sub: 'general knowledge', kind: 'ml', at: [350, 0] },
+            { id: 'orch', label: 'Chat app', sub: 'one API call', kind: 'service', at: [210, 110] }
+          ],
+          edges: [{ from: 'user', to: 'orch', bidi: true }, { from: 'orch', to: 'llm', bidi: true }],
+          flow: ['user>orch', 'orch>llm', 'llm>orch', 'orch>user']
+        }
+      },
+      {
+        stage: 'breaks',
+        title: 'Confident guesses and leaked secrets',
+        text: 'The model has never seen your private, ever-changing documents, so it <b>invents</b> a plausible answer with no source. Pasting all documents into the prompt is far too large, slow and costly. And if you paste the HR folder, an intern can now read salary data, because <b>a prompt cannot enforce permissions</b>.',
+        scene: {
+          nodes: [
+            { id: 'user', label: 'Employee', sub: 'asks a question', kind: 'client', at: [210, 0] },
+            { id: 'llm', label: 'LLM', sub: 'makes things up', kind: 'ml', at: [350, 0] },
+            { id: 'docs', label: 'All documents', sub: 'incl. HR-only', kind: 'store', at: [70, 0] },
+            { id: 'orch', label: 'Chat app', sub: 'pastes it all', kind: 'service', at: [210, 110] }
+          ],
+          edges: [{ from: 'user', to: 'orch', bidi: true }, { from: 'orch', to: 'llm', bidi: true }, { from: 'docs', to: 'orch' }],
+          flow: [['user>orch', 'docs>orch'], 'orch>llm', 'llm>orch', 'orch>user'],
+          err: ['llm'],
+          warn: ['docs', 'user'],
+          badges: { llm: ['made up', 'err'], docs: ['leaks HR', 'err'] }
+        }
+      },
+      {
+        stage: 'fix',
+        title: 'Retrieve the right passages, then generate',
+        text: 'An <b>ingest pipeline</b> splits documents into small <b>chunks</b> and indexes them by meaning and by keyword, with each document\'s permissions attached. At question time an <b>orchestrator</b> retrieves the best chunks this user may see, <b>reranks</b> them, and asks the LLM to answer only from them, with citations. For agents, the same loop can also call <b>tools</b>.',
+        scene: {
+          nodes: [
+            { id: 'user', label: 'Employee', sub: 'asks a question', kind: 'client', at: [210, 0] },
+            { id: 'llm', label: 'LLM', sub: 'answers + cites', kind: 'ml', at: [350, 0] },
+            { id: 'docs', label: 'Documents', sub: 'with permissions', kind: 'store', at: [70, 0] },
+            { id: 'orch', label: 'Orchestrator', sub: 'retrieve → ask', kind: 'service', at: [210, 110] },
+            { id: 'tools', label: 'Tools', sub: 'orders · tickets', kind: 'external', at: [350, 220] },
+            { id: 'ingest', label: 'Ingest', sub: 'chunk + index', kind: 'compute', at: [70, 110] },
+            { id: 'retr', label: 'Retrieval', sub: 'meaning + words', kind: 'service', at: [70, 220] }
+          ],
+          edges: [{ from: 'user', to: 'orch', bidi: true }, { from: 'orch', to: 'llm', bidi: true }, { from: 'orch', to: 'tools', bidi: true }, { from: 'orch', to: 'retr', bidi: true }, { from: 'docs', to: 'ingest' }, { from: 'ingest', to: 'retr' }],
+          flow: ['user>orch', 'orch>retr', 'retr>orch', 'orch>llm', 'llm>orch'],
+          ok: ['retr', 'llm'],
+          badges: { llm: ['cites [2][4]', 'ok'] }
+        }
+      }
+    ],
+    usedBy: ['Microsoft 365 Copilot', 'Perplexity', 'Glean', 'Support bots that answer from help-center articles', 'Coding assistants that search your codebase', 'Model Context Protocol (MCP) tool servers'],
+    whenToUse: [
+      'Answers must come from <b>private or fast-changing</b> documents, with citations',
+      'Different users are allowed to see <b>different documents</b>',
+      'The assistant must look things up or take actions in other systems'
+    ],
+    whenNot: [
+      'Only a handful of short documents: put them straight into the prompt',
+      'Users want a list of matching documents, not a written answer (see <a href="search-engine.html">Distributed Search Engine</a>)',
+      'The model must learn a new style or skill rather than new facts: that is fine-tuning'
+    ],
+    glossary: [
+      { term: 'Chunk', def: 'A small passage cut from a document, a few hundred tokens long, that is indexed and retrieved on its own.' },
+      { term: 'Embedding', def: 'A list of numbers that captures a text\'s meaning, so similar passages can be found even with different words.' },
+      { term: 'BM25', def: 'A classic keyword-ranking formula that scores documents by how often, and how rarely, the query words appear.' },
+      { term: 'Reciprocal rank fusion (RRF)', def: 'A simple way to merge two ranked lists by adding 1 / (k + rank) for each item.' },
+      { term: 'Reranker', def: 'A slower, more accurate model that rescores the top few dozen chunks and keeps the best handful.' },
+      { term: 'ACL', def: 'Access control list: which users or groups may open a document, copied onto its chunks.' },
+      { term: 'Agent loop', def: 'The model proposes a tool call, the system runs it, and the result goes back to the model, until it gives a final answer.' },
+      { term: 'MCP', def: 'Model Context Protocol: an open standard for exposing tools and data to AI assistants through one interface.' }
+    ]
+  },
+
   requirements: {
     functional: [
       'Ingest docs from many sources, re-index on change',

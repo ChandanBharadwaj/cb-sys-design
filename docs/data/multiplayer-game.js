@@ -15,6 +15,88 @@ SD.register({
     ]
   },
 
+  intro: {
+    what: 'A multiplayer game backend is everything behind the <b>Play</b> button of an online game. It finds fair opponents, starts a game server close to them, and runs the match so every player sees <b>the same world at the same moment</b>.',
+    analogy: {
+      icon: '⚽',
+      title: 'A referee whose call is final',
+      text: 'In a park football game, every player sees the ball from a different spot, so arguments start over whether a goal counted. A referee ends the arguments: they watch everything and their call is final. The game server is that referee for an online match. Unlike a real referee, it sees each player\'s view a little late, so it must judge each shot by what that player could see at the time.'
+    },
+    problem: 'Ten friends in different cities join the same shooting match. Every connection adds a delay, some packets get lost, and one player runs a cheat. Without one fair judge, two screens disagree about who fired first, and the cheater wins every argument. The system answers <b>"what really happened in this match?"</b> and makes the answer <b>feel instant</b> for everyone.',
+    story: [
+      {
+        stage: 'naive',
+        title: 'Each game reports where it is and what it hit',
+        text: 'Each player\'s game sends <b>its own position and its own hits</b> to one central server. The server passes them on to everyone else. It is easy to build and works fine for two friends testing on the same network.',
+        scene: {
+          nodes: [
+            { id: 'a', label: 'Player A', sub: '"I am here"', kind: 'client', at: [70, 0] },
+            { id: 'b', label: 'Player B', sub: '"I hit A"', kind: 'client', at: [350, 0] },
+            { id: 'srv', label: 'Central server', sub: 'passes it on', kind: 'service', at: [210, 110] }
+          ],
+          edges: [{ from: 'a', to: 'srv' }, { from: 'b', to: 'srv' }],
+          flow: [['a>srv', 'b>srv'], ['srv>a', 'srv>b']]
+        }
+      },
+      {
+        stage: 'breaks',
+        title: 'Cheaters lie and far-away players lag',
+        text: 'A hacked game simply says "I teleported" or "headshot", and the server believes it. Players far from the one server wait a long round trip before anything moves. Every action waits for that trip, so the game feels sluggish, and one server for every match soon runs out of power.',
+        scene: {
+          nodes: [
+            { id: 'a', label: 'Hacked client', sub: '"headshot!"', kind: 'client', at: [70, 0] },
+            { id: 'b', label: 'Far player', sub: 'long round trip', kind: 'client', at: [350, 0] },
+            { id: 'srv', label: 'Central server', sub: 'trusts clients', kind: 'service', at: [210, 110] }
+          ],
+          edges: [{ from: 'a', to: 'srv' }, { from: 'b', to: 'srv' }],
+          flow: ['a>srv', 'srv>b'],
+          err: ['a', 'srv'],
+          warn: ['b'],
+          badges: { srv: ['fooled', 'err'], b: ['laggy ⏳', 'warn'] }
+        }
+      },
+      {
+        stage: 'fix',
+        title: 'One referee server per match, close to the players',
+        text: 'A <b>matchmaker</b> groups players of similar skill who have a good connection to the same region. It hands the match a ready server nearby. Players send only their <b>inputs</b> (keys pressed, where they aim). The server simulates the world in small fixed steps and <b>decides every hit</b>. Each game still moves your own character at once, so it feels instant.',
+        scene: {
+          nodes: [
+            { id: 'a', label: 'Player A', sub: 'sends inputs', kind: 'client', at: [70, 0] },
+            { id: 'b', label: 'Player B', sub: 'sends inputs', kind: 'client', at: [350, 0] },
+            { id: 'mm', label: 'Matchmaker', sub: 'skill + ping', kind: 'service', at: [70, 110] },
+            { id: 'fleet', label: 'Ready servers', sub: 'nearby region', kind: 'compute', at: [70, 220] },
+            { id: 'srv', label: 'Game server', sub: 'decides hits', kind: 'compute', at: [210, 110] }
+          ],
+          edges: [{ from: 'a', to: 'mm' }, { from: 'mm', to: 'fleet' }, { from: 'fleet', to: 'srv' }, { from: 'a', to: 'srv' }, { from: 'b', to: 'srv' }],
+          flow: ['a>mm', 'mm>fleet', 'fleet>srv', ['a>srv', 'b>srv']],
+          ok: ['srv'],
+          badges: { srv: ['fair ✓', 'ok'] }
+        }
+      }
+    ],
+    usedBy: ['Valorant', 'Counter-Strike', 'Overwatch', 'Fortnite', 'Agones (open-source game-server hosting)'],
+    whenToUse: [
+      'Many players share <b>one fast-changing world</b> in real time',
+      'Fairness matters, as in ranked or competitive play where cheating must be blocked',
+      'Matches are short and frequent, so servers start and stop all day'
+    ],
+    whenNot: [
+      'Turn-based games like chess: an ordinary web API and database is enough',
+      'People edit a shared thing and every change should be merged (see <a href="collab-editing.html">Collaborative Editing</a>)',
+      'Two friends in a co-op or fighting game: peer-to-peer with rollback is cheaper'
+    ],
+    glossary: [
+      { term: 'Matchmaking', def: 'Grouping waiting players into a match by skill rating, party and connection quality.' },
+      { term: 'Dedicated server', def: 'A server process that runs one match and is not one of the players\' own machines.' },
+      { term: 'Authoritative server', def: 'The server owns the true game state; players send inputs and the server decides the results.' },
+      { term: 'Tick rate', def: 'How many times per second the server advances the game world, such as 64 or 128 times.' },
+      { term: 'Client-side prediction', def: 'Your game applies your own input right away, then corrects itself if the server disagrees.' },
+      { term: 'Interpolation', def: 'Drawing other players slightly in the past, smoothly between two received updates.' },
+      { term: 'Lag compensation', def: 'The server rewinds other players to where the shooter saw them, to check if a shot hit.' },
+      { term: 'UDP', def: 'A network protocol that sends packets without waiting for lost ones to be resent, so old data never blocks new data.' }
+    ]
+  },
+
   requirements: {
     functional: [
       'Matchmaking by skill, region ping and party',

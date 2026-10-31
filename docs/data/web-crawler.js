@@ -15,6 +15,94 @@ SD.register({
     ]
   },
 
+  intro: {
+    what: 'A web crawler is a program that <b>downloads web pages automatically</b>. It starts from a few known addresses, reads each page, finds the links on it, and adds them to its to-do list. Search engines, web archives and AI training datasets are all built from what crawlers fetch.',
+    analogy: {
+      icon: '🗺️',
+      title: 'Surveyors mapping a city that never ends',
+      text: 'Give a team of surveyors a few starting streets. At each building they write down every street sign, add new streets to a shared list, and cross off streets already visited. They must not knock on the same door a hundred times an hour, or the owners will lock them out. A crawler does this for billions of pages. Unlike a real city, the web also has fake streets that lead on forever.'
+    },
+    problem: 'Say you want to build a search engine for recipes. You need a fresh copy of millions of pages from thousands of sites. A simple script that fetches one page at a time would take years, but firing thousands of requests at one small food blog would knock it over. The web is also full of duplicate pages and endless link loops. The question is: <b>how do you download billions of pages quickly, without hammering any one site or fetching the same thing twice?</b>',
+    story: [
+      {
+        stage: 'naive',
+        title: 'One script, one list, one page at a time',
+        text: 'Put the start URLs in a list. Fetch the first one, pull out its links, add them to the end of the list, and repeat. This is a <b>breadth-first</b> crawl, and it makes a fine weekend project.',
+        scene: {
+          nodes: [
+            { id: 'seeds', label: 'Start URLs', sub: 'a few seeds', kind: 'client', at: [70, 0] },
+            { id: 'front', label: 'URL list', sub: 'to-do, in order', kind: 'queue', at: [210, 0] },
+            { id: 'fetch', label: 'Fetcher', sub: 'one page at a time', kind: 'compute', at: [350, 0] },
+            { id: 'parse', label: 'Parser', sub: 'finds links', kind: 'service', at: [210, 110] },
+            { id: 'web', label: 'The Web', sub: 'websites', kind: 'external', at: [350, 110] }
+          ],
+          edges: [{ from: 'seeds', to: 'front' }, { from: 'front', to: 'fetch' }, { from: 'fetch', to: 'web', bidi: true }, { from: 'fetch', to: 'parse' }, { from: 'parse', to: 'front' }],
+          flow: ['seeds>front', 'front>fetch', 'fetch>web', 'fetch>parse', 'parse>front']
+        }
+      },
+      {
+        stage: 'breaks',
+        title: 'Too slow, too rude, and stuck in loops',
+        text: 'One page at a time takes years. Run a thousand copies and they all grab links from the same few sites, so a small blog gets <b>hundreds of requests a second</b> and blocks you. An endless calendar keeps producing "new" pages, and the list fills up with <b>duplicates</b> you have already fetched.',
+        scene: {
+          nodes: [
+            { id: 'seeds', label: 'Start URLs', sub: 'a few seeds', kind: 'client', at: [70, 0] },
+            { id: 'front', label: 'URL list', sub: 'dupes + traps', kind: 'queue', at: [210, 0] },
+            { id: 'fetch', label: 'Fetchers ×1000', sub: 'all on one site', kind: 'compute', at: [350, 0] },
+            { id: 'parse', label: 'Parser', sub: 'finds links', kind: 'service', at: [210, 110] },
+            { id: 'web', label: 'Small blog', sub: 'overloaded', kind: 'external', at: [350, 110] }
+          ],
+          edges: [{ from: 'seeds', to: 'front' }, { from: 'front', to: 'fetch' }, { from: 'fetch', to: 'web', bidi: true }, { from: 'fetch', to: 'parse' }, { from: 'parse', to: 'front' }],
+          flow: ['front>fetch', ['fetch>web', 'fetch>web'], 'fetch>parse', 'parse>front'],
+          err: ['web'],
+          warn: ['front'],
+          badges: { web: ['blocked', 'err'], front: ['∞ calendar', 'warn'] }
+        }
+      },
+      {
+        stage: 'fix',
+        title: 'A polite frontier and a memory of what you have seen',
+        text: 'The <b>URL frontier</b> sorts work twice: first by importance, then into <b>one queue per website</b>. Each site is fetched only every few seconds, while thousands of other sites are fetched in parallel. Before a link is queued, a compact <b>"seen?" filter</b> in memory skips URLs the crawler already knows.',
+        scene: {
+          nodes: [
+            { id: 'seeds', label: 'Start URLs', sub: 'a few seeds', kind: 'client', at: [70, 0] },
+            { id: 'front', label: 'Frontier', sub: 'by priority', kind: 'queue', at: [210, 0] },
+            { id: 'back', label: 'Host queues', sub: 'one per website', kind: 'queue', at: [350, 0] },
+            { id: 'seen', label: 'Seen filter', sub: 'Bloom, in RAM', kind: 'cache', at: [70, 110] },
+            { id: 'parse', label: 'Parser', sub: 'finds links', kind: 'service', at: [210, 110] },
+            { id: 'fetch', label: 'Fetchers', sub: 'many sites at once', kind: 'compute', at: [350, 110] },
+            { id: 'web', label: 'The Web', sub: 'each site: gently', kind: 'external', at: [350, 220] }
+          ],
+          edges: [{ from: 'seeds', to: 'front' }, { from: 'front', to: 'back' }, { from: 'back', to: 'fetch' }, { from: 'fetch', to: 'web', bidi: true }, { from: 'fetch', to: 'parse' }, { from: 'parse', to: 'seen' }, { from: 'seen', to: 'front' }],
+          flow: ['back>fetch', 'fetch>web', 'fetch>parse', 'parse>seen', 'seen>front'],
+          ok: ['back', 'seen', 'web'],
+          badges: { web: ['polite ✓', 'ok'], seen: ['dupes skipped', 'ok'] }
+        }
+      }
+    ],
+    usedBy: ['Googlebot', 'Bingbot', 'Common Crawl', 'Internet Archive\'s Wayback Machine', 'Apache Nutch', 'Scrapy (Python)'],
+    whenToUse: [
+      'You need copies of many pages from <b>many websites</b> you do not control',
+      'Content changes over time and must be fetched again on a schedule',
+      'The pages are found by following links, not listed up front'
+    ],
+    whenNot: [
+      'The site offers an API, a feed or a data dump: use that instead',
+      'You need a few hundred pages from one site: a simple script with a delay is enough',
+      'You want to rank and serve results for queries (see <a href="search-engine.html">Search Engine</a>, which consumes the crawl)'
+    ],
+    glossary: [
+      { term: 'Seed URL', def: 'A starting address that the crawl begins from.' },
+      { term: 'URL frontier', def: 'The crawler\'s to-do list of URLs, ordered by importance and by when each site may be visited again.' },
+      { term: 'Politeness', def: 'Limiting how often you fetch from one website so that you never overload it.' },
+      { term: 'robots.txt', def: 'A file at the root of a site that tells crawlers which paths they may fetch.' },
+      { term: 'Bloom filter', def: 'A compact bit array in memory that answers "seen this URL?". It never forgets a URL it has seen, but now and then wrongly says "seen" for a new one.' },
+      { term: 'Spider trap', def: 'A site structure, such as an endless calendar, that generates an unlimited number of URLs.' },
+      { term: 'Near-duplicate', def: 'A page that is almost identical to another, such as the same article with different ads. SimHash fingerprints detect these.' },
+      { term: 'WARC', def: 'Web ARChive: a standard file format that packs many raw HTTP responses into one large file.' }
+    ]
+  },
+
   requirements: {
     functional: [
       'Start from seed URLs and follow links',

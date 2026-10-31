@@ -7,7 +7,7 @@ const DOCS = path.join(__dirname, '..', 'docs');
 const BASE = 'http://127.0.0.1:8765/';
 const OUT = path.join(__dirname, '..', '.shots'); fs.mkdirSync(OUT, { recursive: true });
 const args = process.argv.slice(2);
-const full = args.includes('--full'); const slugs0 = args.filter(a => !a.startsWith('--'));
+const full = args.includes('--full'); const requireIntro = args.includes('--require-intro'); const slugs0 = args.filter(a => !a.startsWith('--'));
 const slugs = slugs0.length ? slugs0 : fs.readdirSync(path.join(DOCS, 'data')).map(f => f.replace('.js', ''));
 (async () => {
   const browser = await chromium.launch();
@@ -49,6 +49,19 @@ const slugs = slugs0.length ? slugs0 : fs.readdirSync(path.join(DOCS, 'data')).m
           out.calcBad = [...document.querySelectorAll('#capacity .calc-out .v')].map(v => v.textContent).filter(t => /NaN|undefined|Infinity|—/.test(t));
           out.widget = !!document.querySelector('#deep-dive .widget-body')?.children.length;
           out.iq = document.querySelectorAll('#interview .qa').length;
+          out.theme = document.documentElement.getAttribute('data-theme');
+          const intro = document.querySelector('#intro');
+          out.intro = !!intro;
+          if (intro) {
+            out.storyFrames = intro.querySelectorAll('.story-step').length;
+            for (const b of intro.querySelectorAll('.story-step')) { b.click(); await new Promise(r => setTimeout(r, 120)); }
+            out.storySvgs = intro.querySelectorAll('.story-pane svg').length;
+            out.gloss = intro.querySelectorAll('.glossary .term').length;
+            out.what = (intro.querySelector('.intro-what .lead')?.textContent || '').trim().length;
+            out.problem = (intro.querySelector('.problem-callout p')?.textContent || '').trim().length;
+          }
+          const sw = document.querySelectorAll('.theme-switch button');
+          if (sw.length === 3) { sw[1].click(); out.darkOk = document.documentElement.getAttribute('data-theme') === 'dark'; sw[0].click(); out.lightBack = document.documentElement.getAttribute('data-theme') === 'light'; }
           out.src = document.querySelectorAll('#real-world .sources a').length;
           return out;
         });
@@ -60,7 +73,7 @@ const slugs = slugs0.length ? slugs0 : fs.readdirSync(path.join(DOCS, 'data')).m
         await page.evaluate(async () => { for (let y = 0; y < document.body.scrollHeight; y += 500) { window.scrollTo({ top: y, behavior: 'instant' }); await new Promise(r => setTimeout(r, 60)); } window.scrollTo({ top: 0, behavior: 'instant' }); });
         await page.waitForTimeout(300);
         await page.screenshot({ path: path.join(OUT, `${slug}-${name}.png`), fullPage: true });
-        for (const sec of ['architecture', 'knobs', 'deep-dive']) {
+        for (const sec of ['intro', 'architecture', 'knobs', 'deep-dive']) {
           const loc = page.locator('#' + sec);
           if (await loc.count()) { await loc.scrollIntoViewIfNeeded(); await page.waitForTimeout(2200); await loc.screenshot({ path: path.join(OUT, `${slug}-${name}-${sec}.png`) }); }
         }
@@ -83,6 +96,10 @@ const slugs = slugs0.length ? slugs0 : fs.readdirSync(path.join(DOCS, 'data')).m
       if (!r.widget) problems.push('no widget');
       if ((r.iq || 0) < 8) problems.push('only ' + r.iq + ' interview qs');
       if ((r.src || 0) < 3) problems.push('only ' + r.src + ' sources');
+      if (r.theme !== 'light') problems.push('default theme is ' + r.theme);
+      if (!r.darkOk || !r.lightBack) problems.push('theme switch broken');
+      if (requireIntro && !r.intro) problems.push('no intro');
+      if (r.intro && (r.storyFrames !== 3 || r.storySvgs !== 3 || r.gloss < 5 || r.what < 40 || r.problem < 40)) problems.push(`intro incomplete (frames ${r.storyFrames}, svgs ${r.storySvgs}, glossary ${r.gloss}, what ${r.what}, problem ${r.problem})`);
     }
     if (problems.length) bad++;
     console.log((problems.length ? '✗ ' : '✓ ') + r.slug + ' [' + r.size + ']' + (problems.length ? ' — ' + problems.join(' ; ') : ` scen=${r.scen ?? '-'} knobs=${r.knobs ?? '-'}/${r.knobChanges ?? '-'} iq=${r.iq ?? '-'} src=${r.src ?? '-'}`));

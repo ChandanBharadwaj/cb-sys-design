@@ -15,6 +15,92 @@ SD.register({
     ]
   },
 
+  intro: {
+    what: 'An ad click aggregation system <b>counts clicks on online ads</b>, per ad and per minute. Advertisers watch these counts on live dashboards, budget systems use them to stop an ad once its money is spent, and invoices are based on them. So the counts must be fast and also <b>exactly right</b>.',
+    analogy: {
+      icon: '🚗',
+      title: 'A toll road that bills by number plate',
+      text: 'Cameras at many toll gates send plate readings to a central office, and each reading becomes a charge on someone\'s bill. A car photographed twice must not be charged twice, and a reading that arrives late must still land on the right day. Ad clicks work the same way. The difference is that the "number plate" is a click id, which has to be stamped into the ad when it is shown, before anyone clicks.'
+    },
+    problem: 'An advertiser pays a small amount each time someone clicks their ad. A user double-taps, a phone retries on a bad network, a server crashes and replays its work, and a phone that was offline sends its click ten minutes late. Count naively and you <b>overcharge</b> some advertisers and lose money on others. The question is: <b>how do you count billions of clicks within a minute or two, with every click counted exactly once?</b>',
+    story: [
+      {
+        stage: 'naive',
+        title: 'Add one to a counter on every click',
+        text: 'The click tracker sends the user on to the advertiser\'s page and runs <code>clicks[ad][minute] += 1</code> in a fast store such as Redis. The dashboard reads the counters. It is quick, and it takes an afternoon to build.',
+        scene: {
+          nodes: [
+            { id: 'usr', label: 'Users', sub: 'click an ad', kind: 'client', at: [70, 0] },
+            { id: 'trk', label: 'Click tracker', sub: 'redirect + count', kind: 'edge', at: [210, 0] },
+            { id: 'olap', label: 'Redis', sub: '+1 per click', kind: 'cache', at: [350, 0] },
+            { id: 'adv', label: 'Advertiser', sub: 'dashboard', kind: 'client', at: [350, 110] }
+          ],
+          edges: [{ from: 'usr', to: 'trk' }, { from: 'trk', to: 'olap' }, { from: 'olap', to: 'adv' }],
+          flow: ['usr>trk', 'trk>olap', 'olap>adv']
+        }
+      },
+      {
+        stage: 'breaks',
+        title: 'Duplicates, late clicks and one very hot ad',
+        text: 'A double tap or a network retry sends the same click twice, and <code>+= 1</code> counts both. A crash followed by a replay counts a whole batch again. A late click is added to the <b>wrong minute</b>. And when one ad goes viral, every one of its clicks hits the <b>same counter</b> on one machine.',
+        scene: {
+          nodes: [
+            { id: 'usr', label: 'Users', sub: 'double taps', kind: 'client', at: [70, 0] },
+            { id: 'trk', label: 'Click tracker', sub: 'retry = new click', kind: 'edge', at: [210, 0] },
+            { id: 'olap', label: 'Redis', sub: 'overcounted', kind: 'cache', at: [350, 0] },
+            { id: 'adv', label: 'Advertiser', sub: 'overbilled', kind: 'client', at: [350, 110] }
+          ],
+          edges: [{ from: 'usr', to: 'trk' }, { from: 'trk', to: 'olap' }, { from: 'olap', to: 'adv' }],
+          flow: [['usr>trk', 'usr>trk'], ['trk>olap', 'trk>olap'], 'olap>adv'],
+          err: ['olap'],
+          warn: ['adv'],
+          badges: { olap: ['+2 for 1 click', 'err'], adv: ['overbilled', 'warn'] }
+        }
+      },
+      {
+        stage: 'fix',
+        title: 'A log, dedup by click id, event-time windows',
+        text: 'Every click carries a <b>click id</b> stamped into the ad when it was shown, so a retry has the same id. Clicks go into a durable log (Kafka). A stream job drops ids it has already seen, counts the rest in <b>one-minute windows by the time the click happened</b>, and writes results as <b>upserts</b> that are safe to repeat. A nightly batch job recounts the raw log as an audit.',
+        scene: {
+          nodes: [
+            { id: 'usr', label: 'Users', sub: 'click an ad', kind: 'client', at: [70, 0] },
+            { id: 'trk', label: 'Click tracker', sub: 'click id in URL', kind: 'edge', at: [210, 0] },
+            { id: 'kfk', label: 'Kafka log', sub: 'raw clicks', kind: 'queue', at: [350, 0] },
+            { id: 'olap', label: 'OLAP store', sub: 'upsert ad+minute', kind: 'store', at: [70, 110] },
+            { id: 'agg', label: 'Window counts', sub: '1 min, event time', kind: 'compute', at: [210, 110] },
+            { id: 'dedup', label: 'Dedup', sub: 'drop seen ids', kind: 'compute', at: [350, 110] },
+            { id: 'adv', label: 'Advertiser', sub: 'dashboard', kind: 'client', at: [70, 220] }
+          ],
+          edges: [{ from: 'usr', to: 'trk' }, { from: 'trk', to: 'kfk' }, { from: 'kfk', to: 'dedup' }, { from: 'dedup', to: 'agg' }, { from: 'agg', to: 'olap' }, { from: 'olap', to: 'adv' }],
+          flow: ['trk>kfk', 'kfk>dedup', 'dedup>agg', 'agg>olap', 'olap>adv'],
+          ok: ['dedup', 'olap'],
+          badges: { dedup: ['dup dropped', 'ok'], olap: ['exact', 'ok'] }
+        }
+      }
+    ],
+    usedBy: ['Google Ads (Photon, Mesa)', 'Uber Eats ads', 'Apache Flink', 'Apache Kafka', 'Apache Pinot', 'Apache Druid'],
+    whenToUse: [
+      'Counts turn into <b>money</b>: invoices, budgets, payouts',
+      'Events can be duplicated, late or out of order, and each must count exactly once',
+      'People need fresh numbers within minutes, and audited numbers by the end of the day'
+    ],
+    whenNot: [
+      'Approximate live numbers are good enough (see <a href="stream-analytics.html">Stream Analytics</a>)',
+      'You only need the most-clicked items, not every count (see <a href="top-k.html">Top-K</a>)',
+      'A few thousand clicks a day: a database table with a unique click id and a <code>GROUP BY</code> is enough'
+    ],
+    glossary: [
+      { term: 'Click id', def: 'A unique id for one click, created when the ad is shown, so every retry of that click carries the same id.' },
+      { term: 'Deduplication', def: 'Dropping events whose id has already been seen.' },
+      { term: 'Event time', def: 'When the click actually happened, as opposed to when the system received it.' },
+      { term: 'Tumbling window', def: 'Fixed, non-overlapping slices of time (12:00 to 12:01, 12:01 to 12:02) that clicks are counted in.' },
+      { term: 'Watermark', def: 'A marker that says "no clicks older than time T are expected any more", which lets a window close and publish.' },
+      { term: 'Upsert', def: 'Insert a row, or overwrite it if its key already exists. Writing the same result twice does no harm.' },
+      { term: 'Hot key', def: 'One key, such as a viral ad, that gets so much traffic it overloads the single machine handling it.' },
+      { term: 'Reconciliation', def: 'Recounting later from the raw log and correcting the stream\'s numbers. Billing uses the corrected ones.' }
+    ]
+  },
+
   requirements: {
     functional: [
       'Record each click (redirect or beacon) with a unique click_id',

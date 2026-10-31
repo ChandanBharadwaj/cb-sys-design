@@ -15,6 +15,90 @@ SD.register({
     ]
   },
 
+  intro: {
+    what: 'A URL shortener turns a long web address into a short one, like <code>sho.rt/2crtgef</code>. When someone opens the short link, the service looks up the long address and <b>redirects</b> the browser there. Most also count clicks so the link owner can see who clicked.',
+    analogy: {
+      icon: '🧥',
+      title: 'A coat-check ticket',
+      text: 'At a coat check you hand over a bulky coat and get a small numbered ticket. The numbers come from a roll, so no two people ever get the same one. Later anyone with the ticket gets the coat back in seconds. A URL shortener hands out short codes from a counter the same way. Unlike a coat check, the ticket is never used up: the same code can be redeemed millions of times.'
+    },
+    problem: 'Long links break in text messages, look ugly on posters and do not fit in a QR code nicely. You want a short link that <b>never points to the wrong place</b> and opens instantly, even when it goes viral and gets thousands of clicks per second. The question is: <b>how do you hand out short codes that never collide, and redirect clicks in milliseconds?</b>',
+    story: [
+      {
+        stage: 'naive',
+        title: 'Hash the URL and keep one table',
+        text: 'Take a <b>hash</b> of the long URL (a scrambled fingerprint), keep the first 7 characters as the code and store <code>code → URL</code> in one database. Each click reads the row, adds 1 to its click count and redirects. Easy, and fine for a hobby project.',
+        scene: {
+          nodes: [
+            { id: 'cli', label: 'Browser', sub: 'create or click', kind: 'client', at: [70, 0] },
+            { id: 'api', label: 'App server', sub: 'hash → 7 chars', kind: 'service', at: [210, 110] },
+            { id: 'db', label: 'One database', sub: 'links + counts', kind: 'store', at: [350, 220] }
+          ],
+          edges: [{ from: 'cli', to: 'api' }, { from: 'api', to: 'db' }],
+          flow: ['cli>api', 'api>db']
+        }
+      },
+      {
+        stage: 'breaks',
+        title: 'Collisions and a flood of clicks',
+        text: 'Cutting a hash to 7 characters means two different URLs can get the <b>same code</b>, so every create must check and retry, and that gets worse as the table fills. When a link goes viral, every click is a database read <b>plus</b> a write to bump the counter on the same row. Redirects slow down and the database becomes the bottleneck.',
+        scene: {
+          nodes: [
+            { id: 'cli', label: 'Browsers', sub: 'viral link', kind: 'client', at: [70, 0] },
+            { id: 'api', label: 'App server', sub: 'hash → 7 chars', kind: 'service', at: [210, 110] },
+            { id: 'db', label: 'One database', sub: 'read + write/click', kind: 'store', at: [350, 220] }
+          ],
+          edges: [{ from: 'cli', to: 'api' }, { from: 'api', to: 'db' }],
+          flow: [['cli>api', 'cli>api'], ['api>db', 'api>db']],
+          err: ['db'],
+          warn: ['api'],
+          badges: { api: ['collision!', 'warn'], db: ['overloaded', 'err'] }
+        }
+      },
+      {
+        stage: 'fix',
+        title: 'Counter ids in Base62, cached redirects',
+        text: 'Give every new link the next number from a <b>counter</b>, handed to servers in blocks so they rarely coordinate. Write that number in <b>Base62</b> (0–9, a–z, A–Z): 7 characters cover trillions of links and can never collide. Redirects read from a <b>cache</b>, and clicks go to a queue for analytics, so the redirect never waits.',
+        scene: {
+          nodes: [
+            { id: 'cli', label: 'Browser', sub: 'create or click', kind: 'client', at: [70, 0] },
+            { id: 'api', label: 'Create API', sub: 'id → Base62', kind: 'service', at: [210, 0] },
+            { id: 'kgs', label: 'Id blocks', sub: '1,000 at a time', kind: 'service', at: [350, 0] },
+            { id: 'redir', label: 'Redirect svc', sub: '302 → long URL', kind: 'service', at: [70, 110] },
+            { id: 'cache', label: 'Cache', sub: 'code → URL', kind: 'cache', at: [210, 110] },
+            { id: 'db', label: 'Link store', sub: 'key = code', kind: 'store', at: [350, 110] },
+            { id: 'kfk', label: 'Click events', sub: 'counted later', kind: 'queue', at: [70, 220] }
+          ],
+          edges: [{ from: 'cli', to: 'api' }, { from: 'api', to: 'kgs' }, { from: 'api', to: 'db' }, { from: 'cli', to: 'redir' }, { from: 'redir', to: 'cache' }, { from: 'redir', to: 'kfk' }],
+          flow: ['cli>api', 'api>kgs', 'api>db', 'cli>redir', ['redir>cache', 'redir>kfk']],
+          ok: ['cache', 'redir'],
+          badges: { cache: ['hit < 1 ms', 'ok'] }
+        }
+      }
+    ],
+    usedBy: ['Bitly', 'TinyURL', 'X / Twitter t.co links', 'Marketing QR codes and SMS links'],
+    whenToUse: [
+      'Long links must fit in texts, posters, QR codes or character limits',
+      'You want to <b>count clicks</b> or change where a link points later',
+      'Links are opened far more often than they are created'
+    ],
+    whenNot: [
+      'You only need unique ids inside your own system, not a public link (see <a href="unique-id.html">Unique ID Generator</a>)',
+      'The link must be secret and unguessable, like a password-reset link: use a long random token',
+      'A handful of fixed links: a static redirect rule in your web server is enough'
+    ],
+    glossary: [
+      { term: 'Short code', def: 'The few characters after the domain (like <code>2crtgef</code>) that identify one link.' },
+      { term: 'Base62', def: 'Writing a number with 62 symbols (0–9, a–z, A–Z) so it takes far fewer characters than in decimal.' },
+      { term: 'Collision', def: 'Two different long URLs ending up with the same short code.' },
+      { term: 'Id block', def: 'A range of counter values, for example 1,000 ids, handed to one server so it can create links without asking the counter each time.' },
+      { term: '301 vs 302 redirect', def: 'HTTP answers that send the browser elsewhere; 301 ("permanent") may be cached by browsers, 302 ("found") is checked each time, so clicks can be counted.' },
+      { term: 'Cache-aside', def: 'Read from the cache first; on a miss, read the database and put the answer in the cache for next time.' },
+      { term: 'Hot key', def: 'One key, like a viral link\'s code, read so often that the single cache server holding it gets overloaded.' },
+      { term: 'Conditional insert', def: 'A write that succeeds only if the key does not exist yet, so two users can never claim the same custom alias.' }
+    ]
+  },
+
   requirements: {
     functional: [
       'Create a short code for a long URL',

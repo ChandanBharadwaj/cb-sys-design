@@ -15,6 +15,90 @@ SD.register({
     ]
   },
 
+  intro: {
+    what: 'An LLM gateway is a single front door that every app in a company uses to call large language models (LLMs). Apps send requests to the gateway instead of straight to a model provider. The gateway checks <b>who is calling and how much they may spend</b>, removes private data, picks a model, and <b>switches providers</b> when one fails, while the answer streams straight back.',
+    analogy: {
+      icon: '🧳',
+      title: 'A company travel desk',
+      text: 'Instead of every employee booking flights on a personal card, a company travel desk books everything. It checks each team\'s budget, picks a suitable airline, rebooks you on another airline if a flight is cancelled, and sends finance one clear bill per team. An LLM gateway does the same for model calls. Unlike a travel desk, it must decide in a few milliseconds.'
+    },
+    problem: 'Ten teams each call model providers with their own API keys. One night a team runs a big batch job that uses up the company\'s whole provider quota, and the customer support bot starts failing. Then the provider has an outage and every AI feature goes down at once. At month end, nobody can say which team spent what. The core question is <b>how to share model access fairly, control cost, and keep working when a provider fails</b>.',
+    story: [
+      {
+        stage: 'naive',
+        title: 'Every app calls the provider directly',
+        text: 'Each team signs up with a provider, puts the API key in its app, and calls the model directly. It is the fastest way to ship the first AI feature.',
+        scene: {
+          nodes: [
+            { id: 'a1', label: 'Support bot', sub: 'own API key', kind: 'client', at: [70, 0] },
+            { id: 'pA', label: 'Provider A', sub: 'shared quota', kind: 'external', at: [350, 0] },
+            { id: 'a2', label: 'Batch job', sub: 'own API key', kind: 'client', at: [70, 220] }
+          ],
+          edges: [{ from: 'a1', to: 'pA', bidi: true }, { from: 'a2', to: 'pA', bidi: true }],
+          flow: [['a1>pA', 'a2>pA'], ['pA>a1', 'pA>a2']]
+        }
+      },
+      {
+        stage: 'breaks',
+        title: 'One big job or one outage breaks everyone',
+        text: 'Providers cap each company at so many <b>tokens per minute</b> (a token is a small piece of text). The batch job sends huge prompts, uses up the shared cap, and the support bot gets <b>429 "too many requests"</b> errors. When the provider has an outage, every feature fails together. Keys are scattered across apps, and no one knows which team spent what.',
+        scene: {
+          nodes: [
+            { id: 'a1', label: 'Support bot', sub: 'gets errors', kind: 'client', at: [70, 0] },
+            { id: 'pA', label: 'Provider A', sub: 'quota used up', kind: 'external', at: [350, 0] },
+            { id: 'a2', label: 'Batch job', sub: 'huge prompts', kind: 'client', at: [70, 220] }
+          ],
+          edges: [{ from: 'a1', to: 'pA', bidi: true }, { from: 'a2', to: 'pA', bidi: true }],
+          flow: [['a2>pA', 'a1>pA'], 'a2>pA', 'pA>a1'],
+          err: ['pA'],
+          warn: ['a1'],
+          badges: { pA: ['429', 'err'], a1: ['failing', 'warn'] }
+        }
+      },
+      {
+        stage: 'fix',
+        title: 'Put one gateway in front of every provider',
+        text: 'Every app calls the <b>gateway</b> with its team\'s key. A <b>token bucket</b> per team caps how fast each team spends tokens, so the batch job slows down alone. A cache answers repeated prompts for free. A <b>router</b> picks the model and <b>falls back</b> to another provider on errors. Every call is metered, so each team sees its own bill.',
+        scene: {
+          nodes: [
+            { id: 'a1', label: 'Support bot', sub: 'team key', kind: 'client', at: [70, 0] },
+            { id: 'pA', label: 'Provider A', sub: '429 → wait', kind: 'external', at: [350, 0] },
+            { id: 'gw', label: 'Gateway', sub: 'budgets · cache', kind: 'edge', at: [210, 110] },
+            { id: 'a2', label: 'Batch job', sub: 'team key', kind: 'client', at: [70, 220] },
+            { id: 'meter', label: 'Usage meter', sub: 'cost per team', kind: 'store', at: [210, 220] },
+            { id: 'pB', label: 'Provider B', sub: 'fallback', kind: 'external', at: [350, 220] }
+          ],
+          edges: [{ from: 'a1', to: 'gw', bidi: true }, { from: 'a2', to: 'gw', bidi: true }, { from: 'gw', to: 'pA', bidi: true }, { from: 'gw', to: 'pB', bidi: true }, { from: 'gw', to: 'meter' }],
+          flow: [['a1>gw', 'a2>gw'], 'gw>pA', 'gw>pB', 'pB>gw', ['gw>a1', 'gw>meter']],
+          warn: ['pA'],
+          ok: ['gw', 'pB'],
+          badges: { a1: ['served', 'ok'], a2: ['slowed', 'warn'] }
+        }
+      }
+    ],
+    usedBy: ['LiteLLM', 'Portkey', 'Cloudflare AI Gateway', 'Kong AI Gateway', 'Internal AI platform teams at large companies'],
+    whenToUse: [
+      'Many teams or apps share the <b>same model providers and quotas</b>',
+      'You need cost per team, budgets, and one place to stop a runaway job',
+      'Features must keep working when one provider slows down or fails'
+    ],
+    whenNot: [
+      'One app, one provider, small spend: call the provider\'s SDK directly',
+      'You host the model yourself and need it to be fast: see <a href="llm-inference.html">LLM Inference Engine</a>',
+      'Ordinary REST traffic between services: a general <a href="api-gateway.html">API Gateway</a> fits'
+    ],
+    glossary: [
+      { term: 'Tokens per minute (TPM)', def: 'How many tokens (small pieces of text) a caller may send or receive per minute; the main limit providers enforce.' },
+      { term: 'Token bucket', def: 'A counter that refills at a steady rate; each request takes tokens from it and is rejected when it is empty.' },
+      { term: 'Virtual key', def: 'A key the gateway issues to one team, mapped to that team\'s budget and limits, so real provider keys stay hidden.' },
+      { term: 'Model alias', def: 'A stable name such as "large-model" that the gateway maps to one or more real provider models.' },
+      { term: 'Fallback', def: 'Retrying a failed or rate-limited call on another provider or model that can do the same job.' },
+      { term: 'Semantic cache', def: 'A cache that returns a stored answer when a new prompt means nearly the same thing as an old one.' },
+      { term: 'PII redaction', def: 'Replacing personal data such as emails or card numbers with placeholders before the prompt leaves the company.' },
+      { term: 'Cascade', def: 'Trying a small, cheap model first and escalating to a larger one only when the answer looks unsure.' }
+    ]
+  },
+
   requirements: {
     functional: [
       'One OpenAI-style API in front of many providers',

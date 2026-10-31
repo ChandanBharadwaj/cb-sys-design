@@ -14,6 +14,89 @@ SD.register({
       { v: '4.0', l: 'first Kafka release without ZooKeeper (Apache, March 2025)' }
     ]
   },
+  intro: {
+    what: 'A distributed message queue sits between services and carries <b>messages</b>: small records of events such as "order 42 was placed". A <b>producer</b> writes each message once. Any number of <b>consumers</b> read it later, when they are ready. In the log style shown on this page (Kafka), messages stay on disk, in order, for days, so readers can go at their own pace and even <b>replay</b> old messages.',
+    analogy: {
+      icon: '🧾',
+      title: 'A shop\'s numbered receipt roll',
+      text: 'Every sale is printed on a long roll, and each line gets the next number. The accountant, the stock clerk and the delivery team each keep their own bookmark on the roll and read forward from it. Nobody tears receipts off, so a reader who was away just continues from its bookmark. A busy shop runs several rolls side by side so several tills can print at once; the numbers, and the order, only hold within one roll.'
+    },
+    problem: 'A customer places an order. The order service must tell payments, the warehouse, the email sender and analytics. If it calls each one directly, checkout waits for all of them, and when the email sender is down the order either fails or the email is silently lost. On a sale day, orders arrive faster than the warehouse can handle them. The question is <b>"how do I hand off a flood of events so that every interested service gets each one, in order, even if it is slow or down for a while?"</b>',
+    story: [
+      {
+        stage: 'naive',
+        title: 'Call every service directly',
+        text: 'After saving an order, the order service makes a direct network call to each service that cares. It is easy to write and easy to follow, and with two or three services and light traffic it works fine.',
+        scene: {
+          nodes: [
+            { id: 'ord', label: 'Order service', sub: 'new order', kind: 'service', at: [70, 0] },
+            { id: 'pay', label: 'Payments', sub: 'charge card', kind: 'service', at: [350, 0] },
+            { id: 'wh', label: 'Warehouse', sub: 'pack items', kind: 'service', at: [350, 110] },
+            { id: 'email', label: 'Email', sub: 'send receipt', kind: 'service', at: [350, 220] }
+          ],
+          edges: [{ from: 'ord', to: 'pay' }, { from: 'ord', to: 'wh' }, { from: 'ord', to: 'email' }],
+          flow: [['ord>pay', 'ord>wh', 'ord>email']]
+        }
+      },
+      {
+        stage: 'breaks',
+        title: 'The slowest service sets the pace',
+        text: 'If the email service is down, the order service must retry, give up, or fail the checkout. During a sale, the warehouse cannot keep up and calls pile up. Every new service that wants order events means another change to the order service. The services are <b>tightly coupled</b>: each depends on all the others being up and fast.',
+        scene: {
+          nodes: [
+            { id: 'ord', label: 'Order service', sub: 'waits on all', kind: 'service', at: [70, 0] },
+            { id: 'pay', label: 'Payments', sub: 'charge card', kind: 'service', at: [350, 0] },
+            { id: 'wh', label: 'Warehouse', sub: 'falling behind', kind: 'service', at: [350, 110] },
+            { id: 'email', label: 'Email', sub: 'down', kind: 'service', at: [350, 220] }
+          ],
+          edges: [{ from: 'ord', to: 'pay' }, { from: 'ord', to: 'wh' }, { from: 'ord', to: 'email' }],
+          flow: [['ord>pay', 'ord>wh', 'ord>email'], ['ord>wh', 'ord>email']],
+          err: ['email'],
+          warn: ['ord', 'wh'],
+          badges: { email: ['down', 'err'], ord: ['checkout slow', 'warn'] }
+        }
+      },
+      {
+        stage: 'fix',
+        title: 'Write once to a replicated log, let readers pull',
+        text: 'The order service <b>appends</b> the event to a <b>topic</b>: an ordered log on disk, copied to several servers so one crash loses nothing. Once it is safely stored, checkout is done. Each consuming service <b>pulls</b> messages at its own speed and remembers how far it has read. If the email sender was down, it simply catches up when it comes back.',
+        scene: {
+          nodes: [
+            { id: 'ord', label: 'Order service', sub: 'append event', kind: 'service', at: [70, 0] },
+            { id: 'log', label: 'Topic log', sub: '3 copies · disk', kind: 'queue', at: [70, 110] },
+            { id: 'pay', label: 'Payments', sub: 'own bookmark', kind: 'service', at: [350, 0] },
+            { id: 'wh', label: 'Warehouse', sub: 'own bookmark', kind: 'service', at: [350, 110] },
+            { id: 'email', label: 'Email', sub: 'catches up', kind: 'service', at: [350, 220] }
+          ],
+          edges: [{ from: 'ord', to: 'log' }, { from: 'log', to: 'pay' }, { from: 'log', to: 'wh' }, { from: 'log', to: 'email' }],
+          flow: ['ord>log', ['log>pay', 'log>wh', 'log>email']],
+          ok: ['log', 'email'],
+          badges: { log: ['stored', 'ok'] }
+        }
+      }
+    ],
+    usedBy: ['LinkedIn', 'Netflix', 'Uber', 'Apache Kafka', 'Apache Pulsar', 'Amazon Kinesis'],
+    whenToUse: [
+      'One event must reach <b>several independent services</b> (billing, warehouse, analytics)',
+      'Producers and consumers run at different speeds, or consumers are sometimes down',
+      'You want to <b>replay history</b>, for example to rebuild a search index or reprocess events after a bug fix'
+    ],
+    whenNot: [
+      'The caller needs an answer right now (show a price, log a user in): make a direct call',
+      'Independent background tasks with per-task retries and delays: a simple task queue (SQS, RabbitMQ) or a <a href="job-scheduler.html">Job Queue &amp; Task Scheduler</a>',
+      'You need one strict order across <i>all</i> events at high volume: a log keeps order only within each partition'
+    ],
+    glossary: [
+      { term: 'Topic', def: 'A named stream of messages, such as "orders", that producers write to and consumers read from.' },
+      { term: 'Partition', def: 'One slice of a topic: an append-only log with its own order, so a topic with many partitions can be written and read in parallel.' },
+      { term: 'Offset', def: 'The position number of a message within a partition; a consumer\'s saved offset is its bookmark.' },
+      { term: 'Consumer group', def: 'A set of consumer instances that share the work of reading a topic; each partition goes to one member, and each group gets every message.' },
+      { term: 'Broker', def: 'One server in the cluster that stores partitions on disk and serves reads and writes.' },
+      { term: 'In-sync replicas (ISR)', def: 'The copies of a partition that are fully caught up with the leader; with <code>acks=all</code> a write is confirmed only after all of them have it.' },
+      { term: 'Consumer lag', def: 'How far a consumer is behind the newest message, measured in messages; the main health signal.' },
+      { term: 'Dead-letter topic', def: 'A side topic where a message that keeps failing is parked, so it does not block everything behind it.' }
+    ]
+  },
 
   requirements: {
     functional: [

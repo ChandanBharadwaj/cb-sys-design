@@ -104,29 +104,36 @@
   SD.h = { el, svg, esc, clamp, sleep, cssVar, store };
 
   /* ---------------- theme ---------------- */
-  function initTheme() {
-    const t = store.get('sd-theme', null);
-    if (t) document.documentElement.setAttribute('data-theme', t);
+  // preference: 'light' (default) | 'dark' | 'auto' (follow the OS)
+  function themePref() {
+    const t = store.get('sd-theme', 'light');
+    return t === 'dark' || t === 'auto' ? t : 'light';
   }
-  function currentTheme() {
-    const t = document.documentElement.getAttribute('data-theme');
-    if (t) return t;
-    return matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  function applyTheme(p) {
+    if (p === 'auto') document.documentElement.removeAttribute('data-theme');
+    else document.documentElement.setAttribute('data-theme', p);
   }
   function themeButton() {
-    const b = el('button', { class: 'icon-btn', 'aria-label': 'Toggle theme', title: 'Toggle light/dark' });
-    const paint = () => { b.textContent = currentTheme() === 'dark' ? '☀' : '☾'; };
-    b.addEventListener('click', () => {
-      const next = currentTheme() === 'dark' ? 'light' : 'dark';
-      document.documentElement.setAttribute('data-theme', next);
-      store.set('sd-theme', next); paint();
-      document.dispatchEvent(new CustomEvent('sd-theme'));
+    const opts = [['light', '☀', 'Light'], ['dark', '☾', 'Dark'], ['auto', '◎', 'Auto']];
+    const seg = el('div', { class: 'theme-switch', role: 'radiogroup', 'aria-label': 'Colour theme' });
+    const paint = () => {
+      const p = themePref();
+      [...seg.children].forEach((b) => { const on = b.dataset.v === p; b.classList.toggle('on', on); b.setAttribute('aria-checked', on); });
+    };
+    opts.forEach(([v, icon, label]) => {
+      const b = el('button', { role: 'radio', 'data-v': v, 'aria-label': label + ' theme', title: label + (v === 'auto' ? ' (follow device)' : '') },
+        el('span', { class: 'ti', text: icon }), el('span', { class: 'tl', text: label }));
+      b.addEventListener('click', () => {
+        store.set('sd-theme', v); applyTheme(v); paint();
+        document.dispatchEvent(new CustomEvent('sd-theme'));
+      });
+      seg.append(b);
     });
     paint();
-    return b;
+    return seg;
   }
   SD.themeButton = themeButton;
-  initTheme();
+  applyTheme(themePref());
 
   /* ---------------- visibility helpers ---------------- */
   function onVisible(node, cb, opts) {
@@ -194,11 +201,12 @@
       this.stage.addEventListener('click', (e) => { if (!e.target.closest('.node')) this.hideTip(); });
     }
     pickMode() {
+      if (this.opts.mode) return this.opts.mode;
       const hasTall = this.spec.nodes.every((n) => n.tall);
       const w = this.host.clientWidth || window.innerWidth;
       return hasTall && w < 640 ? 'tall' : 'wide';
     }
-    pos(n) { return this.mode === 'tall' ? n.tall : n.wide; }
+    pos(n) { return this.mode === 'tall' ? (n.tall || n.at) : n.wide; }
     dims(n) {
       const s = SIZE[this.mode];
       const w = (this.mode === 'tall' ? n.tw : n.w) || n.w || s.w;
@@ -772,6 +780,131 @@
   }
 
   /* ======================================================================
+     Intro: "Start here" — what it is, the problem, an animated story
+     ====================================================================== */
+  const STAGE = {
+    naive: { n: '1', label: 'The naive way', tone: 'info' },
+    breaks: { n: '2', label: 'Why it breaks', tone: 'err' },
+    fix: { n: '3', label: 'The fix', tone: 'ok' }
+  };
+
+  function storyPlayer(host, frames) {
+    const card = el('div', { class: 'card story' });
+    const steps = el('div', { class: 'story-steps', role: 'tablist', 'aria-label': 'Story' });
+    const stageWrap = el('div', { class: 'story-stage' });
+    const text = el('div', { class: 'story-text', 'aria-live': 'polite' });
+    const bPrev = el('button', { class: 'icon-btn', 'aria-label': 'Previous', text: '‹ Back' });
+    const bPlay = el('button', { class: 'icon-btn', 'aria-label': 'Pause', text: '⏸' });
+    const bNext = el('button', { class: 'icon-btn primary-ish', 'aria-label': 'Next', text: 'Next ›' });
+    card.append(steps, el('div', { class: 'story-body' }, stageWrap, el('div', { class: 'story-side' }, text, el('div', { class: 'story-ctrl' }, bPrev, bPlay, bNext))));
+    host.append(card);
+
+    const panes = frames.map((f, i) => {
+      const meta = STAGE[f.stage] || STAGE.naive;
+      const b = el('button', { class: 'story-step s-' + (f.stage || 'naive'), role: 'tab' },
+        el('span', { class: 'sn', text: meta.n }), el('span', { class: 'sl', text: meta.label }));
+      b.addEventListener('click', () => { started = true; autoplay = false; paintPlay(); show(i); });
+      steps.append(b);
+      const pane = el('div', { class: 'story-pane', hidden: true });
+      stageWrap.append(pane);
+      return { f, meta, b, pane, dg: null };
+    });
+
+    let cur = -1; let autoplay = !reduced; let visible = false; let loopT = 0; let advanceT = 0; let started = false;
+    function paintPlay() { bPlay.textContent = autoplay ? '⏸' : '▶'; bPlay.setAttribute('aria-label', autoplay ? 'Pause' : 'Play'); }
+    function ensure(p) {
+      if (p.dg) return p.dg;
+      const sc = p.f.scene || { nodes: [], edges: [] };
+      p.dg = new Diagram(p.pane, { nodes: sc.nodes || [], edges: sc.edges || [], groups: sc.groups }, { mode: 'tall' });
+      p.dg.svg && p.dg.svg.classList.add('story-svg');
+      return p.dg;
+    }
+    function runLoop(p, gen) {
+      clearTimeout(loopT);
+      const sc = p.f.scene || {};
+      if (!sc.flow || !sc.flow.length || reduced) { p.dg.drawBadges(sc.badges || {}); return; }
+      const once = async () => {
+        if (gen !== cur || !visible) { loopT = setTimeout(() => once(), 600); return; }
+        p.dg.drawBadges({});
+        await p.dg.flow(sc.flow, { tone: p.f.tone || p.meta.tone, dur: 700 });
+        if (gen !== cur) return;
+        p.dg.drawBadges(sc.badges || {});
+        loopT = setTimeout(once, 1500);
+      };
+      once();
+    }
+    function show(i) {
+      i = clamp(i, 0, panes.length - 1);
+      clearTimeout(advanceT);
+      if (cur >= 0 && panes[cur].dg) panes[cur].dg.cancel();
+      cur = i;
+      const p = panes[i];
+      panes.forEach((q, j) => { q.pane.hidden = j !== i; q.b.classList.toggle('on', j === i); q.b.classList.toggle('done', j < i); q.b.setAttribute('aria-selected', j === i); });
+      const dg = ensure(p);
+      const sc = p.f.scene || {};
+      const pairs = (sc.flow || []).flat().map((h) => h.split('>').map((x) => x.trim()));
+      dg.applyState({ err: sc.err, warn: sc.warn, ok: sc.ok, hot: sc.hot, active: pairs, labels: sc.labels, badges: reduced ? sc.badges : {} });
+      dg.fitText && Object.keys(dg.nodeEls || {}).forEach((id) => dg.fitText(id));
+      text.className = 'story-text t-' + (p.f.stage || 'naive');
+      text.innerHTML = `<div class="story-kicker">${esc(p.meta.n)} · ${esc(p.meta.label)}</div><h3>${p.f.title || ''}</h3><p>${p.f.text || ''}</p>`;
+      bPrev.disabled = i === 0; bNext.disabled = i === panes.length - 1;
+      runLoop(p, i);
+      if (autoplay && i < panes.length - 1) advanceT = setTimeout(() => { if (autoplay && visible) show(i + 1); else scheduleResume(i); }, 7500);
+    }
+    function scheduleResume(i) { advanceT = setTimeout(() => { if (autoplay && cur === i) { if (visible) show(i + 1); else scheduleResume(i); } }, 1500); }
+    bPrev.addEventListener('click', () => { started = true; autoplay = false; paintPlay(); show(cur - 1); });
+    bNext.addEventListener('click', () => { started = true; autoplay = false; paintPlay(); show(cur + 1); });
+    bPlay.addEventListener('click', () => {
+      started = true; autoplay = !autoplay; paintPlay();
+      if (autoplay) show(cur >= panes.length - 1 ? 0 : cur);
+    });
+    paintPlay();
+    onVisible(card, (v) => {
+      visible = v;
+      if (v && !started) { started = true; show(0); }
+    }, { threshold: 0.35 });
+    // render the first frame immediately so the card is never empty
+    show(0);
+  }
+
+  function introSection(s, D, tldrBox) {
+    const I = D.intro;
+    const top = el('div', { class: 'intro-top' });
+    top.append(el('div', { class: 'card intro-what reveal' },
+      el('div', { class: 'kicker', text: 'What is it?' }), el('p', { class: 'lead', html: I.what || '' })));
+    if (I.analogy) {
+      top.append(el('div', { class: 'card analogy reveal' },
+        el('div', { class: 'an-ic', text: I.analogy.icon || '💡', 'aria-hidden': 'true' }),
+        el('div', null, el('div', { class: 'kicker', text: 'Think of it like…' }), el('h3', { html: I.analogy.title || '' }), el('p', { html: I.analogy.text || '' }))));
+    }
+    s.append(top);
+    if (I.problem) s.append(el('div', { class: 'problem-callout reveal' }, el('div', { class: 'kicker', text: 'The problem it solves' }), el('p', { html: I.problem })));
+    if (I.story && I.story.length) {
+      s.append(el('h3', { class: 'sub-h', text: 'The story in three frames' }));
+      storyPlayer(s, I.story);
+    }
+    const row = el('div', { class: 'grid g2 intro-row' });
+    if (I.whenToUse || I.whenNot) {
+      row.append(el('div', { class: 'card reveal when' },
+        el('div', { class: 'when-col yes' }, el('div', { class: 'kicker', text: 'Reach for it when' }), el('ul', null, (I.whenToUse || []).map((x) => el('li', null, el('span', { html: x }))))),
+        el('div', { class: 'when-col no' }, el('div', { class: 'kicker', text: 'You may not need it when' }), el('ul', null, (I.whenNot || []).map((x) => el('li', null, el('span', { html: x })))))));
+    }
+    if (I.usedBy && I.usedBy.length) {
+      row.append(el('div', { class: 'card reveal' }, el('div', { class: 'kicker', text: 'Where you see it in the wild' }),
+        el('div', { class: 'used-by' }, I.usedBy.map((u) => el('span', { class: 'used', html: u })))));
+    }
+    if (row.children.length) s.append(row);
+    if (I.glossary && I.glossary.length) {
+      s.append(el('h3', { class: 'sub-h', text: 'Key terms you will meet below' }));
+      s.append(el('dl', { class: 'glossary reveal' }, I.glossary.map((g) => el('div', { class: 'term' }, el('dt', { html: g.term }), el('dd', { html: g.def })))));
+    }
+    if (tldrBox) {
+      s.append(el('h3', { class: 'sub-h', text: 'The design in one minute' }));
+      s.append(tldrBox);
+    }
+  }
+
+  /* ======================================================================
      Page assembly
      ====================================================================== */
   function section(id, num, title, sub) {
@@ -800,7 +933,8 @@
     const nav = el('nav', { class: 'secnav', 'aria-label': 'Sections' });
     const navInner = el('div', { class: 'secnav-inner' }); nav.append(navInner);
     const main = el('main', { class: 'wrap' });
-    app.append(top, nav, main);
+    const toc = el('aside', { class: 'toc', 'aria-label': 'On this page' }, el('div', { class: 'toc-h', text: 'On this page' }));
+    app.append(top, nav, el('div', { class: 'layout' }, toc, main));
 
     const secs = [];
     let num = 0;
@@ -815,16 +949,24 @@
       meta.added ? el('span', { class: 'pill new', text: '★ added beyond catalog' }) : null));
     hero.append(el('h1', { text: D.title }));
     if (D.tagline) hero.append(el('p', { class: 'tagline', html: D.tagline }));
+    let box = null;
     if (D.tldr) {
       const t = D.tldr;
-      const box = el('div', { class: 'card tldr-box' },
+      box = el('div', { class: 'card tldr-box' },
         el('div', { class: 'tldr-item' }, el('span', { class: 'ic', text: '?' }), el('div', null, el('b', { text: 'Problem' }), el('span', { html: t.problem }))),
         el('div', { class: 'tldr-item' }, el('span', { class: 'ic', text: '!' }), el('div', null, el('b', { text: 'Core idea' }), el('span', { html: t.idea }))),
         t.insight ? el('div', { class: 'tldr-item' }, el('span', { class: 'ic', text: '★' }), el('div', null, el('b', { text: 'Interview hook' }), el('span', { html: t.insight }))) : null);
       const stats = el('div', { class: 'stats' }, (t.numbers || []).map((n) => el('div', { class: 'stat' }, el('div', { class: 'v', text: n.v }), el('div', { class: 'l', html: n.l }))));
-      hero.append(el('div', { class: 'tldr' }, box, stats));
+      if (D.intro) hero.append(stats);
+      else hero.append(el('div', { class: 'tldr' }, box, stats));
     }
     main.append(hero);
+
+    /* start here */
+    if (D.intro) {
+      const s = add('intro', 'Start here: what it is and why it exists', 'Start here', 'New to this topic? Read this first. Already know it? Jump to <a href="#architecture">the architecture</a>.');
+      introSection(s, D, box);
+    }
 
     /* requirements */
     if (D.requirements) {
@@ -1000,13 +1142,18 @@
 
     /* section nav + scrollspy */
     const links = {};
-    secs.forEach(([id, label]) => { const a = el('a', { href: '#' + id, text: label }); links[id] = a; navInner.append(a); });
+    const tocLinks = {};
+    secs.forEach(([id, label]) => {
+      const a = el('a', { href: '#' + id, text: label }); links[id] = a; navInner.append(a);
+      const t = el('a', { href: '#' + id, text: label }); tocLinks[id] = t; toc.append(t);
+    });
     if ('IntersectionObserver' in window) {
       const io = new IntersectionObserver((ents) => {
         ents.forEach((e) => {
           if (e.isIntersecting) {
             Object.values(links).forEach((a) => a.classList.remove('active'));
-            const a = links[e.target.id]; if (a) { a.classList.add('active'); a.scrollIntoView({ block: 'nearest', inline: 'center', behavior: reduced ? 'auto' : 'smooth' }); }
+            Object.values(tocLinks).forEach((a) => a.classList.toggle('active', a === tocLinks[e.target.id]));
+            const a = links[e.target.id]; if (a) { a.classList.add('active'); if (nav.offsetParent) navInner.scrollTo({ left: a.offsetLeft - navInner.clientWidth / 2 + a.offsetWidth / 2, behavior: reduced ? 'auto' : 'smooth' }); }
           }
         });
       }, { rootMargin: '-45% 0px -50% 0px' });

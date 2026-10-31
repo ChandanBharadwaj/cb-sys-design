@@ -14,6 +14,88 @@ SD.register({
       { v: '40 – 100', l: 'geoshards Tinder\'s load tests pointed to (Tinder, 2019)' }
     ]
   },
+  intro: {
+    what: 'A proximity service answers <b>"what is near me?"</b>. Given a location and a distance, it returns nearby places, such as cafés, petrol stations or hotels, ranked by how close and how good they are. It searches a huge list of places and still replies in a fraction of a second.',
+    analogy: {
+      icon: '🗺️',
+      title: 'A street atlas with a grid of numbered squares',
+      text: 'A paper street atlas splits the city into squares like "page 12, C4". To find cafés near you, you look in your own square and the eight squares around it, instead of reading every listing in the book. Then you measure the real distance to each café you found and drop the ones that are too far. The real system does exactly this with digital grid cells, and keeps the grid in memory.'
+    },
+    problem: 'You open a maps app and search "coffee near me". The world has hundreds of millions of places. Measuring the distance to every one is far too slow, and an ordinary database index on latitude still leaves a thin stripe that circles the whole planet. The question is <b>"which places are within 2 km of this point?"</b>, answered in tens of milliseconds, thousands of times a second. Luckily, places almost never move.',
+    story: [
+      {
+        stage: 'naive',
+        title: 'Ask the database for a box around the user',
+        text: 'Store places in a table with <code>lat</code> and <code>lng</code> columns, each with an ordinary index. A search asks for rows where latitude <b>and</b> longitude both fall in a small box around the user. It is one SQL query, and for a city\'s worth of places it is fast enough.',
+        scene: {
+          nodes: [
+            { id: 'usr', label: 'User', sub: 'coffee near me', kind: 'client', at: [70, 0] },
+            { id: 'api', label: 'Search', sub: 'builds a box', kind: 'service', at: [70, 110] },
+            { id: 'db', label: 'Places table', sub: 'index on lat, lng', kind: 'store', at: [350, 110] }
+          ],
+          edges: [{ from: 'usr', to: 'api' }, { from: 'api', to: 'db' }],
+          flow: ['usr>api', 'api>db']
+        }
+      },
+      {
+        stage: 'breaks',
+        title: 'The index finds a stripe, not a square',
+        text: 'An ordinary index sorts on one column, so it can narrow the search to only one range. The latitude range is a <b>thin stripe around the whole Earth</b>. The database must then check the longitude of every place in that stripe, one row at a time. With hundreds of millions of places and thousands of searches a second, it cannot keep up.',
+        scene: {
+          nodes: [
+            { id: 'usr', label: 'Users', sub: 'thousands/s', kind: 'client', at: [70, 0] },
+            { id: 'api', label: 'Search', sub: 'waiting', kind: 'service', at: [70, 110] },
+            { id: 'db', label: 'Places table', sub: 'scans a stripe', kind: 'store', at: [350, 110] }
+          ],
+          edges: [{ from: 'usr', to: 'api' }, { from: 'api', to: 'db' }],
+          flow: [['usr>api', 'api>db'], ['usr>api', 'api>db']],
+          err: ['db'],
+          warn: ['api'],
+          badges: { db: ['overloaded', 'err'], usr: ['slow ⏳', 'warn'] }
+        }
+      },
+      {
+        stage: 'fix',
+        title: 'Cut the map into cells and keep copies in memory',
+        text: 'Split the map into <b>cells</b> whose ids sort so that nearby cells sit close together (a <b>geohash</b> or S2 cell). A search reads the user\'s cell and its <b>8 neighbours</b>, then keeps only places within the true distance. Because places rarely change, the whole index is read-only, fits in memory, and is <b>copied to many servers</b>: more searches, add more copies.',
+        scene: {
+          nodes: [
+            { id: 'usr', label: 'Users', sub: 'thousands/s', kind: 'client', at: [70, 0] },
+            { id: 'api', label: 'Search', sub: 'my cell + 8', kind: 'service', at: [70, 110] },
+            { id: 'g1', label: 'Geo index', sub: 'copy 1 · RAM', kind: 'cache', at: [350, 0] },
+            { id: 'g2', label: 'Geo index', sub: 'copy 2 · RAM', kind: 'cache', at: [350, 110] },
+            { id: 'g3', label: 'Geo index', sub: 'copy 3 · RAM', kind: 'cache', at: [350, 220] },
+            { id: 'db', label: 'Places DB', sub: 'rebuilds index', kind: 'store', at: [70, 220] }
+          ],
+          edges: [{ from: 'usr', to: 'api' }, { from: 'api', to: 'g1' }, { from: 'api', to: 'g2' }, { from: 'api', to: 'g3' }, { from: 'db', to: 'g3', dashed: true }],
+          flow: ['usr>api', 'api>g2', 'usr>api', 'api>g1'],
+          ok: ['g1', 'g2', 'g3'],
+          badges: { g2: ['9 cells · fast', 'ok'] }
+        }
+      }
+    ],
+    usedBy: ['Yelp', 'Google Maps "near me" search', 'Tinder', 'Foursquare', 'Airbnb map search'],
+    whenToUse: [
+      'Users search for <b>fixed places</b> near a point: shops, restaurants, hotels',
+      'Searches far outnumber edits, and an edit may take minutes to show up',
+      'Results are filtered and ranked by distance plus other things, such as rating or opening hours'
+    ],
+    whenNot: [
+      'The things move every few seconds, like drivers or couriers (see <a href="ride-sharing.html">Ride-Sharing Location &amp; Dispatch</a>)',
+      'Only a few thousand places: one Postgres table with PostGIS is plenty',
+      'You need routes or travel times on real roads: that is a routing engine, not a proximity search'
+    ],
+    glossary: [
+      { term: 'Geohash', def: 'A short string for a grid cell, built so that cells sharing a longer prefix are usually close together.' },
+      { term: 'Neighbouring cells', def: 'The 8 cells around the user\'s cell; they must be searched too, because a place 20 m away can sit just across a cell border.' },
+      { term: 'Quadtree', def: 'A tree that splits the map into four squares, and splits each square again only where it holds many places.' },
+      { term: 'S2 cells', def: 'Google\'s open-source system of cells on a sphere, numbered along a curve so nearby cells get nearby ids.' },
+      { term: 'Great-circle distance', def: 'The true shortest distance between two points on the Earth\'s surface, used to filter the final candidates.' },
+      { term: 'PostGIS', def: 'An extension that adds map data types and spatial indexes to the Postgres database.' },
+      { term: 'Read replica', def: 'A read-only copy of data on another server, added to serve more reads.' },
+      { term: 'CDC (change data capture)', def: 'Streaming every change from the database\'s log, so other systems such as the index can update within seconds.' }
+    ]
+  },
 
   requirements: {
     functional: [

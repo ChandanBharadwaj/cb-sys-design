@@ -15,6 +15,92 @@ SD.register({
     ]
   },
 
+  intro: {
+    what: 'A stream analytics system computes live numbers from an <b>endless flow of events</b>: page views per minute, error rates, orders per city. It reads events as they happen, keeps running totals, and publishes results <b>within seconds</b> instead of waiting for a nightly batch job.',
+    analogy: {
+      icon: '🗳️',
+      title: 'Counting votes as the ballot boxes arrive',
+      text: 'On election night, counters tally ballots as boxes come in and publish running totals. Some boxes arrive late, so the counters must decide when a district is complete enough to call, and how to correct the total if more ballots turn up. Stream analytics makes the same choice for every minute of data: wait longer for stragglers, or publish sooner and correct later.'
+    },
+    problem: 'A news site wants a live dashboard of views per article per minute. Events come from millions of phones, and phones that were offline send their events minutes late and out of order. If a counting server crashes, it must not lose its totals, and it must not count the same events twice when it restarts. The question is: <b>how do you turn a never-ending, messy stream of events into correct numbers within seconds?</b>',
+    story: [
+      {
+        stage: 'naive',
+        title: 'Count by arrival time, in one process',
+        text: 'One service reads events and adds each one to the counter for <b>the current minute on its own clock</b>. Every minute it writes the totals to a database, and a dashboard reads them. Simple, and the numbers look plausible.',
+        scene: {
+          nodes: [
+            { id: 'src', label: 'Phones + apps', sub: 'page-view events', kind: 'client', at: [70, 0] },
+            { id: 'w1', label: 'Counter', sub: 'totals in memory', kind: 'compute', at: [210, 0] },
+            { id: 'olap', label: 'Database', sub: 'one row a minute', kind: 'store', at: [350, 0] },
+            { id: 'dash', label: 'Dashboard', sub: 'live charts', kind: 'client', at: [350, 110] }
+          ],
+          edges: [{ from: 'src', to: 'w1' }, { from: 'w1', to: 'olap' }, { from: 'olap', to: 'dash' }],
+          flow: ['src>w1', 'w1>olap', 'olap>dash']
+        }
+      },
+      {
+        stage: 'breaks',
+        title: 'Late events land in the wrong minute, crashes lose counts',
+        text: 'A phone that was offline sends a 12:00 view at 12:03, so it is counted as <b>12:03</b>. One machine cannot keep up with millions of events a second. If it crashes, the totals in memory vanish, and replaying the input afterwards <b>counts events twice</b>.',
+        scene: {
+          nodes: [
+            { id: 'src', label: 'Phones + apps', sub: 'late, out of order', kind: 'client', at: [70, 0] },
+            { id: 'w1', label: 'Counter', sub: 'crashed', kind: 'compute', at: [210, 0] },
+            { id: 'olap', label: 'Database', sub: 'wrong numbers', kind: 'store', at: [350, 0] },
+            { id: 'dash', label: 'Dashboard', sub: 'live charts', kind: 'client', at: [350, 110] }
+          ],
+          edges: [{ from: 'src', to: 'w1' }, { from: 'w1', to: 'olap' }, { from: 'olap', to: 'dash' }],
+          flow: [['src>w1', 'src>w1'], 'w1>olap', 'olap>dash'],
+          err: ['w1'],
+          warn: ['olap'],
+          badges: { w1: ['totals lost', 'err'], olap: ['wrong minute', 'warn'] }
+        }
+      },
+      {
+        stage: 'fix',
+        title: 'Event time, watermarks and checkpoints',
+        text: 'Events first go into a durable, replayable <b>log</b> (Kafka). Each one is counted in the minute it actually happened, and a <b>watermark</b> says when a minute is complete enough to publish. Many workers share the keys, and they regularly save their totals and their position in the log together in a <b>checkpoint</b>, so a crash restarts from there without double counting.',
+        scene: {
+          nodes: [
+            { id: 'src', label: 'Phones + apps', sub: 'stamp event time', kind: 'client', at: [70, 0] },
+            { id: 'kfk', label: 'Kafka log', sub: 'replayable', kind: 'queue', at: [210, 0] },
+            { id: 'ckpt', label: 'Checkpoints', sub: 'totals + offsets', kind: 'store', at: [70, 110] },
+            { id: 'w1', label: 'Flink worker 1', sub: 'windows, keys A–M', kind: 'compute', at: [210, 110] },
+            { id: 'w2', label: 'Flink worker 2', sub: 'windows, keys N–Z', kind: 'compute', at: [350, 110] },
+            { id: 'olap', label: 'ClickHouse', sub: 'per-minute rows', kind: 'store', at: [210, 220] },
+            { id: 'dash', label: 'Dashboard', sub: 'live charts', kind: 'client', at: [350, 220] }
+          ],
+          edges: [{ from: 'src', to: 'kfk' }, { from: 'kfk', to: 'w1' }, { from: 'kfk', to: 'w2' }, { from: 'w1', to: 'ckpt', dashed: true }, { from: 'w1', to: 'olap' }, { from: 'w2', to: 'olap' }, { from: 'olap', to: 'dash' }],
+          flow: ['src>kfk', ['kfk>w1', 'kfk>w2'], ['w1>olap', 'w2>olap'], 'olap>dash'],
+          ok: ['w1', 'w2'],
+          badges: { w1: ['minute closed', 'ok'], ckpt: 'saved' }
+        }
+      }
+    ],
+    usedBy: ['Apache Flink', 'Kafka Streams', 'Google Cloud Dataflow', 'Spark Structured Streaming', 'ClickHouse', 'Cloudflare analytics'],
+    whenToUse: [
+      'You need numbers that are <b>seconds old</b>, not a day old: live dashboards, alerts, pacing',
+      'Events arrive non-stop from many sources and can be late or out of order',
+      'The data is too large to recount from scratch every few minutes'
+    ],
+    whenNot: [
+      'A report once a day is fine: a nightly batch job is simpler and cheaper',
+      'Each event is billed money and needs dedup plus audits (see <a href="ad-click-aggregation.html">Ad Click Aggregation</a>)',
+      'You only need the few most popular items, not every count (see <a href="top-k.html">Top-K</a>)'
+    ],
+    glossary: [
+      { term: 'Event time', def: 'When something actually happened, as stamped by the device that saw it.' },
+      { term: 'Processing time', def: 'When the system happens to read the event. It can be much later than the event time.' },
+      { term: 'Window', def: 'A slice of time, such as 12:00 to 12:01, that events are grouped into for counting.' },
+      { term: 'Watermark', def: 'A marker in the stream meaning "no events older than time T are expected any more". It lets a window close and publish.' },
+      { term: 'Allowed lateness', def: 'Extra time a window is kept after it publishes, so late events can still correct its result.' },
+      { term: 'Checkpoint', def: 'A consistent snapshot of every worker\'s state plus its position in the input, used to recover after a crash.' },
+      { term: 'Exactly-once', def: 'Each event affects the results once, even when parts of the pipeline crash and replay.' },
+      { term: 'Columnar store', def: 'A database that stores each column separately, so it can scan a few columns over billions of rows quickly.' }
+    ]
+  },
+
   requirements: {
     functional: [
       'Ingest clickstream / request events from many producers',

@@ -15,6 +15,93 @@ SD.register({
     ]
   },
 
+  intro: {
+    what: 'An order system is what runs after you press <b>Place order</b> in an online shop. It checks the item is in stock, sets it aside for you, charges your card and tells the warehouse to ship it. It must <b>never sell more units than exist</b>.',
+    analogy: {
+      icon: '🛒',
+      title: 'A shop clerk with a "set aside" shelf',
+      text: 'In a busy shop, when you say "I\'ll take the last one", the clerk puts it on a shelf behind the counter with your name on it. You go to the till and pay. If your card fails, the item goes back on the shop floor. If you pay, the stockroom is told to send it out. Online, each of those people is a separate service, and any of them can be slow or fail at the worst moment.'
+    },
+    problem: 'A phone goes on sale with 500 units, and ten thousand people press <b>Buy</b> in the same minute. Checkout touches the cart, the stock count, the payment provider and the warehouse, and any of them can fail halfway. Without care, the shop sells unit 501, or charges a card for an order it then loses. The system answers <b>"how do we take an order across several services so stock, money and shipping always agree?"</b>',
+    story: [
+      {
+        stage: 'naive',
+        title: 'One function does every step in a row',
+        text: 'The checkout code reads the stock count, checks it is above zero, charges the card, subtracts one, then calls the warehouse. It is all one request, one step after another. On a quiet day this works.',
+        scene: {
+          nodes: [
+            { id: 'web', label: 'Shopper', sub: 'Place order', kind: 'client', at: [70, 0] },
+            { id: 'pay', label: 'Payment', sub: 'charge card', kind: 'external', at: [350, 0] },
+            { id: 'app', label: 'Checkout code', sub: 'read, charge, ship', kind: 'service', at: [210, 110] },
+            { id: 'db', label: 'Stock DB', sub: 'count = 1', kind: 'store', at: [70, 220] },
+            { id: 'wh', label: 'Warehouse', sub: 'ship it', kind: 'compute', at: [350, 220] }
+          ],
+          edges: [{ from: 'web', to: 'app' }, { from: 'app', to: 'db' }, { from: 'app', to: 'pay' }, { from: 'app', to: 'wh' }],
+          flow: ['web>app', 'app>db', 'app>pay', 'app>wh']
+        }
+      },
+      {
+        stage: 'breaks',
+        title: 'The last unit sells twice, and orders get half done',
+        text: 'Two shoppers both read "1 left" before either one subtracts, so <b>both buy the last unit</b>. If the warehouse call fails after the card was charged, the customer has paid for an order nobody ships. No single transaction covers the database, the bank and the warehouse.',
+        scene: {
+          nodes: [
+            { id: 'web', label: 'Shoppers', sub: 'both see "1 left"', kind: 'client', at: [70, 0] },
+            { id: 'pay', label: 'Payment', sub: 'card charged', kind: 'external', at: [350, 0] },
+            { id: 'app', label: 'Checkout code', sub: 'crashed midway', kind: 'service', at: [210, 110] },
+            { id: 'db', label: 'Stock DB', sub: 'count = −1', kind: 'store', at: [70, 220] },
+            { id: 'wh', label: 'Warehouse', sub: 'never told', kind: 'compute', at: [350, 220] }
+          ],
+          edges: [{ from: 'web', to: 'app' }, { from: 'app', to: 'db' }, { from: 'app', to: 'pay' }, { from: 'app', to: 'wh' }],
+          flow: [['web>app', 'web>app'], 'app>db', 'app>pay', 'app>wh'],
+          err: ['db', 'wh'],
+          warn: ['app', 'pay'],
+          badges: { db: ['oversold', 'err'], wh: ['lost order', 'err'] }
+        }
+      },
+      {
+        stage: 'fix',
+        title: 'Reserve, pay, confirm, and undo on failure',
+        text: 'Checkout becomes a <b>saga</b>: a list of steps, each with an undo step. First <b>reserve</b> the unit with one database update that only succeeds if stock is left. Then charge the card. If payment fails, release the unit; if it succeeds, confirm. The order change and an event are saved together, and the warehouse is told through that event.',
+        scene: {
+          nodes: [
+            { id: 'web', label: 'Shopper', sub: 'Place order', kind: 'client', at: [70, 0] },
+            { id: 'pay', label: 'Payment', sub: 'charge or refund', kind: 'external', at: [350, 0] },
+            { id: 'saga', label: 'Checkout saga', sub: 'step + undo', kind: 'service', at: [210, 110] },
+            { id: 'db', label: 'Stock DB', sub: 'reserve if left', kind: 'store', at: [70, 220] },
+            { id: 'ord', label: 'Orders DB', sub: 'order + event', kind: 'store', at: [210, 220] },
+            { id: 'wh', label: 'Warehouse', sub: 'ships on event', kind: 'compute', at: [350, 220] }
+          ],
+          edges: [{ from: 'web', to: 'saga' }, { from: 'saga', to: 'db' }, { from: 'saga', to: 'pay' }, { from: 'saga', to: 'ord' }, { from: 'ord', to: 'wh' }],
+          flow: ['web>saga', 'saga>db', 'saga>pay', 'saga>ord', 'ord>wh'],
+          ok: ['db', 'ord'],
+          badges: { db: ['no oversell ✓', 'ok'] }
+        }
+      }
+    ],
+    usedBy: ['Amazon', 'Flipkart', 'Shopify', 'Walmart', 'eBay'],
+    whenToUse: [
+      'Physical or limited stock that <b>must not be oversold</b>',
+      'Checkout spans several services (stock, payment, shipping) that can each fail',
+      'Sales and launches send huge bursts of buyers at a few products'
+    ],
+    whenNot: [
+      'Unique seats with an announced on-sale time (see <a href="ticket-booking.html">Ticket Booking</a>)',
+      'Digital goods with unlimited copies: there is no stock to reserve',
+      'You only need the money movement itself (see <a href="payment-gateway.html">Payment Gateway</a>)'
+    ],
+    glossary: [
+      { term: 'SKU', def: 'Stock keeping unit: one specific sellable product, such as "blue shirt, size M".' },
+      { term: 'On hand / reserved', def: 'Units physically in stock, and how many of those are set aside for unpaid orders.' },
+      { term: 'Reservation with TTL', def: 'A hold on stock that expires after a set time (time to live) if the order is not paid.' },
+      { term: 'Conditional update', def: 'A database write that only happens if a condition is true, such as "enough stock is left".' },
+      { term: 'Saga', def: 'A long process split into local steps, where each step has a compensation that undoes it.' },
+      { term: 'Compensation', def: 'The undo action for a saga step, such as releasing stock or refunding a payment.' },
+      { term: 'Transactional outbox', def: 'Writing an event in the same database transaction as the order change, then publishing it, so no event is lost.' },
+      { term: 'Idempotency key', def: 'A unique id sent with checkout so that a double-tap or retry creates only one order.' }
+    ]
+  },
+
   requirements: {
     functional: [
       'Browse catalog and search; add, update and remove cart items',

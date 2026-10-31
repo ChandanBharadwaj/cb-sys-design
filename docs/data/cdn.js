@@ -15,6 +15,89 @@ SD.register({
     ]
   },
 
+  intro: {
+    what: 'A content delivery network (CDN) is a worldwide network of <b>cache servers</b> that keep copies of a website\'s files close to its users. When you load an image, a script or a video, it usually comes from a CDN server in or near your own city, <b>not from the company\'s own servers</b>.',
+    analogy: {
+      icon: '🏪',
+      title: 'Local warehouses instead of one central depot',
+      text: 'An online shop with one depot ships every parcel across the country, so delivery is slow. Put small warehouses in every region, stocked with the popular items, and most orders arrive the next morning. The central depot only restocks the warehouses. A CDN does this with files. Unlike real stock, a file can sit in every warehouse at once, but every copy must be thrown away when the original changes.'
+    },
+    problem: 'Your site runs on servers in Virginia. A user in Sydney opens it, and every round trip (a message there and the reply back) has to cross the Pacific. Loading one page takes many round trips: connecting, setting up encryption, then fetching dozens of files. So the site feels sluggish. When a video goes viral, millions of people ask your servers for the same file at once. The question is: <b>how do you serve the same files to everyone, quickly, without melting your own servers?</b>',
+    story: [
+      {
+        stage: 'naive',
+        title: 'One origin server for the whole world',
+        text: 'Every user, everywhere, downloads every file straight from your <b>origin</b>, the server that holds the real copy. It is simple, and fine while your users live near it.',
+        scene: {
+          nodes: [
+            { id: 'u1', label: 'Users: Europe', sub: 'near the origin', kind: 'client', at: [70, 0] },
+            { id: 'u2', label: 'Users: Sydney', sub: 'far away', kind: 'client', at: [350, 0] },
+            { id: 'origin', label: 'Origin', sub: 'your servers', kind: 'service', at: [210, 110] }
+          ],
+          edges: [{ from: 'u1', to: 'origin', bidi: true }, { from: 'u2', to: 'origin', bidi: true }],
+          flow: [['u1>origin', 'u2>origin'], ['origin>u1', 'origin>u2']]
+        }
+      },
+      {
+        stage: 'breaks',
+        title: 'Far users wait, and a spike melts the origin',
+        text: 'Users in Sydney wait for every handshake to cross an ocean. When a file goes viral, <b>every request</b> lands on the origin, which runs out of bandwidth and slows down for everyone. One site in one place is also an easy target for an attack that floods it with junk traffic.',
+        scene: {
+          nodes: [
+            { id: 'u1', label: 'Users: Europe', sub: 'viral video', kind: 'client', at: [70, 0] },
+            { id: 'u2', label: 'Users: Sydney', sub: 'every trip slow', kind: 'client', at: [350, 0] },
+            { id: 'origin', label: 'Origin', sub: 'all requests', kind: 'service', at: [210, 110] }
+          ],
+          edges: [{ from: 'u1', to: 'origin', bidi: true }, { from: 'u2', to: 'origin', bidi: true }],
+          flow: [['u1>origin', 'u2>origin'], ['u1>origin', 'u2>origin']],
+          err: ['origin'],
+          warn: ['u2'],
+          badges: { origin: ['overloaded', 'err'], u2: ['slow ⏳', 'warn'] }
+        }
+      },
+      {
+        stage: 'fix',
+        title: 'Cache copies at the edge, near every user',
+        text: 'Put cache servers in many cities, called <b>points of presence (PoPs)</b>, and route each user to the nearest one. If it already has the file (a <b>cache hit</b>), it answers in milliseconds. On a miss it asks a regional <b>shield</b> cache first, so the origin sees only a trickle of requests.',
+        scene: {
+          nodes: [
+            { id: 'u1', label: 'Users: Europe', sub: 'nearby PoP', kind: 'client', at: [70, 0] },
+            { id: 'u2', label: 'Users: Sydney', sub: 'nearby PoP', kind: 'client', at: [350, 0] },
+            { id: 'p1', label: 'PoP Frankfurt', sub: 'edge cache', kind: 'cache', at: [70, 110] },
+            { id: 'shield', label: 'Shield cache', sub: 'upper tier', kind: 'cache', at: [210, 110] },
+            { id: 'p2', label: 'PoP Sydney', sub: 'edge cache', kind: 'cache', at: [350, 110] },
+            { id: 'origin', label: 'Origin', sub: 'rarely asked', kind: 'service', at: [210, 220] }
+          ],
+          edges: [{ from: 'u1', to: 'p1', bidi: true }, { from: 'u2', to: 'p2', bidi: true }, { from: 'p1', to: 'shield' }, { from: 'p2', to: 'shield' }, { from: 'shield', to: 'origin' }],
+          flow: [['u1>p1', 'u2>p2'], ['p1>u1', 'p2>shield'], 'shield>origin'],
+          ok: ['p1', 'p2', 'shield'],
+          badges: { p1: ['HIT', 'ok'], origin: ['trickle', 'ok'] }
+        }
+      }
+    ],
+    usedBy: ['Akamai', 'Cloudflare', 'Fastly', 'Amazon CloudFront', 'Google Cloud CDN', 'Netflix Open Connect'],
+    whenToUse: [
+      'Your users are spread across countries or continents',
+      'Many people download the <b>same files</b>: images, scripts, video, app updates',
+      'You must survive traffic spikes or flooding attacks without scaling your own servers'
+    ],
+    whenNot: [
+      'Every response is personal and cannot be cached (a bank balance): you gain only faster connections',
+      'All your users sit in one region, next to your servers',
+      'You need auth, routing and rate limits for your APIs (see <a href="api-gateway.html">API Gateway</a>)'
+    ],
+    glossary: [
+      { term: 'Origin', def: 'The server that holds the real, authoritative copy of the content.' },
+      { term: 'PoP (point of presence)', def: 'A CDN data centre in one city, full of cache servers.' },
+      { term: 'Cache hit / miss', def: 'Hit: the server already has the file. Miss: it has to fetch it from further upstream.' },
+      { term: 'Hit ratio', def: 'The share of requests answered from cache. The higher it is, the less load reaches the origin.' },
+      { term: 'Cache key', def: 'The parts of a request (host, path, some query parameters) that decide whether two requests share one cached copy.' },
+      { term: 'TTL', def: 'Time to live: how long a cached copy may be served before it must be checked with the origin again.' },
+      { term: 'Anycast', def: 'Many PoPs announce the same IP address, and internet routing delivers each user to the nearest one.' },
+      { term: 'Purge', def: 'Telling every server in the CDN to throw away a cached file, for example after a bad deploy.' }
+    ]
+  },
+
   requirements: {
     functional: [
       'Cache and serve static assets, images and video segments at the edge',

@@ -15,6 +15,91 @@ SD.register({
     ]
   },
 
+  intro: {
+    what: 'A video streaming system takes an uploaded film or clip and lets huge numbers of people watch it smoothly on phones, TVs and laptops. It prepares the video in many sizes and qualities, keeps copies <b>close to viewers</b>, and lets each player <b>switch quality on the fly</b> as its network changes.',
+    analogy: {
+      icon: '🎞️',
+      title: 'A film cut into short reels, stocked on your street',
+      text: 'Imagine a film cut into thousands of short reels, each printed in several sizes, from a pocket version to a big-screen version. Copies of every reel sit in a shop on your street, not at the studio. You fetch one reel at a time, and if the road gets busy you grab a smaller version of the next reel so you never run out. A streaming player does exactly that every few seconds, with video segments.'
+    },
+    problem: 'A new episode comes out at midnight, and millions of people press <b>Play</b> at once. One is on home fibre; another is on a train whose signal keeps dropping. Sending everyone the same huge file from one data centre would clog the network and leave the train viewer staring at a spinning wheel. The system answers <b>"how do we give each viewer the best picture their connection can carry, without stalls, to millions at once?"</b>',
+    story: [
+      {
+        stage: 'naive',
+        title: 'One big file on one server',
+        text: 'Store the uploaded video as one high-quality file on a central server. When someone presses Play, the player downloads that file from start to finish. It works fine on a fast office network.',
+        scene: {
+          nodes: [
+            { id: 'up', label: 'Uploader', sub: 'one 4K file', kind: 'client', at: [70, 0] },
+            { id: 'org', label: 'Central server', sub: 'one big file', kind: 'store', at: [210, 110] },
+            { id: 'ply1', label: 'TV on fibre', sub: 'downloads it all', kind: 'client', at: [70, 220] },
+            { id: 'ply2', label: 'Phone on train', sub: 'weak signal', kind: 'client', at: [350, 220] }
+          ],
+          edges: [{ from: 'up', to: 'org' }, { from: 'org', to: 'ply1' }, { from: 'org', to: 'ply2' }],
+          flow: ['up>org', ['org>ply1', 'org>ply2']]
+        }
+      },
+      {
+        stage: 'breaks',
+        title: 'Spinning wheels and a swamped server',
+        text: 'The phone on the train cannot download 4K as fast as it plays, so the video <b>freezes to buffer</b>. At midnight, millions of viewers pull the same huge file from one place, across the whole internet. The server and its network links run out of capacity, so even the TV on fibre starts slowly.',
+        scene: {
+          nodes: [
+            { id: 'up', label: 'Uploader', sub: 'one 4K file', kind: 'client', at: [70, 0] },
+            { id: 'org', label: 'Central server', sub: 'millions of pulls', kind: 'store', at: [210, 110] },
+            { id: 'ply1', label: 'TV on fibre', sub: 'slow to start', kind: 'client', at: [70, 220] },
+            { id: 'ply2', label: 'Phone on train', sub: 'buffering…', kind: 'client', at: [350, 220] }
+          ],
+          edges: [{ from: 'up', to: 'org' }, { from: 'org', to: 'ply1' }, { from: 'org', to: 'ply2' }],
+          flow: [['org>ply1', 'org>ply2'], ['org>ply1', 'org>ply2']],
+          err: ['org', 'ply2'],
+          warn: ['ply1'],
+          badges: { org: ['overloaded', 'err'], ply2: ['stalled ⏳', 'err'] }
+        }
+      },
+      {
+        stage: 'fix',
+        title: 'Small segments, many qualities, cached nearby',
+        text: 'Cut the video into <b>segments</b> of a few seconds and encode each one at several qualities (a <b>bitrate ladder</b>), many at the same time. Copies sit in <b>edge caches</b> inside or near viewers\' internet providers. The player measures its speed and picks the quality of <b>each next segment</b>: high on fibre, lower on the train, so playback never stops.',
+        scene: {
+          nodes: [
+            { id: 'up', label: 'Uploader', sub: 'one 4K file', kind: 'client', at: [70, 0] },
+            { id: 'enc', label: 'Encoders', sub: 'chunks × qualities', kind: 'compute', at: [210, 0] },
+            { id: 'org', label: 'Origin', sub: 'all segments', kind: 'store', at: [350, 0] },
+            { id: 'cdn', label: 'Edge cache', sub: 'near viewers', kind: 'cache', at: [210, 110] },
+            { id: 'ply1', label: 'TV on fibre', sub: '4K segments', kind: 'client', at: [70, 220] },
+            { id: 'ply2', label: 'Phone on train', sub: 'lower quality', kind: 'client', at: [350, 220] }
+          ],
+          edges: [{ from: 'up', to: 'enc' }, { from: 'enc', to: 'org' }, { from: 'org', to: 'cdn' }, { from: 'cdn', to: 'ply1' }, { from: 'cdn', to: 'ply2' }],
+          flow: ['up>enc', 'enc>org', 'org>cdn', ['cdn>ply1', 'cdn>ply2']],
+          ok: ['cdn', 'ply1', 'ply2'],
+          badges: { ply2: ['no stall ✓', 'ok'] }
+        }
+      }
+    ],
+    usedBy: ['Netflix', 'YouTube', 'Disney+', 'Amazon Prime Video', 'Apple TV+'],
+    whenToUse: [
+      'Recorded video watched by many people on <b>very different networks</b>',
+      'The same popular files are requested again and again, so caching near viewers pays off',
+      'Viewers care more about a quick start and no freezing than about perfect quality'
+    ],
+    whenNot: [
+      'Live events where a few seconds of delay matter (see <a href="live-streaming.html">Live Event Streaming</a>)',
+      'Video calls between a few people: use real-time protocols such as WebRTC',
+      'A handful of internal training videos: one file behind a <a href="cdn.html">Content Delivery Network</a> is enough'
+    ],
+    glossary: [
+      { term: 'Encoding (transcoding)', def: 'Compressing the original video into a smaller format at a chosen resolution and quality.' },
+      { term: 'Bitrate', def: 'How many bits of data one second of video uses. Higher bitrate usually means better picture.' },
+      { term: 'Bitrate ladder', def: 'The set of versions (rungs) a video is encoded into, from small and blurry to large and sharp.' },
+      { term: 'Segment', def: 'A short piece of video, usually a few seconds long, stored as its own small file.' },
+      { term: 'Manifest (HLS / DASH)', def: 'A small file that lists every segment and every quality, so the player knows what it can fetch.' },
+      { term: 'ABR', def: 'Adaptive bitrate: the player\'s logic for choosing which quality to download next, based on speed and buffer.' },
+      { term: 'Edge cache / CDN', def: 'Servers placed close to viewers that keep copies of popular segments, so requests do not travel far.' },
+      { term: 'Rebuffering', def: 'When playback stops because the player ran out of downloaded video.' }
+    ]
+  },
+
   requirements: {
     functional: [
       'Upload large videos reliably (resumable, chunked)',

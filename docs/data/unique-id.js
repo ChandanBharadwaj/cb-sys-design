@@ -15,6 +15,89 @@ SD.register({
     ]
   },
 
+  intro: {
+    what: 'A unique ID generator hands out <b>numbers that are never repeated</b>, to label things like orders, messages or posts. In a large system, many machines need new IDs at the same time. The generator lets each of them create IDs on its own, while still guaranteeing no two are ever the same and that newer IDs are roughly larger.',
+    analogy: {
+      icon: '🎟️',
+      title: 'Ticket numbers stamped with the time and the booth',
+      text: 'A stadium has many ticket booths. Instead of phoning a central office for every ticket number, each booth stamps tickets with <b>the current time, its own booth number and a counter</b> that resets every second. Two booths can never print the same ticket, because their booth numbers differ, and sorting tickets roughly sorts them by time. It works only if no two booths share a number and no booth\'s clock runs backwards.'
+    },
+    problem: 'An online shop splits its orders across many database servers. Each server can count its own rows, but two of them would both hand out order number 1001. Every order, message and log line needs an ID <b>the moment it is created</b>, millions of times per second. The question is: <b>how do many machines create IDs that never clash, without asking each other first?</b>',
+    story: [
+      {
+        stage: 'naive',
+        title: 'One central counter',
+        text: 'Keep a single database with an <b>auto-increment</b> counter: 1, 2, 3 and so on. Every server asks it for the next number before saving a row. IDs are small, unique and perfectly ordered. It works while there is one database and modest traffic.',
+        scene: {
+          nodes: [
+            { id: 'app', label: 'Order server', sub: 'needs an ID', kind: 'client', at: [70, 0] },
+            { id: 'app2', label: 'Chat server', sub: 'needs an ID', kind: 'client', at: [350, 0] },
+            { id: 'ctr', label: 'Counter DB', sub: 'next = 1, 2, 3…', kind: 'store', at: [210, 110] }
+          ],
+          edges: [{ from: 'app', to: 'ctr' }, { from: 'app2', to: 'ctr' }],
+          flow: [['app>ctr', 'app2>ctr']]
+        }
+      },
+      {
+        stage: 'breaks',
+        title: 'The counter becomes a bottleneck',
+        text: 'Every ID now costs a network round trip to one machine. At millions per second it cannot keep up, and if it goes down <b>nobody can create anything</b>. Random 128-bit <b>UUIDs</b> avoid the counter, but they are twice as big and land in random places in the database index, which slows inserts.',
+        scene: {
+          nodes: [
+            { id: 'app', label: 'Order servers', sub: 'waiting', kind: 'client', at: [70, 0] },
+            { id: 'app2', label: 'Chat servers', sub: 'waiting', kind: 'client', at: [350, 0] },
+            { id: 'ctr', label: 'Counter DB', sub: 'one machine', kind: 'store', at: [210, 110] }
+          ],
+          edges: [{ from: 'app', to: 'ctr' }, { from: 'app2', to: 'ctr' }],
+          flow: [['app>ctr', 'app2>ctr'], ['app>ctr', 'app2>ctr']],
+          err: ['ctr'],
+          warn: ['app', 'app2'],
+          badges: { ctr: ['overloaded', 'err'], app: ['slow ⏳', 'warn'] }
+        }
+      },
+      {
+        stage: 'fix',
+        title: 'Pack time, worker and counter into 64 bits',
+        text: 'Each generator builds an ID from three parts: <b>the time in milliseconds</b>, its own <b>worker number</b>, and a small <b>sequence</b> counter for IDs in the same millisecond. A coordinator hands out worker numbers once, at startup, so there is no network call per ID. Because time comes first, IDs sort roughly by creation time.',
+        scene: {
+          nodes: [
+            { id: 'app', label: 'Services', sub: 'need IDs', kind: 'client', at: [210, 0] },
+            { id: 'gen1', label: 'Worker 1', sub: 'time | 1 | seq', kind: 'service', at: [70, 110] },
+            { id: 'gen2', label: 'Worker 2', sub: 'time | 2 | seq', kind: 'service', at: [210, 110] },
+            { id: 'gen3', label: 'Worker 3', sub: 'time | 3 | seq', kind: 'service', at: [350, 110] },
+            { id: 'zk', label: 'Coordinator', sub: 'leases worker #', kind: 'store', at: [70, 220] },
+            { id: 'ntp', label: 'Clock sync', sub: 'never step back', kind: 'external', at: [350, 220] }
+          ],
+          edges: [{ from: 'app', to: 'gen1' }, { from: 'app', to: 'gen2' }, { from: 'app', to: 'gen3' }, { from: 'zk', to: 'gen1', dashed: true }, { from: 'ntp', to: 'gen3', dashed: true }],
+          flow: ['zk>gen1', ['app>gen1', 'app>gen2', 'app>gen3']],
+          ok: ['gen1', 'gen2', 'gen3'],
+          badges: { gen2: ['no waiting', 'ok'] }
+        }
+      }
+    ],
+    usedBy: ['Twitter / X tweet IDs (Snowflake)', 'Discord message IDs', 'Instagram photo IDs', 'Sony\'s Sonyflake', 'Flickr ticket servers', 'UUIDv7 in PostgreSQL 18'],
+    whenToUse: [
+      'Many machines or database shards must create IDs <b>at the same time</b>',
+      'You want IDs that fit in a 64-bit integer and sort roughly by time',
+      'Asking a central service for every ID would be too slow or too fragile'
+    ],
+    whenNot: [
+      'One database is enough: its built-in auto-increment is simpler',
+      'The ID must be secret or unguessable, like a session token: use a random 128-bit value',
+      'You need short, human-friendly codes for links (see <a href="url-shortener.html">URL Shortener</a>)'
+    ],
+    glossary: [
+      { term: 'Primary key', def: 'The column that uniquely identifies each row in a database table, often the ID itself.' },
+      { term: 'UUID', def: 'A 128-bit identifier; version 4 is random, version 7 starts with a timestamp so it sorts by time.' },
+      { term: 'Snowflake ID', def: 'Twitter\'s 64-bit layout: a millisecond timestamp, then a worker number, then a per-millisecond sequence.' },
+      { term: 'Epoch', def: 'The starting moment from which the timestamp part of an ID is counted, chosen by each system.' },
+      { term: 'Worker id', def: 'A number unique to each generator process, so two generators can never produce the same ID.' },
+      { term: 'Sequence', def: 'A small counter that numbers the IDs one worker makes within the same millisecond, then resets.' },
+      { term: 'K-sorted', def: 'Almost in order: IDs from different machines may be out of order by roughly the difference between their clocks.' },
+      { term: 'Lease', def: 'A claim on a resource, here a worker id, that expires unless it is renewed, so a dead process frees its id.' }
+    ]
+  },
+
   requirements: {
     functional: [
       'Return a new ID on every call (single or batch)',

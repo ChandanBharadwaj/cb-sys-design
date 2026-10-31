@@ -14,6 +14,89 @@ SD.register({
       { v: '2 numbers', l: 'state per key for a token bucket: tokens + last refill time' }
     ]
   },
+  intro: {
+    what: 'A rate limiter decides, for every incoming request, whether the caller is still <b>within its allowance</b>. If the caller has sent too many requests recently, the request is turned away with a "slow down" error instead of reaching your servers. A <b>distributed</b> rate limiter keeps one shared count per caller, even when the traffic is spread over many servers.',
+    analogy: {
+      icon: '🪙',
+      title: 'An arcade token jar kept at the front desk',
+      text: 'Each customer has a jar at the front desk. Every play costs one token, and the desk adds a token every few seconds, up to a fixed maximum. When the jar is empty, the customer waits. The jar lives at the desk, not at each machine, so walking to another machine does not give anyone fresh tokens. In the real system nobody adds tokens on a timer; the limiter works out how many should have been added since the last visit.'
+    },
+    problem: 'Your API serves thousands of customers. One customer\'s script has a bug and retries in a tight loop, firing thousands of requests a second. The database slows down and every other customer starts seeing errors. You run dozens of gateway servers, and each one sees only a slice of that traffic. On every request you must answer <b>"has this caller used up its share, counted across all servers?"</b>, and you must answer it in well under a millisecond.',
+    story: [
+      {
+        stage: 'naive',
+        title: 'Each server counts in its own memory',
+        text: 'Every gateway server keeps a counter per API key in its own memory. A request bumps the counter; past the limit, the server rejects it. There is no network call, so it is very fast, and with one server it is exactly right.',
+        scene: {
+          nodes: [
+            { id: 'cli', label: 'Client', sub: 'limit 100/min', kind: 'client', at: [70, 110] },
+            { id: 'gw1', label: 'Gateway 1', sub: 'own counter', kind: 'edge', at: [210, 0] },
+            { id: 'gw2', label: 'Gateway 2', sub: 'own counter', kind: 'edge', at: [210, 220] },
+            { id: 'api', label: 'API + DB', sub: 'the real work', kind: 'service', at: [350, 110] }
+          ],
+          edges: [{ from: 'cli', to: 'gw1' }, { from: 'cli', to: 'gw2' }, { from: 'gw1', to: 'api' }, { from: 'gw2', to: 'api' }],
+          flow: [['cli>gw1', 'cli>gw2'], ['gw1>api', 'gw2>api']]
+        }
+      },
+      {
+        stage: 'breaks',
+        title: 'Every server lets through a full allowance',
+        text: 'The load balancer spreads the client\'s requests across servers. Each server sees only its own share, so each one lets through up to 100 per minute. With 2 servers the client gets 200; with 50 servers it gets <b>50 times its limit</b>. Counters also reset whenever a server restarts.',
+        scene: {
+          nodes: [
+            { id: 'cli', label: 'Buggy client', sub: 'retry loop', kind: 'client', at: [70, 110] },
+            { id: 'gw1', label: 'Gateway 1', sub: 'counts 100', kind: 'edge', at: [210, 0] },
+            { id: 'gw2', label: 'Gateway 2', sub: 'counts 100', kind: 'edge', at: [210, 220] },
+            { id: 'api', label: 'API + DB', sub: 'gets 200/min', kind: 'service', at: [350, 110] }
+          ],
+          edges: [{ from: 'cli', to: 'gw1' }, { from: 'cli', to: 'gw2' }, { from: 'gw1', to: 'api' }, { from: 'gw2', to: 'api' }],
+          flow: [['cli>gw1', 'cli>gw2'], ['gw1>api', 'gw2>api'], ['cli>gw1', 'cli>gw2'], ['gw1>api', 'gw2>api']],
+          warn: ['gw1', 'gw2'],
+          err: ['api'],
+          badges: { gw1: ['allows', 'warn'], gw2: ['allows', 'warn'], api: ['overloaded', 'err'] }
+        }
+      },
+      {
+        stage: 'fix',
+        title: 'One shared counter, updated in one atomic step',
+        text: 'All gateways check the same small store, usually <b>Redis</b> (a fast in-memory database). Each check is <b>one atomic step</b>: top up the caller\'s token bucket for the time that passed, take a token, answer yes or no. Over the limit, the gateway replies <code>429 Too Many Requests</code>. If Redis fails, most limiters <b>fail open</b> and let traffic through rather than block everyone.',
+        scene: {
+          nodes: [
+            { id: 'cli', label: 'Client', sub: 'limit 100/min', kind: 'client', at: [70, 110] },
+            { id: 'gw1', label: 'Gateway 1', sub: 'asks Redis', kind: 'edge', at: [210, 0] },
+            { id: 'redis', label: 'Shared count', sub: 'Redis · atomic', kind: 'cache', at: [210, 110] },
+            { id: 'gw2', label: 'Gateway 2', sub: 'asks Redis', kind: 'edge', at: [210, 220] },
+            { id: 'api', label: 'API + DB', sub: 'protected', kind: 'service', at: [350, 110] }
+          ],
+          edges: [{ from: 'cli', to: 'gw1' }, { from: 'cli', to: 'gw2' }, { from: 'gw1', to: 'redis' }, { from: 'gw2', to: 'redis' }, { from: 'gw1', to: 'api' }, { from: 'gw2', to: 'api' }],
+          flow: [['cli>gw1', 'cli>gw2'], ['gw1>redis', 'gw2>redis'], ['gw1>api', 'gw2>api']],
+          ok: ['redis', 'api'],
+          badges: { redis: ['100 total', 'ok'] }
+        }
+      }
+    ],
+    usedBy: ['Stripe API', 'GitHub API', 'Cloudflare', 'Envoy proxy', 'NGINX', 'Login pages that block password guessing'],
+    whenToUse: [
+      'A public or shared API where one caller must not <b>starve</b> everyone else',
+      'A scarce resource (database, partner API, SMS sender) needs protection from bursts and retry storms',
+      'You sell plans with limits, such as "free plan: 100 requests per minute"'
+    ],
+    whenNot: [
+      'Billing or monthly quotas that must be exact: use a metering pipeline that records every call',
+      'Floods from millions of machines (DDoS): stop them at the network edge (see <a href="cdn.html">Content Delivery Network</a>)',
+      'Work you must not drop, only slow down: buffer it in a <a href="message-queue.html">Distributed Message Queue</a>'
+    ],
+    glossary: [
+      { term: 'Token bucket', def: 'A per-caller bucket that refills at a steady rate up to a maximum; each request takes one token, and an empty bucket means reject.' },
+      { term: 'Fixed window', def: 'Counting requests per calendar minute (or hour), which lets up to twice the limit through around the moment one window ends and the next begins.' },
+      { term: 'Sliding-window counter', def: 'Estimates the last full minute by blending the previous window\'s count with the current one, using only two numbers per caller.' },
+      { term: 'Redis', def: 'A very fast in-memory key-value database, often used to hold shared counters.' },
+      { term: 'Atomic Lua script', def: 'A small script Redis runs with nothing else in between, so two servers can never both spend the last token.' },
+      { term: '429 + Retry-After', def: 'The HTTP status code for "too many requests", plus a header telling the client how many seconds to wait.' },
+      { term: 'Fail open / fail closed', def: 'When the limiter itself breaks: allow all traffic (open) or reject all traffic (closed).' },
+      { term: 'Load shedding', def: 'Dropping the least important work when the whole fleet is overloaded, regardless of which client sent it.' }
+    ]
+  },
 
   requirements: {
     functional: [
