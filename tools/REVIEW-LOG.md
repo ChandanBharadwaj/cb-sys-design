@@ -24,7 +24,6 @@ Each entry lists what changed and what was deliberately left as it was.
   - The Agones Fleet, FleetAutoscaler and GameServerAllocation were checked against the v1 spec.
   - The LiteLLM config was loaded with the real LiteLLM proxy loader. Its comment now says the semantic cache needs Redis credentials.
 
-
 ---
 
 ## Distributed Rate Limiter (`rate-limiter`)
@@ -167,6 +166,45 @@ Each entry lists what changed and what was deliberately left as it was.
 
 ---
 
+## Live Train Tracking (Offline) (`train-tracking`)
+
+- **New page:** Live Train Tracking (Offline), modelled on Where Is My Train. It has 11 sections and a "Start here" intro (3 frames: server status → no signal → offline pack plus cell IDs), 5 scenarios, 4 knobs, 12 interview questions, 3 snippets and 10 sources. Related pages: ride-sharing, proximity-service, irctc-booking, notifications, cdn, stream-analytics.
+- **Fact vs our design:** Google has not published the locator. The page attributes only these points to sources:
+  - offline cell-tower tracking with timetables on the phone (YourStory 2018, Wikipedia);
+  - anonymised location data from users (Wikipedia);
+  - the speedometer GPS traces reused to build the cell mode, with no official tower data (founder interview, Indian Notes);
+  - cell-mode accuracy of "a few km", near-GPS close to stations (same interview);
+  - the acquisition in Dec 2018 with 10M+ downloads; the price was undisclosed, and the $30–40M figure is reported only as unconfirmed (VentureBeat, YourStory, Business Standard);
+  - Google Maps live train status in Jun 2019, built with Sigmoid Labs (MediaNama);
+  - RTIS in Sep 2022: 2,700 locos in 21 sheds, 6,000 more planned, 30 s mid-section updates, data to NTES through CRIS (ThePrint, Ministry statement);
+  - the iOS listing by Google LLC (App Store). The launch month is hedged because reports say both Jun and Nov 2025.
+
+  Everything else is labelled **our design**: the tower→segment table, the HMM/Viterbi locator, the anonymiser rules, versioned packs with deltas, the k-trip floor and the per-train status cache. The architecture title says "(our design)".
+- **Estimates:** All calculator inputs are labelled estimates, including about 68K route km. Knob battery, data and learn-time figures are labelled illustrative in the knob intro.
+- **Widget (real mechanism):**
+  - Crowd trips (random sub-journeys, GPS fixes about 35% of the time) are map-matched to 0.5 km segments and counted into a P(cell | segment) table.
+  - The phone runs an HMM forward filter. Prediction is forward motion around the timetable section speed, with extra stop mass near stations. The emission comes from the table; unknown cells and no service mean predict only.
+  - The page shows the median and a 90% band, the true train, the serving cell plus the stretch the learned map links to it, the last 4 cells, the ETA to the next station (estimate vs true), and the delay vs the timetable.
+  - Modes are GPS / cell / no signal. The map can be built from 2, 20 or 200 trips (cold start), and a "+5 min" button keeps it usable with reduced motion.
+- **Widget results (Node harness, 5 runs each):**
+
+  | Mode / map | Median error | p90 error | Median band |
+  |---|---|---|---|
+  | Cell mode, 20 trips | 0.35 km | 0.8 km | 2.5 km |
+  | Cell mode, 2 trips | 0.95 km | 2.9 km | 8 km |
+  | GPS | ≈ 10 m | – | – |
+
+  In no-signal mode the band grows by about 1 km per 10 min.
+- **Phone:** `draw(narrow)` uses a 360-wide viewBox with 14-unit text and no km labels, and is rebuilt through `ctx.onResize`. The checker reports min 13.2 px and p25 13.2 px. In the first screenshot the serving-cell label overlapped the belief baseline; it now sits below the baseline.
+- **Code checks:**
+  - **Python** Viterbi: run with Python 3.12, and the output matches the comments ([1] alone; [4, 6, 7, 8] with history).
+  - **SQL:** run on a throwaway Postgres 16 with seeded pings. The stray pair, the 400 m fix and the 2-trip cell were excluded, and the unknown-cell report listed that cell.
+  - **Java** PackController: compiles cleanly with `javac --release 21 -proc:none -Xlint:deprecation,removal` against the Spring Boot 3.5.16 classpath. Only imports and a package were added for the compile.
+- **Not verified:** the founder interview text is used as given in the research brief, because the article did not surface in my searches. The 30 s RTIS interval comes from PIB-based coverage in search snippets.
+
+
+---
+
 ## Ticket Booking & Flash Sales (`ticket-booking`)
 
 - Widget: added a phone layout (`ctx.onResize`). viewBox is 360 wide with 8×4 seats at 42-unit pitch and 14–15-unit text. The lane legend moved into HTML on both layouts. Seat state now survives a resize because positions come from the row/column, not stored x/y. Phone fonts went from min 7.5 / p25 9.5 px to min 12.3 / p25 13.2 px. The race simulation and strategies are unchanged.
@@ -249,6 +287,73 @@ Each entry lists what changed and what was deliberately left as it was.
 - Clarity: shortened the status-check-storm scenario caption to under 220 characters. Added a follow-up on what the app shows during the 90 s wait.
 - Checked and left alone: the RBI 2019 TAT (UPI credit not received means reversal by T+1, else ₹100/day; T+5 for merchant cases). Also the Sep 2026 volume of 24.07B (≈ 9,300 TPS average and > 800M/day) and the Aug 2026 record of 24.51B, which are consistent. The knob breaker threshold (50%) matches the Resilience4j config in the code. Every knob option changes the meters or the verdict.
 - **Compile check:** Both Java snippets compile cleanly (Resilience4j 2.2, Spring JDBC 6.2). The `@Scheduled` method was wrapped in a class. Both were run against Postgres 16 using the page's table. A client retry returned the original status without calling NPCI again. Business declines were ignored by the breaker. After 20 timeouts the breaker opened, and later payments were marked FAILED without being sent. Txn ids are 35 chars. The resolver backed off 90 s → 180 s → 360 s and stopped at 3 checks. No changes.
+
+
+---
+
+## Railway Ticketing (IRCTC) (`irctc-booking`)
+
+- New page: Railway Ticketing (IRCTC). It covers IRCTC as the internet front end with booking done by CRIS's PRS, segment inventory, quotas, CNF / RAC / WL, charting, PNR, the payment ↔ PNR idempotency and auto-refund path, and the Tatkal surge. It goes deeper than `ticket-booking` (segments, RAC/WL promotion, charting, pay-first reconciliation) and links to it from `whenNot` and `related`.
+- **Our design vs documented fact:** the berth bitmask, best-fit ordering, SKIP LOCKED allocation, booking-intent table, PRS de-duplication on intent id, reconciler, availability cache keyed by station pair, admission queue and "release unsold quota near charting" are all labelled as our design. CRIS internals are not public. The pay-first-then-allocate order is inferred from what users see ("paid but WL / refunded"), not from published internals. It is presented as a trade-off, not as a fact.
+- **Facts used (sources in `realWorld.sources`):** peak 30,155 tickets/min (12 Mar 2025, 10:01) and 1,85,513 bookings in the peak hour (21 Mar 2024), and e-tickets at 86.38% of reserved tickets in FY 2024-25 (irctc.com). The new PRS target of > 1.5 lakh tickets/min (about 5× the current ~32K) and > 40 lakh enquiries/min, plus the 8 h chart (AIR News, FPJ, ThePrint). Tatkal at 10:00 AC / 11:00 non-AC, Aadhaar-only online Tatkal from 1 Jul 2025, agents barred for 30 min, and OTP for counter and agent bookings from 15 Jul 2025 (Tribune, Business Standard). About 50% bot logins in the first 5 min, and 2.5 crore IDs deactivated by Jun 2025 (MediaNama). About 3.02 crore IDs deactivated since Jan 2025, plus Akamai anti-bot (Angel One, Dec 2025). NGeT capacity of 2,000 → 7,200 tickets/min in Aug 2014 (Deccan Chronicle). 29 tickets a day in the early days → about 13 lakh a day by 2016 (Newslaundry). CONCERT developed by CRIS (Wikipedia). Two RAC passengers per side-lower berth (Wikipedia RAC). The waitlist cap went 25% → 60% AC / 30% non-AC in Jun 2025 (The Week / PTI). The combined lower-berth quota is about 6–7 per sleeper coach (Deccan Herald, Minister's reply). GNWL is preferred over TQWL at charting (erail.in explainer, not primary). Premium Tatkal uses dynamic fares on part of the Tatkal quota (Governance Now).
+- **Hedged / not used:** the "37K/min" figures (unofficial) were not used. The PRS start date is given as "mid-1980s (1985 or 1986)" because sources disagree. The 2015 "15,000/min" NGeT upgrade appeared in a search summary with no clear source, so it was dropped. Premium Tatkal being non-refundable with no RAC/WL is worded as "widely reported" (secondary sites only). The Dec 2025 "previous day chart" change was not used.
+- **Knobs:** every option changes the outcome (checker: 14/14). Load numbers are labelled illustrative. The allocation numbers come from my own simulation (72 berths, 7 segments, 110 short trips of 1–3 legs and then 40 end-to-end requests, 200 seeds):
+  - one passenger per berth: 26% of berth-km sold, 0/40 long journeys served;
+  - emptiest berth first: 40%, 0/40;
+  - first-fit: 88%, ~35/40;
+  - best-fit: 88%, ~35/40.
+  - After 40 random cancellations, best-fit served 34.5/40 vs first-fit 33.8/40. The page says the two tie on a fresh train and best-fit wins only slightly after cancellations.
+- **Widget:** a real bitmask allocator for 6 berths plus 2 side-lower RAC berths (4 slots) across 5 segments. It has first-fit / best-fit, RAC, then WL, in-order promotion (RAC → CNF, then WL → CNF/RAC for the first passenger who fits, with a note when a later WL jumps ahead), and charting that auto-cancels and refunds WL. The scan animates `mask & request` berth by berth, and a footer shows free berths per segment. There are two layouts via `ctx.onResize`: phone viewBox 360 with 13.5–15-unit text, and desktop viewBox 560 capped at 640px. Phone fonts are min 12.7 / p25 12.7 px.
+  - Fixed during testing: the caption's first suggested demo showed no difference between the strategies. It now uses A→F + C→F, cancels #1, then books A→C: first-fit takes B1, best-fit takes B2.
+  - Fixed during testing: a cancel during a burst was silently ignored. It now logs a message.
+- **Code:**
+  - SQL: ran on a throwaway Postgres 16. Best-fit picks the fuller berth, and a full train returns 0 rows. In a two-session test the second session skipped the locked berth and took another; when the locked berth was the only fit it got 0 rows, which is why the note says to retry without SKIP LOCKED.
+  - Java: compiled with `javac --release 21 -proc:none -Xlint:deprecation,removal` against Spring Boot 3.5.16 with stubs for PrsClient / GatewayClient / PrsTimeoutException. It was also run against Postgres with fakes: duplicate callbacks made no second PRS call, a booked-but-timed-out intent became CONFIRMED, and an unbooked one got exactly one refund across 2 instances × 3 reconcile runs.
+  - Python: ran on 3.11, and the output matches the note.
+- Checker: `node tools/check.js --require-intro --fonts irctc-booking` passes on phone and desk (5 scenarios, 12 interview questions, 16 sources).
+
+
+---
+
+## Temple Darshan Booking Queue (`ttd-darshan-booking`)
+
+- **New page.** It covers TTD's monthly darshan and seva release: a known T0, CDN and a pre-rendered calendar, pre-scaling, a virtual queue with signed tokens, FIFO vs randomised-at-T0 positions, date × slot counters, holds with a TTL, per-ID limits, OTP, the hold bounce after "quota full", and a seeded seva lucky dip. It links to `ticket-booking` (generic seat-level flash sale) and `live-streaming` (ladder pre-scaling) rather than repeating them.
+- **Research:** 10 WebSearches.
+  - Brief facts used and cited:
+    - TTD Sep 2026: ≈6 lakh simultaneous users, ≈2.69 lakh quota, ≈4 per user (≈24 lakh, ≈9×), Virtual Queue, "Slot Unavailable" = quota full, and payment failures from banks or gateways. Sources: Telangana Today, Deccan Chronicle, UNI.
+    - 2021: the Jio-built portal on a JioMart domain (Deccan Herald), and 1.10 lakh concurrent hits vs a normal 30–40K capacity (Deccan Chronicle, Aug 2021).
+    - 2017: the Arjitha seva online dip (Hans India).
+  - New and cited:
+    - TCS as technology partner (Business Standard, Feb 2015).
+    - About 2.4 lakh tickets in about 1 hour with about 1 crore hits (Zee News, Sep 2021). Deccan Chronicle said about 2 hours, and the page says the timing is approximate.
+    - 807 reservations on one mobile and 926 on one email (Deccan Chronicle, undated).
+    - Srivani online booking needs Aadhaar and a registered mobile (Deccan Chronicle).
+    - A vigilance finding of software-assisted Srivani bulk booking, and TTD considering a lucky dip for Srivani (Deccan Chronicle; the year is not confirmed, so labelled "Undated report").
+  - **Google Cloud:** two searches now show that UNI's report of the Sep 2026 statement quotes TTD saying the platform is "supported by technologies such as Google Cloud Platform, load balancing, auto-scaling and distributed architecture". The page includes it, attributed as TTD's own description via UNI. It was not independently verified.
+- **Not used (unverified):**
+  - A "once in 90 days" per-person rule and a "6 per booking" cap. These come only from booking-agency blogs, so the page presents per-ID and group limits as our design and gives no TTD numbers.
+  - The 300/day Srivani donor quota, which appeared only on forums and agency blogs.
+  - The official portal domain. Results disagreed between `ttdevasthanams.ap.gov.in` and `tirupatibalaji.ap.gov.in`, so neither is named.
+  - The release day of the month. Reports differ, so none is hard-coded. The intro's "10:00" is a conceptual example.
+- **Our design vs fact:** the architecture, queue algorithm (random pre-queue then FIFO), token format, counter schema, TTLs, admission rate and the commit-reveal draw are all our design. The real-world intro says that TTD has not published its internals.
+- **Knobs:** the crowd and quota use TTD's figures. Capacities, the 10% bot share, payment outcomes (75% pay, 15% bank failures freed in about 1 min, 10% abandoned) and a 2-min mean payment time are labelled as estimates in the knobs intro. The 2021 freeze roughly matches the "no queue + autoscale" case: about 1.7 h to quota full, mostly errors. Every option changes a meter or the verdict (checker: 9/9).
+- **Widget:**
+  - 600 sessions and a 270-ticket quota, scaled 1:1,000.
+  - 60 bot sessions under 12 identities, all in the pre-queue, clicking within 0.25 s.
+  - A token bucket admits R/s. Holds are an atomic counter decrement per slot, with TTL expiry, immediate release on bank failure, and refunds for payments that arrive after expiry. The per-ID check frees the identity when a hold is released.
+  - The same seeded crowd is replayed for each policy.
+  - Typical run (seed 0): FIFO with no limit gives bots ≈89% of tickets; FIFO with the limit ≈18%; random with no limit ≈35%; random with the limit ≈17%.
+  - Phone: a 360-wide viewBox with 13–13.5-unit text (min 12.3 px, p25 12.7 px). The legend and stats are in HTML.
+- **Code:**
+  - Java token issuer: compiled clean with `javac --release 21 -proc:none -Xlint:deprecation,removal` against `/tmp/snipbuild/cp.txt`. It was run with a fixed `Clock`: valid → true; wrong session, tampered signature, garbage, and expired after 11 min → false.
+  - SQL: ran on a throwaway Postgres 16.15.
+    - With quota 8, two holds of 4 commit and the third updates 0 rows.
+    - A retried idempotency key inserts 0 rows, so the app rolls back.
+    - A second confirm for the same ID and period fails on `bookings_id_hash_period_key`.
+    - A confirm after expiry changes 0 rows.
+    - The test showed that the same ID can still park a second *hold* until it expires, because the constraint fires at confirm. The note now says this and suggests a claim row per `(id_hash, period)`.
+  - Python lucky dip: ran on Python 3.13. 36 entries win against 60 places (mixed 1- and 2-devotee entries), and the ranking is identical when the input order is reversed.
+- **Checker:** `node tools/check.js --require-intro --fonts ttd-darshan-booking` → all ✓ (phone and desk). I looked at the screenshots of the intro, architecture, knobs and deep dive at both sizes. I shortened the knob hints, which had squeezed the meter labels, and renamed "Payment orchestrator" to "Pay orchestrator" so it fits the 18-character label limit.
 
 
 ---

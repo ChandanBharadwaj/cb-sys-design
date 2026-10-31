@@ -477,5 +477,5 @@ return {1}
     }
   ],
 
-  related: ['payment-gateway', 'ecommerce-orders', 'rate-limiter', 'lock-manager', 'cdn', 'notifications']
+  related: ['payment-gateway', 'ecommerce-orders', 'rate-limiter', 'lock-manager', 'cdn', 'notifications', 'irctc-booking', 'ttd-darshan-booking']
 });
