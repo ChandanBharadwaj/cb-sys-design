@@ -46,7 +46,7 @@ SD.register({
           nodes: [
             { id: 'app', label: 'App', sub: 'waiting…', kind: 'client', at: [70, 0] },
             { id: 'emb', label: 'Embed model', sub: 'text → numbers', kind: 'ml', at: [350, 0] },
-            { id: 'ins', label: 'New vectors', sub: 'keep arriving', kind: 'client', at: [70, 110] },
+            { id: 'ins', label: 'New vectors', sub: 'keep arriving', kind: 'client', at: [70, 220] },
             { id: 'db', label: 'Vector table', sub: 'full scan', kind: 'store', at: [210, 110] }
           ],
           edges: [{ from: 'app', to: 'emb', bidi: true }, { from: 'app', to: 'db', bidi: true }, { from: 'ins', to: 'db' }],

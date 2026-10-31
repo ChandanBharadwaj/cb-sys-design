@@ -31,9 +31,9 @@ SD.register({
         scene: {
           nodes: [
             { id: 'user', label: 'User app', sub: 'opens feed', kind: 'client', at: [70, 0] },
-            { id: 'feed', label: 'Feed service', sub: 'score, sort', kind: 'service', at: [210, 0] },
-            { id: 'cat', label: 'Catalog', sub: 'every item', kind: 'store', at: [350, 0] },
-            { id: 'rank', label: 'Ranking model', sub: 'scores each item', kind: 'ml', at: [210, 110] }
+            { id: 'feed', label: 'Feed service', sub: 'score, sort', kind: 'service', at: [70, 110] },
+            { id: 'cat', label: 'Catalog', sub: 'every item', kind: 'store', at: [210, 0] },
+            { id: 'rank', label: 'Ranking model', sub: 'scores each item', kind: 'ml', at: [350, 110] }
           ],
           edges: [{ from: 'user', to: 'feed', bidi: true }, { from: 'feed', to: 'cat', bidi: true }, { from: 'feed', to: 'rank', bidi: true }],
           flow: ['user>feed', 'feed>cat', 'feed>rank', 'rank>feed', 'feed>user']
@@ -46,9 +46,9 @@ SD.register({
         scene: {
           nodes: [
             { id: 'user', label: 'User app', sub: 'spinner…', kind: 'client', at: [70, 0] },
-            { id: 'feed', label: 'Feed service', sub: 'timing out', kind: 'service', at: [210, 0] },
-            { id: 'cat', label: 'Catalog', sub: '100M items', kind: 'store', at: [350, 0] },
-            { id: 'rank', label: 'Ranking model', sub: 'overloaded', kind: 'ml', at: [210, 110] }
+            { id: 'feed', label: 'Feed service', sub: 'timing out', kind: 'service', at: [70, 110] },
+            { id: 'cat', label: 'Catalog', sub: '100M items', kind: 'store', at: [210, 0] },
+            { id: 'rank', label: 'Ranking model', sub: 'overloaded', kind: 'ml', at: [350, 110] }
           ],
           edges: [{ from: 'user', to: 'feed', bidi: true }, { from: 'feed', to: 'cat', bidi: true }, { from: 'feed', to: 'rank', bidi: true }],
           flow: ['user>feed', 'feed>cat', ['feed>rank', 'feed>rank']],
@@ -64,12 +64,12 @@ SD.register({
         scene: {
           nodes: [
             { id: 'user', label: 'User app', sub: 'opens feed', kind: 'client', at: [70, 0] },
-            { id: 'feed', label: 'Feed service', sub: 'runs the funnel', kind: 'service', at: [210, 0] },
-            { id: 'cg', label: 'Candidates', sub: 'millions → 1,000', kind: 'ml', at: [70, 110] },
-            { id: 'rank', label: 'Ranking model', sub: 'scores 1,000', kind: 'ml', at: [210, 110] },
-            { id: 'rerank', label: 'Re-ranker', sub: 'top 20, varied', kind: 'service', at: [350, 110] },
-            { id: 'ann', label: 'Item index', sub: 'nearest items', kind: 'store', at: [70, 220] },
-            { id: 'fs', label: 'Feature store', sub: 'fresh signals', kind: 'cache', at: [210, 220] }
+            { id: 'feed', label: 'Feed service', sub: 'runs the funnel', kind: 'service', at: [70, 110] },
+            { id: 'cg', label: 'Candidates', sub: 'millions → 1,000', kind: 'ml', at: [210, 0] },
+            { id: 'rank', label: 'Ranking model', sub: 'scores 1,000', kind: 'ml', at: [350, 110] },
+            { id: 'rerank', label: 'Re-ranker', sub: 'top 20, varied', kind: 'service', at: [210, 220] },
+            { id: 'ann', label: 'Item index', sub: 'nearest items', kind: 'store', at: [210, 110] },
+            { id: 'fs', label: 'Feature store', sub: 'fresh signals', kind: 'cache', at: [350, 220] }
           ],
           edges: [{ from: 'user', to: 'feed', bidi: true }, { from: 'feed', to: 'cg' }, { from: 'cg', to: 'ann', bidi: true }, { from: 'cg', to: 'rank' }, { from: 'rank', to: 'fs', bidi: true }, { from: 'rank', to: 'rerank' }, { from: 'rerank', to: 'feed' }],
           flow: ['feed>cg', 'cg>rank', 'rank>rerank', 'rerank>feed', 'feed>user'],

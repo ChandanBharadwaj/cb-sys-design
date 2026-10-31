@@ -31,7 +31,7 @@ SD.register({
         scene: {
           nodes: [
             { id: 'u', label: 'Users', sub: 'send prompts', kind: 'client', at: [70, 0] },
-            { id: 'q', label: 'Queue', sub: 'first come', kind: 'queue', at: [210, 0] },
+            { id: 'q', label: 'Queue', sub: 'first come', kind: 'queue', at: [350, 0] },
             { id: 'gpu', label: 'GPU + model', sub: 'one reply at once', kind: 'ml', at: [210, 110] }
           ],
           edges: [{ from: 'u', to: 'q' }, { from: 'q', to: 'gpu' }, { from: 'gpu', to: 'u' }],
@@ -45,9 +45,9 @@ SD.register({
         scene: {
           nodes: [
             { id: 'u', label: 'Users ×1000', sub: 'waiting', kind: 'client', at: [70, 0] },
-            { id: 'q', label: 'Queue', sub: 'growing', kind: 'queue', at: [210, 0] },
+            { id: 'q', label: 'Queue', sub: 'growing', kind: 'queue', at: [350, 0] },
             { id: 'gpu', label: 'GPU + model', sub: 'mostly idle', kind: 'ml', at: [210, 110] },
-            { id: 'mem', label: 'GPU memory', sub: 'reserved, unused', kind: 'cache', at: [350, 110] }
+            { id: 'mem', label: 'GPU memory', sub: 'reserved, unused', kind: 'cache', at: [210, 220] }
           ],
           edges: [{ from: 'u', to: 'q' }, { from: 'q', to: 'gpu' }, { from: 'gpu', to: 'mem' }, { from: 'gpu', to: 'u' }],
           flow: [['u>q', 'u>q'], 'q>gpu', 'gpu>mem'],
@@ -63,9 +63,9 @@ SD.register({
         scene: {
           nodes: [
             { id: 'u', label: 'Users', sub: 'send prompts', kind: 'client', at: [70, 0] },
-            { id: 'q', label: 'Scheduler', sub: 'batch every step', kind: 'compute', at: [210, 0] },
+            { id: 'q', label: 'Scheduler', sub: 'batch every step', kind: 'compute', at: [350, 0] },
             { id: 'gpu', label: 'GPU + model', sub: 'one big batch', kind: 'ml', at: [210, 110] },
-            { id: 'mem', label: 'KV blocks', sub: 'small, on demand', kind: 'cache', at: [350, 110] }
+            { id: 'mem', label: 'KV blocks', sub: 'small, on demand', kind: 'cache', at: [210, 220] }
           ],
           edges: [{ from: 'u', to: 'q' }, { from: 'q', to: 'gpu' }, { from: 'gpu', to: 'mem', bidi: true }, { from: 'gpu', to: 'u' }],
           flow: ['u>q', 'q>gpu', 'gpu>mem', 'gpu>u'],

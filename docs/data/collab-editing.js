@@ -31,7 +31,7 @@ SD.register({
           nodes: [
             { id: 'ca', label: 'Ana', sub: 'insert X @1', kind: 'client', at: [70, 0] },
             { id: 'srv', label: 'Relay server', sub: 'forwards edits', kind: 'service', at: [210, 110] },
-            { id: 'log', label: 'Saved doc', sub: 'now and then', kind: 'store', at: [350, 110] },
+            { id: 'log', label: 'Saved doc', sub: 'now and then', kind: 'store', at: [210, 220] },
             { id: 'cb', label: 'Ben', sub: 'delete @2', kind: 'client', at: [70, 220] }
           ],
           edges: [{ from: 'ca', to: 'srv', bidi: true }, { from: 'cb', to: 'srv', bidi: true }, { from: 'srv', to: 'log' }],
@@ -46,7 +46,7 @@ SD.register({
           nodes: [
             { id: 'ca', label: 'Ana', sub: 'deletes the b', kind: 'client', at: [70, 0] },
             { id: 'srv', label: 'Relay server', sub: 'no merge rule', kind: 'service', at: [210, 110] },
-            { id: 'log', label: 'Saved doc', sub: 'which one?', kind: 'store', at: [350, 110] },
+            { id: 'log', label: 'Saved doc', sub: 'which one?', kind: 'store', at: [210, 220] },
             { id: 'cb', label: 'Ben', sub: 'gets X', kind: 'client', at: [70, 220] }
           ],
           edges: [{ from: 'ca', to: 'srv', bidi: true }, { from: 'cb', to: 'srv', bidi: true }, { from: 'srv', to: 'log' }],
@@ -64,7 +64,7 @@ SD.register({
           nodes: [
             { id: 'ca', label: 'Ana', sub: 'rev 8', kind: 'client', at: [70, 0] },
             { id: 'srv', label: 'Session server', sub: 'orders, adjusts', kind: 'service', at: [210, 110] },
-            { id: 'log', label: 'Op log', sub: 'revs + snapshots', kind: 'store', at: [350, 110] },
+            { id: 'log', label: 'Op log', sub: 'revs + snapshots', kind: 'store', at: [210, 220] },
             { id: 'cb', label: 'Ben', sub: 'rev 9', kind: 'client', at: [70, 220] }
           ],
           edges: [{ from: 'ca', to: 'srv', bidi: true }, { from: 'cb', to: 'srv', bidi: true }, { from: 'srv', to: 'log' }],

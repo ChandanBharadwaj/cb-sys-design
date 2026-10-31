@@ -32,7 +32,7 @@ SD.register({
           nodes: [
             { id: 'app', label: 'App', sub: 'SQL queries', kind: 'client', at: [70, 0] },
             { id: 'pri', label: 'Primary', sub: 'all writes', kind: 'store', at: [210, 110] },
-            { id: 'rep', label: 'Read replica', sub: 'copy for reads', kind: 'store', at: [350, 110] }
+            { id: 'rep', label: 'Read replica', sub: 'copy for reads', kind: 'store', at: [350, 220] }
           ],
           edges: [{ from: 'app', to: 'pri', bidi: true }, { from: 'pri', to: 'rep' }],
           flow: ['app>pri', 'pri>rep', 'pri>app']
@@ -45,8 +45,8 @@ SD.register({
         scene: {
           nodes: [
             { id: 'app', label: 'App', sub: 'transfer $50', kind: 'client', at: [70, 0] },
-            { id: 'pri', label: 'Shard 1', sub: 'alice: −$50', kind: 'store', at: [210, 110] },
-            { id: 'rep', label: 'Shard 2', sub: 'bob: never +$50', kind: 'store', at: [350, 110] }
+            { id: 'pri', label: 'Shard 1', sub: 'alice: −$50', kind: 'store', at: [70, 220] },
+            { id: 'rep', label: 'Shard 2', sub: 'bob: never +$50', kind: 'store', at: [350, 220] }
           ],
           edges: [{ from: 'app', to: 'pri', bidi: true }, { from: 'app', to: 'rep', bidi: true }],
           flow: ['app>pri', 'app>rep'],
@@ -62,15 +62,13 @@ SD.register({
         scene: {
           nodes: [
             { id: 'app', label: 'App', sub: 'transfer $50', kind: 'client', at: [70, 0] },
-            { id: 'gw', label: 'SQL gateway', sub: 'any node', kind: 'service', at: [210, 0] },
-            { id: 'pri', label: 'Range A', sub: 'alice · leader', kind: 'store', at: [70, 110] },
-            { id: 'txn', label: 'Txn record', sub: 'one atomic flip', kind: 'service', at: [210, 110] },
-            { id: 'rep', label: 'Range B', sub: 'bob · leader', kind: 'store', at: [350, 110] },
-            { id: 'af', label: 'A copies', sub: '2 followers', kind: 'store', at: [70, 220] },
-            { id: 'bf', label: 'B copies', sub: '2 followers', kind: 'store', at: [350, 220] }
+            { id: 'txn', label: 'Txn record', sub: 'one atomic flip', kind: 'service', at: [350, 0] },
+            { id: 'gw', label: 'SQL gateway', sub: 'any node', kind: 'service', at: [210, 110] },
+            { id: 'pri', label: 'Range A', sub: 'alice · 3 copies', kind: 'store', at: [70, 220] },
+            { id: 'rep', label: 'Range B', sub: 'bob · 3 copies', kind: 'store', at: [350, 220] }
           ],
-          edges: [{ from: 'app', to: 'gw', bidi: true }, { from: 'gw', to: 'pri' }, { from: 'gw', to: 'rep' }, { from: 'gw', to: 'txn' }, { from: 'pri', to: 'af', bidi: true }, { from: 'rep', to: 'bf', bidi: true }],
-          flow: ['app>gw', ['gw>pri', 'gw>rep'], ['pri>af', 'rep>bf'], 'gw>txn', 'gw>app'],
+          edges: [{ from: 'app', to: 'gw', bidi: true }, { from: 'gw', to: 'pri', bidi: true }, { from: 'gw', to: 'rep', bidi: true }, { from: 'gw', to: 'txn' }],
+          flow: ['app>gw', ['gw>pri', 'gw>rep'], ['pri>gw', 'rep>gw'], 'gw>txn', 'gw>app'],
           ok: ['pri', 'rep', 'txn'],
           badges: { txn: ['committed', 'ok'] }
         }

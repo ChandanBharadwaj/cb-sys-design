@@ -31,8 +31,8 @@ SD.register({
         scene: {
           nodes: [
             { id: 'cli', label: 'Photo app', sub: 'upload / view', kind: 'client', at: [70, 0] },
-            { id: 'fe', label: 'Web server', sub: 'save as file', kind: 'service', at: [210, 0] },
-            { id: 'enc', label: 'File server', sub: 'one big disk', kind: 'store', at: [210, 110] }
+            { id: 'fe', label: 'Web server', sub: 'save as file', kind: 'service', at: [210, 110] },
+            { id: 'enc', label: 'File server', sub: 'one big disk', kind: 'store', at: [210, 220] }
           ],
           edges: [{ from: 'cli', to: 'fe', bidi: true }, { from: 'fe', to: 'enc', bidi: true }],
           flow: ['cli>fe', 'fe>enc', 'enc>fe', 'fe>cli']
@@ -45,12 +45,12 @@ SD.register({
         scene: {
           nodes: [
             { id: 'cli', label: 'Photo app', sub: 'photo missing', kind: 'client', at: [70, 0] },
-            { id: 'fe', label: 'Web server', sub: 'which server?', kind: 'service', at: [210, 0] },
-            { id: 'enc', label: 'File server', sub: 'disk died', kind: 'store', at: [210, 110] },
-            { id: 'copy', label: 'Full copies', sub: '3× the disks', kind: 'store', at: [350, 110] }
+            { id: 'fe', label: 'Web server', sub: 'which server?', kind: 'service', at: [210, 110] },
+            { id: 'enc', label: 'File server', sub: 'disk died', kind: 'store', at: [210, 220] },
+            { id: 'copy', label: 'Full copies', sub: '3× the disks', kind: 'store', at: [350, 0] }
           ],
-          edges: [{ from: 'cli', to: 'fe', bidi: true }, { from: 'fe', to: 'enc', bidi: true }, { from: 'enc', to: 'copy' }],
-          flow: ['cli>fe', 'fe>enc', 'enc>copy'],
+          edges: [{ from: 'cli', to: 'fe', bidi: true }, { from: 'fe', to: 'enc', bidi: true }, { from: 'fe', to: 'copy' }],
+          flow: ['cli>fe', 'fe>enc', 'fe>copy'],
           err: ['enc'],
           warn: ['copy', 'cli'],
           badges: { enc: ['data lost', 'err'], copy: ['3× cost', 'warn'] }
@@ -63,17 +63,16 @@ SD.register({
         scene: {
           nodes: [
             { id: 'cli', label: 'Photo app', sub: 'upload / view', kind: 'client', at: [70, 0] },
-            { id: 'fe', label: 'Front end', sub: 'stateless', kind: 'edge', at: [210, 0] },
+            { id: 'fe', label: 'Front end', sub: 'codes 6 + 3 pieces', kind: 'edge', at: [210, 110] },
             { id: 'meta', label: 'Metadata', sub: 'key → pieces', kind: 'store', at: [350, 0] },
-            { id: 'enc', label: 'Erasure coder', sub: '6 data + 3 parity', kind: 'compute', at: [210, 110] },
             { id: 'z1', label: 'Zone A', sub: 'pieces 1, 4, 7', kind: 'store', at: [70, 220] },
             { id: 'z2', label: 'Zone B', sub: 'pieces 2, 5, 8', kind: 'store', at: [210, 220] },
             { id: 'z3', label: 'Zone C', sub: 'pieces 3, 6, 9', kind: 'store', at: [350, 220] }
           ],
-          edges: [{ from: 'cli', to: 'fe', bidi: true }, { from: 'fe', to: 'meta', bidi: true }, { from: 'fe', to: 'enc', bidi: true }, { from: 'enc', to: 'z1' }, { from: 'enc', to: 'z2' }, { from: 'enc', to: 'z3' }],
-          flow: ['cli>fe', 'fe>enc', ['enc>z1', 'enc>z2', 'enc>z3'], 'fe>meta'],
+          edges: [{ from: 'cli', to: 'fe', bidi: true }, { from: 'fe', to: 'meta', bidi: true }, { from: 'fe', to: 'z1' }, { from: 'fe', to: 'z2' }, { from: 'fe', to: 'z3' }],
+          flow: ['cli>fe', ['fe>z1', 'fe>z2', 'fe>z3'], 'fe>meta', 'fe>cli'],
           ok: ['z1', 'z2', 'z3'],
-          badges: { enc: ['1.5× space', 'ok'] }
+          badges: { fe: ['1.5× space', 'ok'] }
         }
       }
     ],

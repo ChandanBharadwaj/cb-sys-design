@@ -62,9 +62,9 @@ SD.register({
           nodes: [
             { id: 'game', label: 'Game servers', sub: 'new scores', kind: 'client', at: [70, 0] },
             { id: 'app', label: 'Player app', sub: 'my rank?', kind: 'client', at: [350, 0] },
-            { id: 'log', label: 'Score log', sub: 'durable events', kind: 'queue', at: [70, 110] },
+            { id: 'log', label: 'Score log', sub: 'durable events', kind: 'queue', at: [70, 220] },
             { id: 'zset', label: 'Sorted set', sub: 'Redis · in RAM', kind: 'cache', at: [210, 110] },
-            { id: 'pg', label: 'Snapshots', sub: 'final standings', kind: 'store', at: [210, 220] }
+            { id: 'pg', label: 'Snapshots', sub: 'final standings', kind: 'store', at: [350, 220] }
           ],
           edges: [{ from: 'game', to: 'log' }, { from: 'log', to: 'zset' }, { from: 'app', to: 'zset' }, { from: 'zset', to: 'pg', dashed: true }],
           flow: ['game>log', 'log>zset', 'app>zset'],

@@ -31,8 +31,8 @@ SD.register({
           nodes: [
             { id: 'a', label: 'Alice', sub: 'sends', kind: 'client', at: [70, 0] },
             { id: 'chat', label: 'Chat server', sub: 'one box', kind: 'service', at: [210, 110] },
-            { id: 'db', label: 'Messages DB', sub: 'all chats', kind: 'store', at: [350, 110] },
-            { id: 'b', label: 'Bob', sub: 'asks every 5 s', kind: 'client', at: [70, 220] }
+            { id: 'db', label: 'Messages DB', sub: 'all chats', kind: 'store', at: [210, 220] },
+            { id: 'b', label: 'Bob', sub: 'asks every 5 s', kind: 'client', at: [350, 0] }
           ],
           edges: [{ from: 'a', to: 'chat' }, { from: 'chat', to: 'db' }, { from: 'b', to: 'chat' }],
           flow: ['a>chat', 'chat>db', 'b>chat']
@@ -46,8 +46,8 @@ SD.register({
           nodes: [
             { id: 'a', label: 'Alice', sub: 'resends', kind: 'client', at: [70, 0] },
             { id: 'chat', label: 'Chat server', sub: 'polled nonstop', kind: 'service', at: [210, 110] },
-            { id: 'db', label: 'Messages DB', sub: 'duplicates', kind: 'store', at: [350, 110] },
-            { id: 'b', label: 'Bobs ×1M', sub: 'ask every 5 s', kind: 'client', at: [70, 220] }
+            { id: 'db', label: 'Messages DB', sub: 'duplicates', kind: 'store', at: [210, 220] },
+            { id: 'b', label: 'Bobs ×1M', sub: 'ask every 5 s', kind: 'client', at: [350, 0] }
           ],
           edges: [{ from: 'a', to: 'chat' }, { from: 'chat', to: 'db' }, { from: 'b', to: 'chat' }],
           flow: [['a>chat', 'b>chat'], ['chat>db', 'b>chat'], ['a>chat', 'b>chat']],
@@ -63,15 +63,14 @@ SD.register({
         scene: {
           nodes: [
             { id: 'a', label: 'Alice', sub: 'msg id c42', kind: 'client', at: [70, 0] },
-            { id: 'gw1', label: 'Gateway A', sub: 'WebSocket', kind: 'edge', at: [210, 0] },
-            { id: 'reg', label: 'Registry', sub: 'user → gateway', kind: 'cache', at: [70, 110] },
-            { id: 'chat', label: 'Chat service', sub: 'owner · seq #', kind: 'service', at: [210, 110] },
-            { id: 'db', label: 'Message store', sub: 'per chat, in order', kind: 'store', at: [350, 110] },
-            { id: 'b', label: 'Bob', sub: 'after #1080', kind: 'client', at: [70, 220] },
-            { id: 'gw2', label: 'Gateway B', sub: 'WebSocket', kind: 'edge', at: [210, 220] }
+            { id: 'b', label: 'Bob', sub: 'after #1080', kind: 'client', at: [350, 0] },
+            { id: 'gw1', label: 'Gateway A', sub: 'WebSocket', kind: 'edge', at: [70, 110] },
+            { id: 'db', label: 'Message store', sub: 'per chat, in order', kind: 'store', at: [210, 110] },
+            { id: 'gw2', label: 'Gateway B', sub: 'WebSocket', kind: 'edge', at: [350, 110] },
+            { id: 'chat', label: 'Chat service', sub: 'owner · seq #', kind: 'service', at: [210, 220] }
           ],
-          edges: [{ from: 'a', to: 'gw1' }, { from: 'gw1', to: 'chat' }, { from: 'chat', to: 'db' }, { from: 'chat', to: 'reg' }, { from: 'chat', to: 'gw2' }, { from: 'gw2', to: 'b' }],
-          flow: ['a>gw1', 'gw1>chat', 'chat>db', 'chat>reg', 'chat>gw2', 'gw2>b'],
+          edges: [{ from: 'a', to: 'gw1' }, { from: 'gw1', to: 'chat' }, { from: 'chat', to: 'db' }, { from: 'chat', to: 'gw2' }, { from: 'gw2', to: 'b' }],
+          flow: ['a>gw1', 'gw1>chat', 'chat>db', 'chat>gw2', 'gw2>b'],
           ok: ['chat', 'db', 'b'],
           badges: { db: ['#1081 saved', 'ok'], b: ['✓✓', 'ok'] }
         }

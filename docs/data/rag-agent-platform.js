@@ -30,7 +30,7 @@ SD.register({
         text: 'Send the user\'s question straight to the LLM and stream back its answer. It is one API call, and it works well for general knowledge such as "what is a mutex?".',
         scene: {
           nodes: [
-            { id: 'user', label: 'Employee', sub: 'asks a question', kind: 'client', at: [70, 0] },
+            { id: 'user', label: 'Employee', sub: 'asks a question', kind: 'client', at: [210, 0] },
             { id: 'llm', label: 'LLM', sub: 'general knowledge', kind: 'ml', at: [350, 0] },
             { id: 'orch', label: 'Chat app', sub: 'one API call', kind: 'service', at: [210, 110] }
           ],
@@ -44,9 +44,9 @@ SD.register({
         text: 'The model has never seen your private, ever-changing documents, so it <b>invents</b> a plausible answer with no source. Pasting all documents into the prompt is far too large, slow and costly. And if you paste the HR folder, an intern can now read salary data, because <b>a prompt cannot enforce permissions</b>.',
         scene: {
           nodes: [
-            { id: 'user', label: 'Employee', sub: 'asks a question', kind: 'client', at: [70, 0] },
+            { id: 'user', label: 'Employee', sub: 'asks a question', kind: 'client', at: [210, 0] },
             { id: 'llm', label: 'LLM', sub: 'makes things up', kind: 'ml', at: [350, 0] },
-            { id: 'docs', label: 'All documents', sub: 'incl. HR-only', kind: 'store', at: [70, 110] },
+            { id: 'docs', label: 'All documents', sub: 'incl. HR-only', kind: 'store', at: [70, 0] },
             { id: 'orch', label: 'Chat app', sub: 'pastes it all', kind: 'service', at: [210, 110] }
           ],
           edges: [{ from: 'user', to: 'orch', bidi: true }, { from: 'orch', to: 'llm', bidi: true }, { from: 'docs', to: 'orch' }],
@@ -62,13 +62,13 @@ SD.register({
         text: 'An <b>ingest pipeline</b> splits documents into small <b>chunks</b> and indexes them by meaning and by keyword, with each document\'s permissions attached. At question time an <b>orchestrator</b> retrieves the best chunks this user may see, <b>reranks</b> them, and asks the LLM to answer only from them, with citations. For agents, the same loop can also call <b>tools</b>.',
         scene: {
           nodes: [
-            { id: 'user', label: 'Employee', sub: 'asks a question', kind: 'client', at: [70, 0] },
+            { id: 'user', label: 'Employee', sub: 'asks a question', kind: 'client', at: [210, 0] },
             { id: 'llm', label: 'LLM', sub: 'answers + cites', kind: 'ml', at: [350, 0] },
-            { id: 'docs', label: 'Documents', sub: 'with permissions', kind: 'store', at: [70, 110] },
+            { id: 'docs', label: 'Documents', sub: 'with permissions', kind: 'store', at: [70, 0] },
             { id: 'orch', label: 'Orchestrator', sub: 'retrieve → ask', kind: 'service', at: [210, 110] },
-            { id: 'tools', label: 'Tools', sub: 'orders · tickets', kind: 'external', at: [350, 110] },
-            { id: 'ingest', label: 'Ingest', sub: 'chunk + index', kind: 'compute', at: [70, 220] },
-            { id: 'retr', label: 'Retrieval', sub: 'meaning + words', kind: 'service', at: [210, 220] }
+            { id: 'tools', label: 'Tools', sub: 'orders · tickets', kind: 'external', at: [350, 220] },
+            { id: 'ingest', label: 'Ingest', sub: 'chunk + index', kind: 'compute', at: [70, 110] },
+            { id: 'retr', label: 'Retrieval', sub: 'meaning + words', kind: 'service', at: [70, 220] }
           ],
           edges: [{ from: 'user', to: 'orch', bidi: true }, { from: 'orch', to: 'llm', bidi: true }, { from: 'orch', to: 'tools', bidi: true }, { from: 'orch', to: 'retr', bidi: true }, { from: 'docs', to: 'ingest' }, { from: 'ingest', to: 'retr' }],
           flow: ['user>orch', 'orch>retr', 'retr>orch', 'orch>llm', 'llm>orch'],
