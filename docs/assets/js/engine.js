@@ -803,7 +803,7 @@
       const meta = STAGE[f.stage] || STAGE.naive;
       const b = el('button', { class: 'story-step s-' + (f.stage || 'naive'), role: 'tab' },
         el('span', { class: 'sn', text: meta.n }), el('span', { class: 'sl', text: meta.label }));
-      b.addEventListener('click', () => { autoplay = false; paintPlay(); show(i); });
+      b.addEventListener('click', () => { started = true; autoplay = false; paintPlay(); show(i); });
       steps.append(b);
       const pane = el('div', { class: 'story-pane', hidden: true });
       stageWrap.append(pane);
@@ -852,10 +852,10 @@
       if (autoplay && i < panes.length - 1) advanceT = setTimeout(() => { if (autoplay && visible) show(i + 1); else scheduleResume(i); }, 7500);
     }
     function scheduleResume(i) { advanceT = setTimeout(() => { if (autoplay && cur === i) { if (visible) show(i + 1); else scheduleResume(i); } }, 1500); }
-    bPrev.addEventListener('click', () => { autoplay = false; paintPlay(); show(cur - 1); });
-    bNext.addEventListener('click', () => { autoplay = false; paintPlay(); show(cur + 1); });
+    bPrev.addEventListener('click', () => { started = true; autoplay = false; paintPlay(); show(cur - 1); });
+    bNext.addEventListener('click', () => { started = true; autoplay = false; paintPlay(); show(cur + 1); });
     bPlay.addEventListener('click', () => {
-      autoplay = !autoplay; paintPlay();
+      started = true; autoplay = !autoplay; paintPlay();
       if (autoplay) show(cur >= panes.length - 1 ? 0 : cur);
     });
     paintPlay();

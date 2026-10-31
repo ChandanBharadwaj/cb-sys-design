@@ -52,14 +52,14 @@ window.SD_CATALOG = {
     { slug: 'observability', domain: 7, title: 'Log Aggregation & Observability', one: 'Collects logs, metrics and traces from thousands of machines so engineers can find what broke, fast.', examples: 'Datadog, ELK, Dapper', tags: ['cardinality', 'sampling'] },
     { slug: 'ad-click-aggregation', domain: 7, title: 'Ad Click Aggregation', one: 'Counts billions of ad clicks within minutes, with every click counted exactly once for billing.', examples: 'Google Photon, Uber Ads', tags: ['exactly-once', 'dedup'], added: true },
 
-    { slug: 'llm-inference', domain: 8, title: 'LLM Inference Engine', examples: 'vLLM, TensorRT-LLM', tags: ['PagedAttention', 'batching'] },
-    { slug: 'vector-db', domain: 8, title: 'Distributed Vector Database', examples: 'Milvus, Qdrant, Pinecone', tags: ['HNSW', 'IVF-PQ'] },
-    { slug: 'rag-agent-platform', domain: 8, title: 'RAG & AI Agent Platform', examples: 'Enterprise copilots, MCP', tags: ['hybrid search', 'agents'], added: true },
-    { slug: 'llm-gateway', domain: 8, title: 'LLM Gateway', examples: 'LiteLLM, Portkey, Cloudflare AI GW', tags: ['routing', 'semantic cache'], added: true },
-    { slug: 'recommendation', domain: 8, title: 'Recommendation System', examples: 'YouTube, Netflix, TikTok', tags: ['two-tower', 'ranking'], added: true },
+    { slug: 'llm-inference', domain: 8, title: 'LLM Inference Engine', one: 'Runs an AI language model for thousands of people at once, keeping costly GPUs busy and replies fast.', examples: 'vLLM, TensorRT-LLM', tags: ['PagedAttention', 'batching'] },
+    { slug: 'vector-db', domain: 8, title: 'Distributed Vector Database', one: 'Finds the stored items closest in meaning to a question, out of millions, in a few milliseconds.', examples: 'Milvus, Qdrant, Pinecone', tags: ['HNSW', 'IVF-PQ'] },
+    { slug: 'rag-agent-platform', domain: 8, title: 'RAG & AI Agent Platform', one: 'Lets an AI assistant answer from your own documents, with sources, and use tools without leaking private data.', examples: 'Enterprise copilots, MCP', tags: ['hybrid search', 'agents'], added: true },
+    { slug: 'llm-gateway', domain: 8, title: 'LLM Gateway', one: 'One front door for all AI model calls: fair budgets per team, cost tracking, and backup providers.', examples: 'LiteLLM, Portkey, Cloudflare AI GW', tags: ['routing', 'semantic cache'], added: true },
+    { slug: 'recommendation', domain: 8, title: 'Recommendation System', one: 'Picks the few videos or products each person will like most, out of millions, in a split second.', examples: 'YouTube, Netflix, TikTok', tags: ['two-tower', 'ranking'], added: true },
 
-    { slug: 'kv-store', domain: 9, title: 'Distributed Key-Value Store', examples: 'Dynamo, Cassandra', tags: ['quorum', 'LSM'], added: true },
-    { slug: 'object-storage', domain: 9, title: 'Object Storage', examples: 'Amazon S3, GFS, HDFS', tags: ['erasure coding'], added: true },
-    { slug: 'distributed-sql', domain: 9, title: 'Distributed SQL', examples: 'Spanner, CockroachDB', tags: ['TrueTime', 'raft ranges'], added: true }
+    { slug: 'kv-store', domain: 9, title: 'Distributed Key-Value Store', one: 'Stores huge numbers of small records across many machines, and keeps working when some of them fail.', examples: 'Dynamo, Cassandra', tags: ['quorum', 'LSM'], added: true },
+    { slug: 'object-storage', domain: 9, title: 'Object Storage', one: 'Stores billions of files cheaply so that none are ever lost, even as disks fail every day.', examples: 'Amazon S3, GFS, HDFS', tags: ['erasure coding'], added: true },
+    { slug: 'distributed-sql', domain: 9, title: 'Distributed SQL', one: 'Keeps normal SQL and safe all-or-nothing transactions while the data spreads across many machines and regions.', examples: 'Spanner, CockroachDB', tags: ['TrueTime', 'raft ranges'], added: true }
   ]
 };
