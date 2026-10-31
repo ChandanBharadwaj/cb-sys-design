@@ -2,7 +2,7 @@
 
 **Live site:** https://chandanbharadwaj.github.io/cb-sys-design/
 
-The site contains 41 system designs: the 25 from [`Modern System Design Catalog.md`](Modern%20System%20Design%20Catalog.md) plus 16 more. Each one is an animated page you can interact with. Every page has the same 11 sections:
+The site contains 44 system designs: the 25 from [`Modern System Design Catalog.md`](Modern%20System%20Design%20Catalog.md) plus 19 more, including India-scale case studies (IRCTC, TTD darshan booking, Where Is My Train). Each one is an animated page you can interact with. Every page has the same 11 sections:
 
 | # | Section | What you get |
 |---|---|---|

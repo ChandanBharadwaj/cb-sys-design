@@ -40,17 +40,17 @@ const slugs = slugs0.length ? slugs0 : fs.readdirSync(path.join(DOCS, 'data')).m
           await btn.click(); await page.waitForTimeout(300);
           const st = await page.evaluate(() => {
             const p = document.querySelector('.gn-panel');
-            return { open: p && !p.hidden, links: document.querySelectorAll('.gn-item').length, cur: document.querySelectorAll('.gn-item.current').length,
+            return { open: p && !p.hidden, total: window.SD_CATALOG.systems.length, links: document.querySelectorAll('.gn-item').length, cur: document.querySelectorAll('.gn-item.current').length,
               focusIn: p && p.contains(document.activeElement), overflow: document.documentElement.scrollWidth - window.innerWidth };
           });
           if (!st.open) navR.why.push('drawer did not open');
-          if (st.links !== 41) navR.why.push('drawer has ' + st.links + ' links');
+          if (st.links !== st.total) navR.why.push('drawer has ' + st.links + ' links');
           if (slug !== '__index__' && st.cur !== 1) navR.why.push('current page not highlighted');
           if (!st.focusIn) navR.why.push('focus not moved into drawer');
           if (st.overflow > 1) navR.why.push('overflow with drawer open ' + st.overflow + 'px');
           await page.keyboard.type('kafka'); await page.waitForTimeout(100);
           const n = await page.evaluate(() => [...document.querySelectorAll('.gn-item')].filter((a) => a.offsetParent !== null).length);
-          if (!(n >= 1 && n < 41)) navR.why.push('search kept ' + n + ' results');
+          if (!(n >= 1 && n < st.total)) navR.why.push('search kept ' + n + ' results');
           await page.keyboard.press('Escape'); await page.waitForTimeout(300);
           const after = await page.evaluate(() => ({ hidden: document.querySelector('.gn-panel').hidden, focusBtn: document.activeElement && document.activeElement.classList.contains('nav-btn') }));
           if (!after.hidden) navR.why.push('Esc did not close');
