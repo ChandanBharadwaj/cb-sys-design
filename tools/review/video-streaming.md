@@ -10,3 +10,4 @@
 - Interview: added a codec-choice follow-up (H.264 first; HEVC/AV1 ladders for popular titles and capable devices) to the per-title question, rather than adding a 13th question.
 - Code: ran the BBA-0 snippet against a 7-rung ladder; it matches the paper's rules and the widget. Ran the ffmpeg split/encode snippet on a generated 8 s test clip with ffmpeg; it works. The Java S3 presign snippet needs the AWS SDK, so it was not compiled; the API calls were checked by reading.
 - Left alone: BBA "10–20% fewer rebuffers" (matches the SIGCOMM 2014 abstract), the Open Connect and VCU cards, the architecture and the scenarios.
+- **Compile check:** The presigned multipart controller compiles cleanly against AWS SDK v2 2.57, and presigning a part URL works offline. **Fixed:** `complete` passed the client's part list to S3 unsorted, and S3 rejects parts that are not in ascending order (`InvalidPartOrder`). It now sorts by part number first.

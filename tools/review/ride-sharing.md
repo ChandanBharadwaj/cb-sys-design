@@ -12,3 +12,4 @@
 - Shortened the shard-down scenario's last caption from 226 to under 220 characters.
 - Code: ran the scipy batched-matching snippet on a 3×2 case. It picks the globally cheaper assignment and drops the forbidden > 15-minute pair. Ran the Postgres accept SQL: the first accept wins, the second returns 0 rows, and the partial unique index blocks a second active ride. The Java/H3 snippet needs h3-java and Spring Data Redis, so it was not run; the H3 v4 method names were checked.
 - Left alone: the 2015 talk figures (4 s pings, 1M writes/s), the H3 facts (122 base cells, 16 resolutions, res 9 ≈ 0.1 km²), the Redis GEO 52-bit geohash note and the timeline.
+- **Compile check:** The H3 + Redis snippet compiles cleanly against h3 4.5.1 and Spring Data Redis 3.5. I ran it against a local Redis: moving a driver between cells updates the sets, and the k-ring search returns the nearest drivers first. No changes.

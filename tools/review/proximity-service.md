@@ -8,3 +8,4 @@
 - Defined "LBS" (location-based service) on first use in the search scenario. Noted that geohash cell sizes are at the equator.
 - Ran the Python geohash snippet: `encode(57.64911, 10.40744, 11)` gives the canonical `u4pruydqqvj`; neighbour set is correct. Left the SQL and the Spring Data Redis `GeoOperations.search(...)` snippet as is (APIs exist in Spring Data Redis 2.6+/3.x; no Spring jars to compile against).
 - Left alone: calculator (sensible units, labelled estimates), the knob model (illustrative and says so), Redis 52-bit geohash and S2 level facts.
+- **Compile check:** The Redis GEO snippet compiles cleanly against Spring Data Redis 3.5. I ran it against a local Redis 7.0: GEOADD + GEOSEARCH returned the two places inside 5 km, nearest first, with distances in km. No changes.
