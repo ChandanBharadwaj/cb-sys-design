@@ -50,14 +50,22 @@ SD.widget('multiplayer-game', function (root, ctx) {
 
   // drawing
   const S = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Server state and player A screen over time' });
-  const tx = (x, y, s, st, fill) => { const n = svg('text', { x, y, style: st || 'font:700 14px var(--sans)', fill: fill || 'var(--text-2)', text: s }); S.append(n); return n; };
+  // Phone readability: same geometry, but every label gets a larger size when the widget is narrow
+  // (the 380-wide viewBox is drawn at ~0.9× on a phone). sz = [desktop px, phone px].
+  const sized = [];
+  const tx = (x, y, s, st, fill, sz) => {
+    const n = svg('text', { x, y, style: st || 'font:700 14px var(--sans)', fill: fill || 'var(--text-2)', text: s }); S.append(n);
+    if (sz) { n._st = st || 'font:700 14px var(--sans)'; n._sz = sz; sized.push(n); }
+    return n;
+  };
+  const applySizes = (narrow) => sized.forEach((n) => n.setAttribute('style', n._st.replace(/\d+(\.\d+)?px/, (narrow ? n._sz[1] : n._sz[0]) + 'px')));
   [[22, 'SERVER'], [170, 'SCREEN']].forEach(([y]) => {
     S.append(svg('rect', { x: LX, y, width: RX - LX, height: 58, rx: 8, fill: 'var(--surface-2)', stroke: 'var(--border)' }));
     S.append(svg('rect', { x: COVER, y: y + 2, width: RX - COVER - 2, height: 54, rx: 6, fill: 'color-mix(in srgb, var(--text-3) 30%, var(--surface-2))' }));
   });
-  tx(COVER + 6, 76, 'cover', 'font:600 12px var(--sans)', 'var(--text-3)'); tx(COVER + 6, 224, 'cover', 'font:600 12px var(--sans)', 'var(--text-3)');
-  const sTitle = tx(LX, 15, ''), cTitle = tx(LX, 163, '');
-  const mid = tx(W / 2 + 14, 125, '', 'font:500 13px var(--mono);text-anchor:middle', 'var(--text-3)');
+  tx(COVER + 6, 76, 'cover', 'font:600 12px var(--sans)', 'var(--text-3)', [12, 13.5]); tx(COVER + 6, 224, 'cover', 'font:600 12px var(--sans)', 'var(--text-3)', [12, 13.5]);
+  const sTitle = tx(LX, 15, '', null, null, [14, 14.5]), cTitle = tx(LX, 163, '', null, null, [14, 14.5]);
+  const mid = tx(W / 2 + 14, 125, '', 'font:500 13px var(--mono);text-anchor:middle', 'var(--text-3)', [13, 14]);
   // wires: inputs up (x=14), snapshots down (x=28)
   S.append(svg('line', { x1: 14, x2: 14, y1: 66, y2: 216, stroke: 'var(--border)' }), svg('line', { x1: 28, x2: 28, y1: 40, y2: 188, stroke: 'var(--border)' }));
   const gDots = svg('g'), gShots = svg('g');
@@ -72,8 +80,10 @@ SD.widget('multiplayer-game', function (root, ctx) {
   const bar2 = svg('rect', { y: 274, height: 10, rx: 3, fill: 'var(--ok)', opacity: 0.55 });
   const gTicks = svg('g');
   S.append(bar1, bar2, gTicks);
-  const l1 = tx(LX, 256, '', 'font:600 13px var(--sans)'), l2 = tx(LX, 284, '', 'font:600 13px var(--sans)');
-  tx(RX, 241, 'now', 'font:600 12px var(--mono);text-anchor:end', 'var(--text-3)');
+  const l1 = tx(LX, 256, '', 'font:600 13px var(--sans)', null, [13, 14]), l2 = tx(LX, 284, '', 'font:600 13px var(--sans)', null, [13, 14]);
+  tx(RX, 241, 'now', 'font:600 12px var(--mono);text-anchor:end', 'var(--text-3)', [12, 13.5]);
+  applySizes(ctx.narrow);
+  ctx.onResize(applySizes);
   root.append(el('div', { class: 'w-stage', style: { maxWidth: '500px' } }, S));
   const stats = el('div', { class: 'w-stats' });
   const log = el('div', { class: 'w-log', 'aria-live': 'polite' });

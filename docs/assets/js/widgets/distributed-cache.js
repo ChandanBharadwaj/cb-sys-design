@@ -25,11 +25,16 @@ SD.widget('distributed-cache', function (root, ctx) {
   const vIn = el('input', { type: 'range', min: 0, max: VOPTS.length - 1, value: vIdx, 'aria-label': 'Virtual nodes per server' });
   root.append(el('div', { class: 'w-controls' }, addBtn, rmBtn, modeBtn, el('label', null, 'vnodes/server ', vOut, ' ', vIn)));
 
-  const VW = (root.clientWidth || window.innerWidth) < 560 ? 360 : 760;
-  const phone = VW < 400;
-  const R = phone ? 128 : 150, CX = phone ? VW / 2 : 210, CY = R + 24;
-  const BX = phone ? 20 : 440, BY = phone ? 2 * R + 60 : 50, BW = phone ? VW - 40 : 290;
-  const H = phone ? BY + 8 * 24 + 10 : 2 * R + 50;
+  // phone: ring above the bar chart in a 360-wide viewBox with 14–16-unit text; desktop: side by side
+  let VW, phone, R, CX, CY, BX, BY, BW, H, BH, F;
+  function geom(narrow) {
+    phone = !!narrow; VW = phone ? 360 : 760;
+    R = phone ? 128 : 150; CX = phone ? VW / 2 : 210; CY = R + (phone ? 28 : 24);
+    BX = phone ? 20 : 440; BY = phone ? 2 * R + 72 : 50; BW = phone ? VW - 40 : 290; BH = phone ? 27 : 24;
+    H = phone ? BY + 8 * BH + 10 : 2 * R + 50;
+    F = phone ? { c1: 17, c2: 14, vn: 14, title: 14, lab: 15, cnt: 14 } : { c1: 15, c2: 12, vn: 12, title: 12, lab: 13, cnt: 12 };
+  }
+  geom(ctx.narrow);
   const S = svg('svg', { viewBox: `0 0 ${VW} ${H}`, role: 'img', 'aria-label': 'Hash ring' });
   const gRing = svg('g'), gV = svg('g'), gK = svg('g'), gBars = svg('g');
   S.append(gRing, gV, gK, gBars);
@@ -38,10 +43,18 @@ SD.widget('distributed-cache', function (root, ctx) {
   const log = el('div', { class: 'w-log', 'aria-live': 'polite' });
   root.append(stats, log);
   const say = (h) => { log.prepend(el('div', { html: h })); while (log.children.length > 30) log.lastChild.remove(); };
-  gRing.append(svg('circle', { cx: CX, cy: CY, r: R, fill: 'none', stroke: 'var(--border)', 'stroke-width': 3 }));
-  const centre = svg('text', { x: CX, y: CY + 5, 'text-anchor': 'middle', style: 'font:700 15px var(--sans)', fill: 'var(--text)' });
-  const centre2 = svg('text', { x: CX, y: CY + 24, 'text-anchor': 'middle', style: 'font:500 12px var(--sans)', fill: 'var(--text-3)' });
-  gRing.append(centre, centre2);
+  const ringC = svg('circle', { fill: 'none', stroke: 'var(--border)', 'stroke-width': 3 });
+  const centre = svg('text', { 'text-anchor': 'middle', fill: 'var(--text)' });
+  const centre2 = svg('text', { 'text-anchor': 'middle', fill: 'var(--text-3)' });
+  gRing.append(ringC, centre, centre2);
+  function placeRing() {
+    S.setAttribute('viewBox', `0 0 ${VW} ${H}`);
+    ringC.setAttribute('cx', CX); ringC.setAttribute('cy', CY); ringC.setAttribute('r', R);
+    centre.setAttribute('x', CX); centre.setAttribute('y', CY + 5); centre.setAttribute('style', `font:700 ${F.c1}px var(--sans)`);
+    centre2.setAttribute('x', CX); centre2.setAttribute('y', CY + 8 + F.c2 + 4); centre2.setAttribute('style', `font:500 ${F.c2}px var(--sans)`);
+  }
+  placeRing();
+  ctx.onResize((n) => { geom(n); placeRing(); draw(); });
 
   const ang = (h) => (h / 4294967296) * Math.PI * 2 - Math.PI / 2;
   const colorOf = (name) => COLORS[(name.charCodeAt(0) - 65) % COLORS.length];
@@ -68,7 +81,7 @@ SD.widget('distributed-cache', function (root, ctx) {
           const a = ang(hash(n + '#vn' + j));
           const x1 = CX + Math.cos(a) * (R - 9), y1 = CY + Math.sin(a) * (R - 9), x2 = CX + Math.cos(a) * (R + 9), y2 = CY + Math.sin(a) * (R + 9);
           gV.append(svg('line', { x1, y1, x2, y2, stroke: colorOf(n), 'stroke-width': V > 60 ? 1.5 : 3, 'stroke-linecap': 'round' }));
-          if (V <= 4) gV.append(svg('text', { x: CX + Math.cos(a) * (R + 20), y: CY + Math.sin(a) * (R + 20) + 4, 'text-anchor': 'middle', style: 'font:700 12px var(--sans)', fill: colorOf(n), text: n }));
+          if (V <= 4) gV.append(svg('text', { x: CX + Math.cos(a) * (R + 20), y: CY + Math.sin(a) * (R + 20) + F.vn / 3, 'text-anchor': 'middle', style: `font:700 ${F.vn}px var(--sans)`, fill: colorOf(n), text: n }));
         }
       });
     }
@@ -80,16 +93,17 @@ SD.widget('distributed-cache', function (root, ctx) {
     const counts = {}; nodes.forEach((n) => { counts[n] = 0; }); owner.forEach((n) => { counts[n]++; });
     const avg = KEYS / nodes.length, max = Math.max(...Object.values(counts));
     const scale = (BW - 64) / Math.max(max, avg * 1.6);
-    gBars.append(svg('text', { x: BX, y: BY - 10, style: 'font:700 12px var(--sans)', fill: 'var(--text-2)', text: 'Keys per node (avg ' + Math.round(avg) + ')' }));
+    gBars.append(svg('text', { x: BX, y: BY - 10, style: `font:700 ${F.title}px var(--sans)`, fill: 'var(--text-2)', text: 'Keys per node (avg ' + Math.round(avg) + ')' }));
+    const bh = BH - 10, ty = phone ? (BH + F.lab) / 2 - 2 : 13;
     nodes.forEach((n, i) => {
-      const y = BY + i * 24;
-      gBars.append(svg('text', { x: BX, y: y + 13, style: 'font:700 13px var(--sans)', fill: colorOf(n), text: n }),
-        svg('rect', { x: BX + 18, y: y + 2, width: Math.max(2, counts[n] * scale), height: 14, rx: 3, fill: colorOf(n), opacity: 0.8 }),
-        svg('text', { x: BX + 24 + counts[n] * scale, y: y + 13, style: 'font:600 12px var(--mono)', fill: 'var(--text-2)', text: counts[n] }));
+      const y = BY + i * BH;
+      gBars.append(svg('text', { x: BX, y: y + ty, style: `font:700 ${F.lab}px var(--sans)`, fill: colorOf(n), text: n }),
+        svg('rect', { x: BX + 18, y: y + 2 + (BH - 24) / 2, width: Math.max(2, counts[n] * scale), height: bh + (phone ? 4 : 0), rx: 3, fill: colorOf(n), opacity: 0.8 }),
+        svg('text', { x: BX + 24 + counts[n] * scale, y: y + ty, style: `font:600 ${F.cnt}px var(--mono)`, fill: 'var(--text-2)', text: counts[n] }));
     });
     const ax = BX + 18 + avg * scale;
-    gBars.append(svg('line', { x1: ax, x2: ax, y1: BY - 2, y2: BY + nodes.length * 24, stroke: 'var(--text-3)', 'stroke-dasharray': '3 3' }));
-    if (phone) S.setAttribute('viewBox', `0 0 ${VW} ${BY + nodes.length * 24 + 8}`);
+    gBars.append(svg('line', { x1: ax, x2: ax, y1: BY - 2, y2: BY + nodes.length * BH, stroke: 'var(--text-3)', 'stroke-dasharray': '3 3' }));
+    S.setAttribute('viewBox', `0 0 ${VW} ${phone ? BY + nodes.length * BH + 8 : H}`);
     centre.textContent = lastMove == null ? nodes.length + ' nodes' : Math.round(lastMove * 100) + '% moved';
     centre2.textContent = mode === 'ring' ? VOPTS[vIdx] + ' vnodes each' : 'hash % ' + nodes.length;
     stats.innerHTML = '';

@@ -16,11 +16,16 @@ SD.widget('lock-manager', function (root, ctx) {
   root.append(el('div', { class: 'w-controls' }, runBtn, fenceBtn,
     el('label', null, 'GC pause ', pOut, pIn), el('label', null, 'Lease TTL ', tOut, tIn)));
 
-  const VW = (root.clientWidth || window.innerWidth) < 560 ? 360 : 820;
-  const LX = VW < 400 ? 62 : 84, X1 = VW - 10, RH = 46, TOP = 20;
+  // phone: 360-wide viewBox with 13–14-unit text; desktop: 820 wide with 10–12-unit text
   const rows = ['Lease', 'Client A', 'Client B', 'Storage'];
-  const H = TOP + rows.length * RH + 26;
-  const S = svg('svg', { viewBox: `0 0 ${VW} ${H}`, role: 'img', 'aria-label': 'Lock timeline' });
+  let VW, LX, X1, RH, TOP, H, FS;
+  function dims(narrow) {
+    VW = narrow ? 360 : 820; LX = narrow ? 70 : 84; X1 = VW - (narrow ? 14 : 10); RH = narrow ? 56 : 46; TOP = 20;
+    FS = narrow ? { row: 14, axis: 13, bar: 13, mark: 13, write: 13 } : { row: 12, axis: 10, bar: 11, mark: 10, write: 10 };
+    H = TOP + rows.length * RH + (narrow ? 30 : 26);
+  }
+  dims(ctx.narrow);
+  const S = svg('svg', { role: 'img', 'aria-label': 'Lock timeline' });
   const gBase = svg('g'), gPlan = svg('g'), gHead = svg('g');
   S.append(gBase, gPlan, gHead);
   root.append(el('div', { class: 'w-stage' }, S));
@@ -31,12 +36,18 @@ SD.widget('lock-manager', function (root, ctx) {
   const X = (t) => LX + (t / SPAN) * (X1 - LX);
   const T = (x, y, s, o) => svg('text', Object.assign({ x, y, text: s, style: `font:${(o && o.w) || 600} ${(o && o.px) || 11}px var(--sans)`, fill: (o && o.fill) || 'var(--text)' }, o && o.a ? { 'text-anchor': o.a } : {}));
 
-  rows.forEach((r, i) => {
-    const y = TOP + i * RH;
-    gBase.append(svg('rect', { x: 2, y: y + 2, width: VW - 4, height: RH - 6, rx: 7, fill: i % 2 ? 'var(--surface-2)' : 'var(--surface)', stroke: 'var(--border)' }),
-      T(8, y + RH / 2 + 3, r, { px: VW < 400 ? 11 : 12, w: 700 }));
-  });
-  for (let s = 0; s <= SPAN; s += 5) gBase.append(T(X(s), H - 6, s + 's', { px: 10, w: 500, a: 'middle', fill: 'var(--text-3)' }), svg('line', { x1: X(s), x2: X(s), y1: TOP, y2: TOP + rows.length * RH - 4, stroke: 'var(--border)', 'stroke-dasharray': '2 4' }));
+  function base() {
+    S.setAttribute('viewBox', `0 0 ${VW} ${H}`);
+    gBase.innerHTML = '';
+    rows.forEach((r, i) => {
+      const y = TOP + i * RH;
+      gBase.append(svg('rect', { x: 2, y: y + 2, width: VW - 4, height: RH - 6, rx: 7, fill: i % 2 ? 'var(--surface-2)' : 'var(--surface)', stroke: 'var(--border)' }),
+        T(8, y + RH / 2 + 3, VW < 400 ? r.replace('Client ', '') : r, { px: FS.row, w: 700 }));
+    });
+    for (let s = 0; s <= SPAN; s += 5) gBase.append(T(Math.min(X(s), VW - 14), H - 6, s + 's', { px: FS.axis, w: 500, a: 'middle', fill: 'var(--text-3)' }), svg('line', { x1: X(s), x2: X(s), y1: TOP, y2: TOP + rows.length * RH - 4, stroke: 'var(--border)', 'stroke-dasharray': '2 4' }));
+  }
+  base();
+  ctx.onResize((n) => { dims(n); base(); draw(); });
 
   function compute() {
     const ev = [];                                   // {t, row, kind, ...}
@@ -86,18 +97,18 @@ SD.widget('lock-manager', function (root, ctx) {
         const w = Math.max(1, X(b) - X(e.a));
         const fill = e.kind === 'pause' ? 'color-mix(in srgb, var(--warn) 45%, var(--surface))' : e.kind === 'wait' ? 'none' : `color-mix(in srgb, ${col(e.who)} 55%, var(--surface))`;
         gPlan.append(svg('rect', { x: X(e.a), y: cy - 9, width: w, height: 18, rx: 4, fill, stroke: e.kind === 'wait' ? 'var(--text-3)' : 'none', 'stroke-dasharray': e.kind === 'wait' ? '4 3' : '' }));
-        if (e.label && w > e.label.length * 6) gPlan.append(T(X(e.a) + 4, cy + 4, e.label, { px: 11, w: 700, fill: e.kind === 'wait' ? 'var(--text-3)' : 'var(--text)' }));
+        if (e.label && w > e.label.length * FS.bar * 0.56) gPlan.append(T(X(e.a) + 4, cy + 4, e.label, { px: FS.bar, w: 700, fill: e.kind === 'wait' ? 'var(--text-3)' : 'var(--text)' }));
       } else if (e.kind === 'tick' && show(e.t)) {
         gPlan.append(svg('line', { x1: X(e.t), x2: X(e.t), y1: cy - 15, y2: cy - 9, stroke: 'var(--accent)', 'stroke-width': 2 }));
       } else if (e.kind === 'mark' && show(e.t)) {
         gPlan.append(svg('line', { x1: X(e.t), x2: X(e.t), y1: TOP, y2: TOP + 4 * RH - 4, stroke: 'var(--warn)', 'stroke-width': 2, 'stroke-dasharray': '5 3' }),
-          T(X(e.t) + 3, y + 11, e.label, { px: 10, w: 700, fill: 'var(--warn)' }));
+          T(X(e.t) > VW - 110 ? X(e.t) - 3 : X(e.t) + 3, y + FS.mark + 1, e.label, { px: FS.mark, w: 700, fill: 'var(--warn)', a: X(e.t) > VW - 110 ? 'end' : 'start' }));
       } else if (e.kind === 'dot' && show(e.t)) {
         gPlan.append(svg('path', { d: `M${X(e.t)},${cy - 8} l7,8 l-7,8 l-7,-8 z`, fill: col(e.who), stroke: 'var(--surface)' }));
       } else if (e.kind === 'write' && show(e.t)) {
         const up = e.who === 'A';
         gPlan.append(svg('circle', { cx: X(e.t), cy, r: 6, fill: e.ok ? 'var(--ok)' : 'var(--err)' }),
-          T(X(e.t), up ? cy - 10 : cy + 19, e.label, { px: 10, w: 700, a: 'middle', fill: e.ok ? 'var(--text)' : 'var(--err)' }));
+          T(Math.max(LX + 24, Math.min(VW - 30, X(e.t))), up ? cy - 10 : cy + 9 + FS.write, e.label, { px: FS.write, w: 700, a: 'middle', fill: e.ok ? 'var(--text)' : 'var(--err)' }));
       }
     });
     gHead.innerHTML = '';

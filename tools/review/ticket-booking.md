@@ -1,0 +1,10 @@
+# ticket-booking review
+
+- Widget: added a phone layout (`ctx.onResize`). viewBox is 360 wide with 8×4 seats at 42-unit pitch and 14–15-unit text. The lane legend moved into HTML on both layouts. Seat state now survives a resize because positions come from the row/column, not stored x/y. Phone fonts went from min 7.5 / p25 9.5 px to min 12.3 / p25 13.2 px. The race simulation and strategies are unchanged.
+- Knobs: with Choreography chosen, the verdict still praised "an orchestrated saga". There is now a separate 👍 verdict for conditional UPDATE + choreography that names the trade-off (no single owner times out a stuck paid order).
+- Knobs: added hints that say where the illustrative numbers come from: 10% of admitted users abandon a hold, and checkout time is exponential with a 2.5 min mean.
+- Real world: added a Sep 2025 FTC lawsuit card. It says the suit *alleges* that brokers beat per-customer limits with thousands of accounts and proxy IPs. It cites the primary ftc.gov press release, and the bots interview answer and failure row now key limits on card, phone or device rather than only the account.
+- Tl;dr: the "~3× bot traffic" figure is now worded as Live Nation's claim to the Senate. Senators questioned the testimony again in 2025, so it should not read as an established fact.
+- Clarity: shortened the "sweeper" scenario step to under 220 characters.
+- Code: ran the SQL snippet (hold, confirm, SKIP LOCKED sweep, `make_interval(mins => …)`) on Postgres 16. Ran the Lua hold script on redis-server, checking all-or-nothing and that an overlapping hold is rejected. Both are correct. The Spring snippet needs Spring Data, so it was not compiled. It was reviewed by eye and is fine.
+- Checked and left alone: the Eras Tour figures (3.5B requests, 4× peak, 3.5M registered / 1.5M invited, ~15% of interactions with issues), the Queue-it pre-queue randomisation, SeatGeek's Lambda + DynamoDB + Fastly design, and the READ COMMITTED re-check explanation. All are correct as written.

@@ -15,11 +15,16 @@ SD.widget('message-queue', function (root, ctx) {
   root.append(el('div', { class: 'w-controls' }, prodBtn, ackBtn, killBtn, slowBtn, resetBtn));
   ackBtn.onclick = () => { acks = acks === 'all' ? '1' : 'all'; ackBtn.textContent = 'acks = ' + acks; say(`Producer switched to <b>acks=${acks}</b>.`); };
 
-  const VW = (root.clientWidth || window.innerWidth) < 560 ? 360 : 820;
-  const N = VW < 400 ? 10 : 24;                        // cells visible per row
-  const LX = VW < 400 ? 92 : 112, CW = (VW - LX - 14) / N, RH = 62, TOP = 26;
-  const H = TOP + 3 * RH + 52;
+  // phone: 360-wide viewBox, 8 cells per row, 13–14-unit text; desktop: 820 wide, 24 cells
+  let VW, N, LX, CW, RH, TOP, H, F;
+  function dims(narrow) {
+    VW = narrow ? 360 : 820; N = narrow ? 8 : 24; LX = narrow ? 104 : 112; CW = (VW - LX - (narrow ? 10 : 14)) / N;
+    RH = narrow ? 68 : 62; TOP = narrow ? 30 : 26; H = TOP + 3 * RH + (narrow ? 56 : 52);
+    F = narrow ? { off: 13, name: 14, role: 13, cell: 14, mark: 13, hw: 14, cons: 14 } : { off: 11, name: 13, role: 11, cell: 10, mark: 10, hw: 11, cons: 12 };
+  }
+  dims(ctx.narrow);
   const S = svg('svg', { viewBox: `0 0 ${VW} ${H}`, role: 'img', 'aria-label': 'Replicated partition log' });
+  ctx.onResize((n) => { dims(n); S.setAttribute('viewBox', `0 0 ${VW} ${H}`); draw(); });
   const g = svg('g'); S.append(g);
   root.append(el('div', { class: 'w-stage' }, S));
   const stats = el('div', { class: 'w-stats' });
@@ -113,28 +118,28 @@ SD.widget('message-queue', function (root, ctx) {
     const ld = L(), h = ld.alive ? hw() : 0, leo = ld.log.length;
     const first = Math.max(0, Math.max(leo, ...reps.map((r) => r.log.length)) - N + 1);
     const cx = (o) => LX + (o - first) * CW;
-    g.append(txt(VW - 6, 16, `offsets ${first}…${first + N - 1}`, { px: 11, w: 500, a: 'end', fill: 'var(--text-3)' }));
+    g.append(txt(VW - 6, F.off + 4, `offsets ${first}…${first + N - 1}`, { px: F.off, w: 500, a: 'end', fill: 'var(--text-3)' }));
     reps.forEach((r, i) => {
       const y = TOP + i * RH;
       const role = !r.alive ? 'dead' : i === leader ? 'leader' : r.inIsr ? 'follower · ISR' : 'out of ISR';
-      g.append(txt(6, y + 20, 'Broker ' + r.id, { px: 13, w: 700, fill: r.alive ? 'var(--text)' : 'var(--text-3)' }),
-        txt(6, y + 37, role, { px: 11, w: 600, fill: !r.alive ? 'var(--err)' : i === leader ? 'var(--accent)' : r.inIsr ? 'var(--ok)' : 'var(--warn)' }));
+      g.append(txt(6, y + 20, 'Broker ' + r.id, { px: F.name, w: 700, fill: r.alive ? 'var(--text)' : 'var(--text-3)' }),
+        txt(6, y + 38, role, { px: F.role, w: 600, fill: !r.alive ? 'var(--err)' : i === leader ? 'var(--accent)' : r.inIsr ? 'var(--ok)' : 'var(--warn)' }));
       for (let o = first; o < first + N; o++) {
         const rec = r.log[o];
         const fill = !rec ? 'var(--surface)' : rec.lost ? 'color-mix(in srgb, var(--err) 40%, var(--surface))' : o < h ? 'color-mix(in srgb, var(--accent) 45%, var(--surface))' : 'color-mix(in srgb, var(--warn) 30%, var(--surface))';
         g.append(svg('rect', { x: cx(o) + 1, y: y + 6, width: CW - 2, height: 36, rx: 4, fill, stroke: 'var(--border)', opacity: r.alive ? 1 : 0.55 }));
-        if (rec) g.append(txt(cx(o) + CW / 2, y + 28, String(o), { px: CW < 24 ? 9 : 10, w: 600, a: 'middle', fill: 'var(--text)' }));
+        if (rec) g.append(txt(cx(o) + CW / 2, y + 29, String(o), { px: VW < 400 ? (o > 99 ? 12 : F.cell) : CW < 24 ? 9 : F.cell, w: 600, a: 'middle', fill: 'var(--text)' }));
       }
       const L2 = r.log.length;
-      if (L2 >= first && L2 <= first + N) g.append(svg('path', { d: `M${cx(L2)},${y + 44} l-5,9 h10 z`, fill: 'var(--text-2)' }), txt(cx(L2), y + 60, 'LEO', { px: 10, a: 'middle', fill: 'var(--text-2)' }));
+      if (L2 >= first && L2 <= first + N) g.append(svg('path', { d: `M${cx(L2)},${y + 44} l-5,9 h10 z`, fill: 'var(--text-2)' }), txt(cx(L2), y + 55 + F.mark * 0.5, 'LEO', { px: F.mark, a: 'middle', fill: 'var(--text-2)' }));
     });
     if (ld.alive && h >= first && h <= first + N) {
       g.append(svg('line', { x1: cx(h), x2: cx(h), y1: TOP, y2: TOP + 3 * RH - 4, stroke: 'var(--ok)', 'stroke-width': 2.5, 'stroke-dasharray': '5 3' }),
-        txt(cx(h), TOP - 2, 'HW ' + h, { px: 11, w: 700, a: 'middle', fill: 'var(--ok)' }));
+        txt(cx(h), TOP - 3, 'HW ' + h, { px: F.hw, w: 700, a: 'middle', fill: 'var(--ok)' }));
     }
     const cy = TOP + 3 * RH + 14;
-    g.append(txt(6, cy + 14, 'Consumer', { px: 12, w: 700 }));
-    if (consumer >= first && consumer <= first + N) g.append(svg('path', { d: `M${cx(consumer)},${cy} l-6,12 h12 z`, fill: 'var(--accent)' }), txt(cx(consumer), cy + 26, 'next ' + consumer, { px: 10, a: 'middle', fill: 'var(--accent)' }));
+    g.append(txt(6, cy + 14, 'Consumer', { px: F.cons, w: 700 }));
+    if (consumer >= first && consumer <= first + N) g.append(svg('path', { d: `M${cx(consumer)},${cy} l-6,12 h12 z`, fill: 'var(--accent)' }), txt(cx(consumer), cy + 16 + F.mark, 'next ' + consumer, { px: F.mark, a: 'middle', fill: 'var(--accent)' }));
     stats.innerHTML = '';
     [['acks', acks], ['ISR', isr().map((r) => r.id).join(',') || '–'], ['leader LEO', leo], ['HW', ld.alive ? h : '–'], ['acked', acked], ['acked but lost', lostAcked], ['refused', failedSends]]
       .forEach(([k, v]) => stats.append(el('span', { class: 'w-stat', html: `${k}: <b style="${k === 'acked but lost' && v ? 'color:var(--err)' : ''}">${v}</b>` })));

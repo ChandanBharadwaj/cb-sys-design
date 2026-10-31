@@ -2,7 +2,7 @@
    handoff, read repair and anti-entropy. Tap a node to kill / revive it. */
 SD.widget('kv-store', function (root, ctx) {
   const { el, svg } = ctx;
-  const W_ = 360, H_ = 336, CX = 180, CY = 168, RR = 98, NR = 138;
+  const W_ = 360, H_ = 342, CX = 180, CY = 168, RR = 98, NR = 138;
   const IDS = ['A', 'B', 'C', 'D', 'E', 'F'], VN = 4, KEYS = ['cart:alice', 'user:42', 'session:9f', 'item:7781'];
   const h32 = (s) => { let h = 2166136261; for (const c of s) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } h ^= h >>> 15; h = Math.imul(h, 2246822507); h ^= h >>> 13; return h >>> 0; };
   const nodes = IDS.map((id, i) => ({ id, i, up: true, store: {}, hints: [], col: `hsl(${i * 60 + 200}, 60%, 52%)` }));
@@ -117,9 +117,9 @@ SD.widget('kv-store', function (root, ctx) {
       c.addEventListener('click', () => { toggle(n); paint(); });
       g.append(c);
       g.append(svg('text', { x, y: y - 3, 'text-anchor': 'middle', style: 'font:800 15px var(--sans);pointer-events:none', fill: n.up ? 'var(--text)' : 'var(--err)', text: n.up ? n.id : n.id + '✖' }));
-      g.append(svg('text', { x, y: y + 14, 'text-anchor': 'middle', style: 'font:600 13px var(--mono);pointer-events:none', fill: 'var(--text-2)', text: vOf(n, k) ? 'v' + vOf(n, k) : '–' }));
-      if (rank >= 0) g.append(svg('text', { x: x + (x < CX ? -30 : 30), y: y - 16, 'text-anchor': 'middle', style: 'font:700 13px var(--sans)', fill: 'var(--accent)', text: '#' + (rank + 1) }));
-      if (hintHolders.has(n)) g.append(svg('text', { x: x + (x < CX ? -30 : 30), y: y + 30, 'text-anchor': 'middle', style: 'font:700 12px var(--sans)', fill: 'var(--warn)', text: 'hint' }));
+      g.append(svg('text', { x, y: y + 14, 'text-anchor': 'middle', style: 'font:600 14px var(--mono);pointer-events:none', fill: 'var(--text-2)', text: vOf(n, k) ? 'v' + vOf(n, k) : '–' }));
+      if (rank >= 0) g.append(svg('text', { x: x + (x < CX ? -30 : 30), y: y - 16, 'text-anchor': 'middle', style: 'font:700 14px var(--sans)', fill: 'var(--accent)', text: '#' + (rank + 1) }));
+      if (hintHolders.has(n)) g.append(svg('text', { x: x + (x < CX ? -30 : 30), y: y + 30, 'text-anchor': 'middle', style: 'font:700 14px var(--sans)', fill: 'var(--warn)', text: 'hint' }));
       if (read) g.append(svg('circle', { cx: x, cy: y, r: 29, fill: 'none', stroke: 'var(--ok)', 'stroke-width': 2, 'stroke-dasharray': '3 3' }));
     });
     stats.innerHTML = '';

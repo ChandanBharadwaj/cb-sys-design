@@ -1,7 +1,13 @@
 /* Order state machine + inventory holds: conditional reserve, TTL expiry, and oversell when deducting at payment. */
 SD.widget('ecommerce-orders', function (root, ctx) {
   const { el, svg } = ctx;
-  const UNITS = 12, W = 440, H = 236;
+  const UNITS = 12;
+  // Two layouts: desktop (440 wide) and phone (340 wide, drawn 1:1 so 12.5–14-unit text stays ≥ 12px).
+  const GEO = {
+    wide: { W: 440, H: 216, X: [60, 170, 280, 390], XB: [115, 225, 335], Y: 100, YB: 186, NW: 98, NH: 40, ft: 14, fc: 14, fu: 13.5 },
+    narrow: { W: 340, H: 214, X: [42, 127.5, 212.5, 298], XB: [85, 170, 255], Y: 104, YB: 186, NW: 80, NH: 42, ft: 12.5, fc: 14, fu: 13 }
+  };
+  let G = ctx.narrow ? GEO.narrow : GEO.wide, W = G.W, H = G.H;
   let mode = 'checkout', ttl = 6, rate = 3, running = true;
   let units, shoppers, now, spawnAcc, nextId, fx, counts, st, done;
 
@@ -27,23 +33,30 @@ SD.widget('ecommerce-orders', function (root, ctx) {
   const sql = el('div', { class: 'w-log', style: { maxHeight: 'none', marginTop: '0', marginBottom: '10px' } });
   root.append(sql);
 
-  const S_ = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Stock bar and order state machine' });
+  const S_ = svg('svg', { role: 'img', 'aria-label': 'Stock bar and order state machine' });
   const gUnits = svg('g'), gEdges = svg('g'), gNodes = svg('g'), gFx = svg('g');
   S_.append(gUnits, gEdges, gNodes, gFx);
-  root.append(el('div', { class: 'w-stage' }, S_));
+  // legend in HTML so it stays readable on a phone
+  const LG = [['var(--surface-2)', 'free'], ['color-mix(in srgb, var(--warn) 40%, var(--surface))', 'held (min left)'], ['color-mix(in srgb, var(--ok) 45%, var(--surface))', 'sold']];
+  const legend = el('div', { style: { display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '4px 14px', fontSize: '12.5px', color: 'var(--text-2)', margin: '2px 0 6px' } },
+    LG.map(([c, t]) => el('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '5px' } }, el('i', { style: { width: '12px', height: '12px', borderRadius: '3px', background: c, border: '1px solid var(--border)', display: 'inline-block' } }), t)));
+  root.append(el('div', { class: 'w-stage', style: { maxWidth: '640px' } }, S_), legend);
   const stats = el('div', { class: 'w-stats' });
   const log = el('div', { class: 'w-log', 'aria-live': 'polite' });
   root.append(stats, log);
   const say = (m) => { log.prepend(el('div', { html: `<span style="color:var(--text-3)">${Math.floor(now)} min</span> ${m}` })); while (log.children.length > 40) log.lastChild.remove(); };
 
   // ---------- state-machine layout ----------
-  const NODES = {
-    cart: { x: 60, y: 120, l: 'CART' }, pending: { x: 170, y: 120, l: 'PENDING' }, paid: { x: 280, y: 120, l: 'PAID' }, packed: { x: 390, y: 120, l: 'PACKED' },
-    abandoned: { x: 115, y: 206, l: 'ABANDONED' }, expired: { x: 225, y: 206, l: 'EXPIRED' }, refunded: { x: 335, y: 206, l: 'REFUNDED' }
-  };
+  const LBL = { cart: 'CART', pending: 'PENDING', paid: 'PAID', packed: 'PACKED', abandoned: 'ABANDONED', expired: 'EXPIRED', refunded: 'REFUNDED' };
   const EDGES = [['cart', 'pending'], ['pending', 'paid'], ['paid', 'packed'], ['cart', 'abandoned'], ['pending', 'abandoned'], ['pending', 'expired'], ['paid', 'refunded']];
-  const NW = 98, NH = 40;
-  const nodeEls = {};
+  let NODES, NW, NH, nodeEls;
+  function buildMachine() {
+  W = G.W; H = G.H; NW = G.NW; NH = G.NH; nodeEls = {};
+  S_.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  gEdges.innerHTML = ''; gNodes.innerHTML = '';
+  NODES = {};
+  ['cart', 'pending', 'paid', 'packed'].forEach((k, i) => { NODES[k] = { x: G.X[i], y: G.Y, l: LBL[k] }; });
+  ['abandoned', 'expired', 'refunded'].forEach((k, i) => { NODES[k] = { x: G.XB[i], y: G.YB, l: LBL[k] }; });
   EDGES.forEach(([a, b]) => {
     const A = NODES[a], B = NODES[b];
     const horiz = A.y === B.y;
@@ -56,11 +69,14 @@ SD.widget('ecommerce-orders', function (root, ctx) {
   for (const k in NODES) {
     const n = NODES[k];
     const r = svg('rect', { x: n.x - NW / 2, y: n.y - NH / 2, width: NW, height: NH, rx: 8, fill: 'var(--surface-2)', stroke: 'var(--border)' });
-    const t1 = svg('text', { x: n.x, y: n.y - 3, 'text-anchor': 'middle', style: 'font:700 14px var(--sans)', fill: 'var(--text)', text: n.l });
-    const t2 = svg('text', { x: n.x, y: n.y + 14, 'text-anchor': 'middle', style: 'font:14px var(--mono)', fill: 'var(--text-2)', text: '0' });
+    const t1 = svg('text', { x: n.x, y: n.y - 3, 'text-anchor': 'middle', style: `font:700 ${G.ft}px var(--sans)`, fill: 'var(--text)', text: n.l });
+    const t2 = svg('text', { x: n.x, y: n.y + 15, 'text-anchor': 'middle', style: `font:${G.fc}px var(--mono)`, fill: 'var(--text-2)', text: '0' });
     gNodes.append(r, t1, t2);
     nodeEls[k] = { r, t2 };
   }
+  }
+  buildMachine();
+  ctx.onResize((n) => { G = n ? GEO.narrow : GEO.wide; buildMachine(); draw(); });
   const TONE = { packed: 'var(--ok)', abandoned: 'var(--text-3)', expired: 'var(--warn)', refunded: 'var(--err)' };
 
   // ---------- simulation ----------
@@ -146,11 +162,8 @@ SD.widget('ecommerce-orders', function (root, ctx) {
       const fill = u.st === 'sold' ? 'color-mix(in srgb, var(--ok) 45%, var(--surface))' : u.st === 'held' ? 'color-mix(in srgb, var(--warn) 40%, var(--surface))' : 'var(--surface-2)';
       gUnits.append(svg('rect', { x, y: 26, width: cw, height: 30, rx: 5, fill, stroke: 'var(--border)' }));
       const lab = u.st === 'held' ? Math.max(0, Math.ceil(u.exp - now)) + '′' : u.st === 'sold' ? '✓' : '';
-      if (lab) gUnits.append(svg('text', { x: x + cw / 2, y: 46, 'text-anchor': 'middle', style: 'font:600 13.5px var(--mono)', fill: 'var(--text)', text: lab }));
+      if (lab) gUnits.append(svg('text', { x: x + cw / 2, y: 46, 'text-anchor': 'middle', style: `font:600 ${G.fu}px var(--mono)`, fill: 'var(--text)', text: lab }));
     });
-    const lg = [['var(--surface-2)', 'free'], ['color-mix(in srgb, var(--warn) 40%, var(--surface))', 'held (min left)'], ['color-mix(in srgb, var(--ok) 45%, var(--surface))', 'sold']];
-    let lx = 6;
-    lg.forEach(([c, t]) => { gUnits.append(svg('rect', { x: lx, y: 66, width: 12, height: 12, rx: 3, fill: c, stroke: 'var(--border)' }), svg('text', { x: lx + 17, y: 77, style: 'font:13px var(--sans)', fill: 'var(--text-2)', text: t })); lx += 30 + t.length * 7.2; });
     for (const k in nodeEls) {
       nodeEls[k].t2.textContent = counts[k];
       const c = TONE[k] && counts[k] ? TONE[k] : counts[k] ? 'var(--accent)' : 'var(--border)';

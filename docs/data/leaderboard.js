@@ -11,7 +11,7 @@ SD.register({
     numbers: [
       { v: 'O(log N)', l: 'ZADD and ZREVRANK cost; ZRANGE is O(log N + M) for M results (redis.io)' },
       { v: '2 structures', l: 'per sorted set: skip list (order, rank) + hash table (member → score)' },
-      { v: '27,556', l: 'riders in one Peloton class, ranked live (2023, AWS blog)' }
+      { v: '34.6K', l: 'simultaneous riders in Peloton\'s 2025 Turkey Burn class, leaderboard on ElastiCache (AWS, 2026)' }
     ]
   },
   intro: {
@@ -88,7 +88,7 @@ SD.register({
       { term: 'Sorted set (ZSET)', def: 'A Redis data type that stores members with a score and keeps them in score order.' },
       { term: 'Skip list', def: 'A sorted linked list with extra layers of shortcut links, so a search skips most entries.' },
       { term: 'Span', def: 'The number of entries a skip-list shortcut jumps over; adding spans along the path gives a rank.' },
-      { term: 'O(log N)', def: 'Work that grows very slowly with size: doubling the players adds only about one more step.' },
+      { term: 'O(log N)', def: 'Work that grows very slowly with size: doubling the players adds only a step or two.' },
       { term: 'ZINCRBY / ZREVRANK', def: 'Redis commands that add points to a member\'s score, and return its rank counted from the highest score.' },
       { term: 'Tie-break', def: 'The rule that orders players with equal scores, such as "whoever got there first ranks higher".' },
       { term: 'Score-range sharding', def: 'Splitting a huge board across servers by score bands, so the top players all live on one shard.' },
@@ -130,7 +130,7 @@ SD.register({
       { label: 'Redis writes / s at peak (all boards)', f: (v) => v.n * v.u / 86400 * v.peak * v.boards },
       { label: 'Memory for one board', fmt: 'bytes', f: (v) => v.n * v.bytes },
       { label: 'Memory, all boards × replica', fmt: 'bytes', f: (v) => v.n * v.bytes * v.boards * 2 },
-      { label: 'Skip-list steps per rank lookup (≈ log₂ N)', f: (v) => Math.round(Math.log2(v.n)) }
+      { label: 'Skip-list pointer hops per rank lookup (≈ 2·log₂ N expected; estimate)', f: (v) => Math.round(2 * Math.log2(v.n)) }
     ],
     note: 'All inputs are <em>estimates</em>; bytes per entry depends on member length and Redis version (small sets use a compact encoding). Memory is rarely the problem: even 50M players fit in a few GB. The real limit is that <b>one sorted set lives on one shard</b>, so its write rate is bounded by one Redis node.'
   },
@@ -255,7 +255,7 @@ SD.register({
       const exactMem = N * 110 * boards;
       const mem = s.mode === 'exact' ? exactMem : (1e4 * 110 + 1e4 * 16) * boards;
       const metrics = [
-        { k: 'Rank read latency', v: s.mode === 'exact' ? '≈ 1 ms (O(log N) ≈ ' + Math.round(Math.log2(N)) + ' steps)' : '≈ 1 ms (prefix sum over buckets)', s: 0.9 },
+        { k: 'Rank read latency', v: s.mode === 'exact' ? '≈ 1 ms (O(log N): ~' + Math.round(2 * Math.log2(N)) + ' pointer hops)' : '≈ 1 ms (prefix sum over buckets)', s: 0.9 },
         { k: 'Memory (all boards)', v: SD.fmt.bytes(mem), s: mem < 2e9 ? 0.9 : mem < 2e10 ? 0.65 : 0.35 },
         { k: 'Redis round-trips/s', v: SD.fmt.num(roundTrips) + ' (' + SD.fmt.num(writes) + ' updates)', s: roundTrips < 2e4 ? 0.9 : roundTrips < 1e5 ? 0.6 : 0.3 },
         { k: 'Score freshness', v: s.win === 0 ? 'immediate' : '≤ ' + s.win + ' ms behind', s: s.win <= 250 ? 0.9 : s.win <= 1000 ? 0.65 : 0.4 },
@@ -306,13 +306,13 @@ SD.register({
       { when: 'Redis docs', who: 'Redis', title: 'Leaderboard pattern', text: 'One sorted set per board, member = player id, score = points. <b>ZADD and ZREVRANK are O(log N)</b>, and ZRANGE is O(log N + M) for M returned members; names and avatars go in a companion hash so the set stays lean.', src: 1 },
       { when: '2018', who: 'Peloton', title: 'Real-time messaging for classes', text: 'Peloton described a publish/subscribe setup with <b>one channel per member</b>; the leaderboard team used it to connect members to friends taking the same class.', src: 2 },
       { when: '2024', who: 'AWS', title: 'Gaming leaderboard on ElastiCache', text: 'AWS\'s reference moves leaderboard storage and queries out of a relational database into <b>Redis sorted sets</b>, which keep members ordered as scores are inserted or updated.', src: 3 },
-      { when: '2023–26', who: 'Peloton', title: 'Turkey Burn: the largest live class', text: 'For its biggest live events Peloton runs the leaderboard on <b>ElastiCache sorted sets</b> with replicas, plus MSK, SQS and OpenSearch, keeping <b>tens of thousands</b> of participants in sync with sub-second latency. The 2023 class had <b>27,556</b> simultaneous riders. Capacity is pre-warmed and tier-0 services are isolated.', src: 4 }
+      { when: '2024–26', who: 'Peloton', title: 'Turkey Burn: the largest live class', text: 'For its biggest live events Peloton ranks riders with <b>ElastiCache</b> (with replicas), plus MSK for event fan-out and SQS to decouple services. The 2025 ride had <b>34.6K simultaneous participants</b>; Peloton load-tests in production at up to <b>2.5×</b> the expected peak.', src: 4 }
     ],
     lessons: [
       '<span>The sorted set is a <b>cache of a computation</b>; keep the event log durable and make replays idempotent.</span>',
       '<span>Read the top N <b>once per second per board</b> and push diffs, instead of once per viewer.</span>',
       '<span>Plan the <b>shard key</b> early: score ranges keep rank queries cheap; hashing spreads writes but makes rank a scatter-gather.</span>',
-      '<span>For live events, <b>pre-warm and isolate</b> the leaderboard path from the rest of the platform.</span>'
+      '<span>For live events, <b>load-test above the expected peak</b> before the day, not during it.</span>'
     ],
     sources: [
       { title: 'redis/src/t_zset.c (Redis 6.2)', url: 'https://github.com/redis/redis/blob/6.2/src/t_zset.c', pub: 'Redis source' },
@@ -348,13 +348,13 @@ SD.register({
     { q: 'How does a sorted set return a rank in O(log N)?', a: '<p>Each forward pointer in the skip list stores a <b>span</b>: how many level-0 nodes it skips. To rank a member, walk from the top level down, moving right while the next node is still before the target, and <b>add the spans you cross</b>. The sum when you land on the target is its rank.</p>', lvl: 'core' },
     { q: 'Why does Redis use a skip list rather than a balanced tree?', a: '<ul><li>Much <b>simpler</b> code to implement and debug; adding span counts for rank was a small patch.</li><li>Range scans (ZRANGE) walk level 0 like a linked list.</li><li>Expected O(log N) with tunable memory (the level probability).</li></ul><p>A B-tree shines on disk pages; for an in-memory structure the skip list is competitive and easier to augment.</p>', lvl: 'deep' },
     { q: 'Why does a sorted set also need a hash table?', a: '<p>The hash maps <b>member → score</b> in O(1), so <code>ZSCORE</code> is instant and an update can find the existing node (by score + member) without scanning. The skip list keeps the order. Each member is therefore referenced from both structures.</p>', lvl: 'core' },
-    { q: 'What is the rank of player #50,000,000, and how fast?', a: '<p><code>ZREVRANK</code> on a 50M-member set is about log₂(50M) ≈ 26 levels of pointer chasing: microseconds inside Redis, ~1 ms with the network. Add 1 because Redis ranks are 0-based.</p>', lvl: 'core' },
+    { q: 'What is the rank of player #50,000,000, and how fast?', a: '<p>With Redis\'s level probability p = ¼, a 50M-member skip list has about log₄(50M) ≈ <b>13 levels</b>, and a lookup makes roughly (1/p)·log<sub>1/p</sub> N ≈ <b>50 pointer hops</b> in expectation. That is microseconds inside Redis, ~1 ms with the network. Add 1 because Redis ranks are 0-based.</p>', lvl: 'core' },
     { q: 'How would you shard a leaderboard with 500M players?', a: '<p><b>By score range:</b> each shard holds a band of scores. Global rank = sum of <code>ZCARD</code> of higher shards + local <code>ZREVRANK</code>; top N reads only the top shard. Players move shards when they cross a boundary; pick boundaries from the score distribution and rebalance occasionally.</p><p><b>By hash:</b> even writes, but rank needs <code>ZCOUNT</code> on every shard and top N needs a k-way merge.</p>', lvl: 'deep' },
     { q: 'How do you break ties?', a: '<p>Redis orders equal scores by member, lexicographically (reversed in ZREVRANGE): deterministic, but arbitrary. Better: <b>first to reach wins</b>, by packing time into the score, e.g. <code>points × 2³² + (2³² − 1 − ts)</code>. Mind float64 precision (exact up to 2⁵³). Or show <b>shared ranks</b>: 1 + <code>ZCOUNT (score +inf</code>.</p>', lvl: 'core' },
     { q: 'How do daily and weekly resets work?', a: '<p>Do not delete anything at midnight. Write each event to <code>lb:daily:2026-10-30</code> and <code>lb:weekly:2026-W44</code> as well as the all-time key, with <code>EXPIRE</code> a few periods out. At period end a job snapshots the final top N to Postgres for rewards. Watch time zones: one global UTC reset, or per-region keys.</p>', lvl: 'core' },
     { q: 'How do you show "players around me"?', a: '<p><code>r = ZREVRANK key me</code>, then <code>ZREVRANGE key max(0, r−5) r+5 WITHSCORES</code>. Two O(log N + k) calls. Hydrate names from hashes with one pipelined <code>HMGET</code> batch.</p>', lvl: 'core' },
     { q: 'How would you build a friends leaderboard?', a: '<p>On read: get ~200 friend ids from the social graph, <code>ZMSCORE lb:global …ids</code> in one call, sort in the service. Do not maintain a sorted set per user: one score change would have to update every friend\'s set (fan-out on write).</p>', lvl: 'core' },
-    { q: 'What if Redis loses data?', a: '<p>Treat Redis as a cache of the event log. Kafka (or a Postgres table) keeps every score event. After a failover, replay from a safe offset with idempotent writes; after total loss, rebuild from the log or the last snapshot. Replicas plus AOF reduce how often you need it.</p>', lvl: 'deep' },
+    { q: 'What if Redis loses data?', a: '<p>Treat Redis as a cache of the event log. Kafka (or a Postgres table) keeps every score event. After a failover, replay from a safe offset; after total loss, rebuild from the log or the last snapshot. Replicas plus AOF reduce how often you need it.</p><p>Replays must be <b>idempotent</b>, and <code>ZINCRBY</code> is not: replaying an event adds the points twice. Either record the last applied offset per partition with the update, or write absolute values. For best-score boards, <code>ZADD key GT score member</code> (Redis 6.2+) keeps the maximum and is safe to replay.</p>', lvl: 'deep' },
     { q: 'When are approximate ranks acceptable?', a: '<p>For very large boards, nobody distinguishes #1,204,377 from #1,204,401. Keep a histogram of players per score bucket (prefix sums give rank) and an exact sorted set only for the top K. Memory and write load drop by orders of magnitude; error is bounded by bucket width.</p>', lvl: 'deep' }
   ],
 
@@ -373,8 +373,8 @@ public class LeaderboardService {
 
   private static String weeklyKey() {
     LocalDate d = LocalDate.now(ZoneOffset.UTC);
-    return "lb:weekly:" + d.get(IsoFields.WEEK_BASED_YEAR) + "-W"
-        + d.get(IsoFields.WEEK_OF_WEEK_BASED_YEAR);
+    return String.format("lb:weekly:%d-W%02d",                   // e.g. lb:weekly:2026-W44
+        d.get(IsoFields.WEEK_BASED_YEAR), d.get(IsoFields.WEEK_OF_WEEK_BASED_YEAR));
   }
 
   public void addPoints(String player, double points) {
@@ -449,6 +449,8 @@ def global_rank(player: str, points: int) -> int:
     i = shard_for(points)
     higher = sum(r.zcard(key) for key, _ in BANDS[:i])        # O(1) each
     local = r.zrevrank(BANDS[i][0], player)                   # O(log n)
+    if local is None:
+        raise KeyError(player)                                # not on this board
     return higher + local + 1`
     }
   ],

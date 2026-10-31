@@ -1,7 +1,14 @@
 /* Real Gorilla (VLDB'15) encoder: delta-of-delta timestamps + XOR'd float64 values, plus a label-cardinality multiplier. */
 SD.widget('observability', function (root, ctx) {
   const { el, svg } = ctx;
-  const N = 48, W = 500, H = 196, PX = 30, PY = 22, BASE = 160;
+  const N = 48;
+  // two layouts: desktop viewBox 500 wide; phone viewBox 360 wide with bigger text (on-screen ≥ 12px)
+  const LAY = {
+    wide:   { W: 500, H: 196, PX: 30, PY: 22, BASE: 160, f: 15, fs: 13, legGap: 150 },
+    narrow: { W: 360, H: 214, PX: 30, PY: 26, BASE: 170, f: 15, fs: 14, legGap: 140 }
+  };
+  let L = ctx.narrow ? LAY.narrow : LAY.wide;
+  let W = L.W, H = L.H, PX = L.PX, PY = L.PY, BASE = L.BASE;
   let kind = 'gauge', jitter = false, shown = 0, enc = [], sel = -1;
 
   // ---------- data ----------
@@ -67,15 +74,23 @@ SD.widget('observability', function (root, ctx) {
   S_.append(gGrid, gBars);
   root.append(el('div', { class: 'w-stage' }, S_));
   const bitY = (b) => BASE - (b / 128) * (BASE - PY);
-  const txt = (x, y, t, st, a, fill) => svg('text', { x, y, 'text-anchor': a || 'start', style: st || 'font:600 15px var(--sans)', fill: fill || 'var(--text-3)', text: t });
-  gGrid.append(svg('line', { x1: PX, x2: W - 6, y1: bitY(128), y2: bitY(128), stroke: 'var(--err)', 'stroke-dasharray': '5 4' }),
-    txt(W - 8, bitY(128) - 5, 'raw: 16 B = 128 bits / point', 'font:700 15px var(--sans)', 'end', 'var(--err)'),
-    svg('line', { x1: PX, x2: W - 6, y1: bitY(64), y2: bitY(64), stroke: 'var(--border)', 'stroke-dasharray': '2 4' }),
-    txt(PX - 4, bitY(64) + 4, '64', 'font:600 13px var(--mono)', 'end'), txt(PX - 4, BASE + 4, '0', 'font:600 13px var(--mono)', 'end'),
-    svg('line', { x1: PX, x2: W - 6, y1: BASE, y2: BASE, stroke: 'var(--border)' }),
-    svg('rect', { x: PX, y: BASE + 13, width: 13, height: 13, rx: 2, fill: 'var(--accent-2)' }), txt(PX + 18, BASE + 25, 'timestamp bits'),
-    svg('rect', { x: PX + 150, y: BASE + 13, width: 13, height: 13, rx: 2, fill: 'var(--accent)' }), txt(PX + 168, BASE + 25, 'value bits'),
-    txt(W - 8, BASE + 25, 'tap a bar', 'font:600 15px var(--sans)', 'end'));
+  const txt = (x, y, t, st, a, fill) => svg('text', { x, y, 'text-anchor': a || 'start', style: st || `font:600 ${L.f}px var(--sans)`, fill: fill || 'var(--text-3)', text: t });
+  function grid() {
+    W = L.W; H = L.H; PX = L.PX; PY = L.PY; BASE = L.BASE;
+    S_.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    gGrid.innerHTML = '';
+    const mono = `font:600 ${L.fs}px var(--mono)`;
+    gGrid.append(svg('line', { x1: PX, x2: W - 6, y1: bitY(128), y2: bitY(128), stroke: 'var(--err)', 'stroke-dasharray': '5 4' }),
+      txt(W - 8, bitY(128) - 6, 'raw: 16 B = 128 bits / point', `font:700 ${L.f}px var(--sans)`, 'end', 'var(--err)'),
+      svg('line', { x1: PX, x2: W - 6, y1: bitY(64), y2: bitY(64), stroke: 'var(--border)', 'stroke-dasharray': '2 4' }),
+      txt(PX - 4, bitY(64) + 4, '64', mono, 'end'), txt(PX - 4, BASE + 4, '0', mono, 'end'),
+      svg('line', { x1: PX, x2: W - 6, y1: BASE, y2: BASE, stroke: 'var(--border)' }),
+      svg('rect', { x: PX, y: BASE + 13, width: 13, height: 13, rx: 2, fill: 'var(--accent-2)' }), txt(PX + 18, BASE + 25, ctx.narrow ? 'timestamp' : 'timestamp bits'),
+      svg('rect', { x: PX + (ctx.narrow ? 100 : 150), y: BASE + 13, width: 13, height: 13, rx: 2, fill: 'var(--accent)' }), txt(PX + (ctx.narrow ? 118 : 168), BASE + 25, ctx.narrow ? 'value' : 'value bits'),
+      txt(W - 8, BASE + 25, 'tap a bar', `font:600 ${L.f}px var(--sans)`, 'end'));
+  }
+  grid();
+  ctx.onResize((n) => { L = n ? LAY.narrow : LAY.wide; grid(); draw(); });
   const stats = el('div', { class: 'w-stats' });
   const log = el('div', { class: 'w-log', 'aria-live': 'polite' });
   root.append(stats, log);

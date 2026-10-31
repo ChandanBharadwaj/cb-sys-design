@@ -1,8 +1,13 @@
 /* Live limit order book: price-time priority matching (sorted price levels, FIFO queues), trades at the resting price. */
 SD.widget('stock-exchange', function (root, ctx) {
   const { el, svg } = ctx;
-  const TICK = 5, LEVELS = 12, RH = 26, Y0 = 28, W = 440, H = Y0 + LEVELS * RH + 6;
-  const PX = 220, BID_R = 180, ASK_L = 260, AREA = 172;
+  const TICK = 5;
+  // Two layouts: desktop ladder (440 wide, 12 levels) and phone ladder (340 wide, 10 levels, bigger text).
+  const GEO = {
+    wide: { W: 440, LEVELS: 12, RH: 26, Y0: 28, PX: 220, BW: 72, BID_R: 180, ASK_L: 260, AREA: 152, wMin: 30, wMax: 110, wK: 0.32, fs: 13.5, fq: 12.5, head: ['← bids (oldest inside)', 'asks →'] },
+    narrow: { W: 340, LEVELS: 10, RH: 30, Y0: 30, PX: 170, BW: 72, BID_R: 132, ASK_L: 208, AREA: 108, wMin: 36, wMax: 84, wK: 0.24, fs: 15, fq: 14, head: ['← bids', 'asks →'] }
+  };
+  let G = ctx.narrow ? GEO.narrow : GEO.wide;
   let side = 'buy', type = 'limit', price = 10000, qty = 100, auto = false;
   let bids, asks, seq, nextId, last, flash, trades, tAcc = 0;
   const money = (c) => (c / 100).toFixed(2);
@@ -31,12 +36,20 @@ SD.widget('stock-exchange', function (root, ctx) {
     el('div', { class: 'w-controls' }, autoBtn, resetBtn));
   function paintPrice() { priceOut.textContent = type === 'market' ? 'MKT' : money(price); dn.disabled = up.disabled = type === 'market'; }
 
-  const S_ = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Order book ladder' });
-  const gRows = svg('g'), gOrd = svg('g');
-  S_.append(svg('text', { x: BID_R, y: 18, 'text-anchor': 'end', style: 'font:700 13.5px var(--sans)', fill: 'var(--ok)', text: '← bids (oldest inside)' }),
-    svg('text', { x: PX, y: 18, 'text-anchor': 'middle', style: 'font:700 13.5px var(--sans)', fill: 'var(--text-2)', text: 'price' }),
-    svg('text', { x: ASK_L, y: 18, style: 'font:700 13.5px var(--sans)', fill: 'var(--err)', text: 'asks →' }), gRows, gOrd);
-  root.append(el('div', { class: 'w-stage' }, S_));
+  const S_ = svg('svg', { role: 'img', 'aria-label': 'Order book ladder' });
+  const gHead = svg('g'), gRows = svg('g'), gOrd = svg('g');
+  S_.append(gHead, gRows, gOrd);
+  function layout() {
+    S_.setAttribute('viewBox', `0 0 ${G.W} ${G.Y0 + G.LEVELS * G.RH + 6}`);
+    const f = `font:700 ${G.fs}px var(--sans)`;
+    gHead.innerHTML = '';
+    gHead.append(svg('text', { x: G.BID_R, y: 19, 'text-anchor': 'end', style: f, fill: 'var(--ok)', text: G.head[0] }),
+      svg('text', { x: G.PX, y: 19, 'text-anchor': 'middle', style: f, fill: 'var(--text-2)', text: 'price' }),
+      svg('text', { x: G.ASK_L, y: 19, style: f, fill: 'var(--err)', text: G.head[1] }));
+  }
+  layout();
+  ctx.onResize((n) => { G = n ? GEO.narrow : GEO.wide; layout(); draw(); });
+  root.append(el('div', { class: 'w-stage', style: { maxWidth: '560px' } }, S_));
   const stats = el('div', { class: 'w-stats' });
   const log = el('div', { class: 'w-log', 'aria-live': 'polite' });
   root.append(stats, log);
@@ -99,14 +112,15 @@ SD.widget('stock-exchange', function (root, ctx) {
     gRows.innerHTML = ''; gOrd.innerHTML = '';
     const bb = best(bids, true), ba = best(asks, false);
     const mid = bb !== null && ba !== null ? Math.round((bb + ba) / 2 / TICK) * TICK : bb ?? ba ?? 10000;
+    const { LEVELS, RH, Y0, W, PX, BW, fs } = G;
     const top = mid + Math.floor(LEVELS / 2) * TICK;
     for (let i = 0; i < LEVELS; i++) {
       const p = top - i * TICK, y = Y0 + i * RH;
       const isLast = last && last.px === p;
       const row = svg('g', { style: 'cursor:pointer' });
       row.append(svg('rect', { x: 2, y, width: W - 4, height: RH - 3, rx: 5, fill: p === price && type === 'limit' ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'transparent' }),
-        svg('rect', { x: PX - 36, y, width: 72, height: RH - 3, rx: 5, fill: isLast ? 'color-mix(in srgb, var(--accent) 35%, var(--surface))' : 'var(--surface-2)', stroke: 'var(--border)' }),
-        svg('text', { x: PX, y: y + 17, 'text-anchor': 'middle', style: 'font:600 13.5px var(--mono)', fill: p === bb ? 'var(--ok)' : p === ba ? 'var(--err)' : 'var(--text)', text: money(p) }));
+        svg('rect', { x: PX - BW / 2, y, width: BW, height: RH - 3, rx: 5, fill: isLast ? 'color-mix(in srgb, var(--accent) 35%, var(--surface))' : 'var(--surface-2)', stroke: 'var(--border)' }),
+        svg('text', { x: PX, y: y + RH / 2 + fs * 0.35, 'text-anchor': 'middle', style: `font:600 ${fs}px var(--mono)`, fill: p === bb ? 'var(--ok)' : p === ba ? 'var(--err)' : 'var(--text)', text: money(p) }));
       row.addEventListener('click', () => { price = p; if (type === 'market') typeBtns[0].click(); paintPrice(); draw(); });
       gRows.append(row);
       drawLevel(bids.get(p) || [], y, -1); drawLevel(asks.get(p) || [], y, 1);
@@ -116,18 +130,19 @@ SD.widget('stock-exchange', function (root, ctx) {
       .forEach(([k, v]) => stats.append(el('span', { class: 'w-stat', html: `${k}: <b>${v}</b>` })));
   }
   function drawLevel(level, y, dir) {
+    const { BID_R, ASK_L, AREA, RH, W, fq } = G;
     let x = dir < 0 ? BID_R : ASK_L, used = 0, hidden = 0;
     level.forEach((o) => {
-      const w = Math.max(30, Math.min(110, 18 + o.qty * 0.32));
+      const w = Math.max(G.wMin, Math.min(G.wMax, 18 + o.qty * G.wK));
       if (used + w > AREA) { hidden++; return; }
       const f = flash.get(o.id) || 0;
       const c = dir < 0 ? 'var(--ok)' : 'var(--err)';
       const bx = dir < 0 ? x - w : x;
       gOrd.append(svg('rect', { x: bx, y: y + 1, width: w - 3, height: RH - 5, rx: 4, fill: `color-mix(in srgb, ${c} ${22 + Math.round(f * 50)}%, var(--surface))`, stroke: f > 0.05 ? 'var(--accent)' : c, 'stroke-width': f > 0.05 ? 2 : 1 }),
-        svg('text', { x: bx + (w - 3) / 2, y: y + 16, 'text-anchor': 'middle', style: 'font:600 12.5px var(--mono)', fill: 'var(--text)', text: o.qty }));
+        svg('text', { x: bx + (w - 3) / 2, y: y + RH / 2 + fq * 0.3, 'text-anchor': 'middle', style: `font:600 ${fq}px var(--mono)`, fill: 'var(--text)', text: o.qty }));
       x += dir * w; used += w;
     });
-    if (hidden) gOrd.append(svg('text', { x: dir < 0 ? 4 : W - 4, y: y + 16, 'text-anchor': dir < 0 ? 'start' : 'end', style: 'font:700 12px var(--mono)', fill: 'var(--text-3)', text: '+' + hidden }));
+    if (hidden) gOrd.append(svg('text', { x: dir < 0 ? 2 : W - 2, y: y + RH / 2 + fq * 0.3, 'text-anchor': dir < 0 ? 'start' : 'end', style: `font:700 ${fq}px var(--mono)`, fill: 'var(--text-3)', text: '+' + hidden }));
   }
 
   reset(); draw();

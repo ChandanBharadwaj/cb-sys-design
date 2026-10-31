@@ -237,9 +237,9 @@ SD.register({
     intro: 'Pick a merge model and a document type. Load and timing numbers are rough <em>estimates</em>.',
     controls: [
       { id: 'model', label: 'Merge model', type: 'seg', value: 'ot', options: [
-        { v: 'ot', l: 'OT on a central server' }, { v: 'crdt', l: 'CRDT (Yjs / Automerge)' }, { v: 'lww', l: 'LWW per property (Figma)' }] },
+        { v: 'lww', l: 'LWW per property (Figma)' }, { v: 'ot', l: 'OT on a central server' }, { v: 'crdt', l: 'CRDT (Yjs / Automerge)' }] },
       { id: 'doc', label: 'Document type', type: 'seg', value: 'text', options: [
-        { v: 'text', l: 'Rich text' }, { v: 'canvas', l: 'Design canvas (objects)' }] },
+        { v: 'canvas', l: 'Design canvas (objects)' }, { v: 'text', l: 'Rich text' }] },
       { id: 'snap', label: 'Snapshot every', type: 'range', min: 100, max: 20000, step: 100, value: 1000, fmt: (v) => SD.fmt.num(v) + ' ops' },
       { id: 'hz', label: 'Presence rate', type: 'range', min: 1, max: 30, step: 1, value: 10, unit: 'Hz' },
       { id: 'eds', label: 'Editors in the doc', type: 'range', min: 2, max: 200, step: 1, value: 8 }
@@ -276,7 +276,8 @@ SD.register({
       else if (s.model === 'lww') verdict = '✅ <b>Figma\'s design:</b> one process per doc, server-ordered, last-writer-wins per property.';
       else if (s.model === 'ot' && text) verdict = '✅ <b>Google Docs-style:</b> a central server orders and transforms ops. Simple clients, but offline and P2P are hard.';
       else if (s.model === 'crdt' && text) verdict = '✅ <b>Yjs / Automerge-style:</b> converges in any order, works offline and peer-to-peer. Watch metadata growth.';
-      else verdict = '👍 <b>Works, but heavier than needed</b> for independent object properties. LWW per property is simpler.';
+      else if (s.model === 'ot') verdict = '👍 <b>Works, but transforms are overkill here:</b> canvas objects have independent properties, so a server-ordered LWW per property gives the same result with far simpler code.';
+      else verdict = '👍 <b>Works and merges offline</b>, but per-object CRDT ids and history are more than independent properties need. Pick it only if you need offline or peer-to-peer; otherwise LWW per property is simpler.';
       const sub = { ot: 'OT · transform vs history', crdt: 'relay · merge CRDT updates', lww: 'orders · LWW per property' }[s.model];
       return {
         metrics, verdict, notes,

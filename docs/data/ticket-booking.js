@@ -11,7 +11,7 @@ SD.register({
     numbers: [
       { v: '3.5B', l: 'system requests in the Eras Tour presale, 4× Ticketmaster\'s previous peak (Nov 2022)' },
       { v: '3.5M', l: 'Verified Fan registrations for that sale: 1.5M invited, 2M wait-listed' },
-      { v: '~3×', l: 'the most bot traffic Ticketmaster had ever seen (Live Nation testimony to the US Senate, 2023)' }
+      { v: '~3×', l: 'bot traffic vs. any earlier Ticketmaster sale, as Live Nation told the US Senate (2023)' }
     ]
   },
 
@@ -218,7 +218,7 @@ SD.register({
       steps: [
         { text: 'The card is declined. The saga runs the <b>compensating step</b> for the hold: release the seats.', flow: ['api>saga', 'saga>pay'], err: ['pay'], badges: { pay: ['declined', 'err'] }, tone: 'err' },
         { text: '<code>UPDATE seats SET status=\'AVAILABLE\', hold_id=NULL WHERE hold_id=?</code>. The seats are back on the map within seconds.', flow: ['saga>inv', 'inv>pg', 'inv>hold'], badges: { pg: 'released' } },
-        { text: 'Another fan simply walked away. Their hold is still there, so the <b>sweeper</b> releases holds past <code>hold_until</code> in small <code>FOR UPDATE SKIP LOCKED</code> batches. (Holds also count as free once expired, so the sweeper is only cleanup.)', flow: ['sweep>pg'], badges: { sweep: '312 expired' }, warn: ['sweep'] },
+        { text: 'Another fan walked away. The <b>sweeper</b> frees holds past <code>hold_until</code> in small <code>SKIP LOCKED</code> batches. Expired holds already count as free, so this is only cleanup.', flow: ['sweep>pg'], badges: { sweep: '312 expired' }, warn: ['sweep'] },
         { text: 'Edge case: the payment succeeds <b>after</b> the hold expired and the seat was resold. The confirm UPDATE matches 0 rows, so the saga <b>voids or refunds</b> the payment instead of selling a seat twice.', flow: ['saga>inv', 'inv>pg', 'saga>pay'], badges: { pay: ['refund', 'warn'] }, tone: 'ok' }
       ]
     },
@@ -265,8 +265,8 @@ SD.register({
         { k: 'Origin load', v: SD.fmt.num(rps) + ' req/s (' + Math.round(load * 100) + '% of capacity)', s: load < 0.6 ? 0.9 : load < 1 ? 0.55 : 0.05 },
         { k: 'Double-sell risk', v: cc.ds, s: cc.dss },
         { k: 'Losing clicks', v: cc.cont, s: cc.cs },
-        { k: 'Seats locked by abandoned carts', v: SD.fmt.num(held) + ' (' + Math.round(held / seats * 100) + '% of inventory)', s: held / seats < 0.15 ? 0.9 : held / seats < 0.35 ? 0.55 : 0.2 },
-        { k: 'Checkouts finished in time', v: Math.round(complete * 100) + '%', s: complete },
+        { k: 'Seats locked by abandoned carts', v: SD.fmt.num(held) + ' (' + Math.round(held / seats * 100) + '% of inventory)', s: held / seats < 0.15 ? 0.9 : held / seats < 0.35 ? 0.55 : 0.2, hint: '10% of admitted users abandon a 2.5-seat hold (estimate)' },
+        { k: 'Checkouts finished in time', v: Math.round(complete * 100) + '%', s: complete, hint: 'checkout time ~ exponential, mean 2.5 min (estimate)' },
         { k: 'Failure handling', v: s.saga === 'orch' ? 'one state machine; stuck orders are queryable' : 'services react to events; harder to trace', s: s.saga === 'orch' ? 0.85 : 0.6 },
         { k: 'Fairness', v: s.wr === 'on' ? 'random pre-queue, then FIFO' : 'fastest client wins (bots)', s: s.wr === 'on' ? 0.85 : hot ? 0.1 : 0.5 }
       ];
@@ -285,7 +285,8 @@ SD.register({
       else if (s.ttl <= 2) verdict = '⚠ <b>Holds are too short</b> for real checkouts; many buyers lose seats mid-payment.';
       else if (s.ttl >= 15 && hot) verdict = '⚠ <b>Phantom sell-out:</b> abandoned holds lock a big share of seats. Use 5–10 minutes.';
       else if (s.cc === 'redis' && s.wr === 'on') verdict = '✅ <b>Built for flash sales:</b> queue at the edge, atomic Redis holds for the stampede, and a conditional UPDATE in Postgres as the source of truth.';
-      else if (s.cc === 'cond' && s.wr === 'on') verdict = '✅ <b>Simple and correct:</b> waiting room + one conditional UPDATE per transition + an orchestrated saga. A strong interview answer.';
+      else if (s.cc === 'cond' && s.wr === 'on' && s.saga === 'orch') verdict = '✅ <b>Simple and correct:</b> waiting room + one conditional UPDATE per transition + an orchestrated saga. A strong interview answer.';
+      else if (s.cc === 'cond' && s.wr === 'on') verdict = '👍 <b>Correct, harder to operate:</b> choreography works, but a stuck order (paid, never confirmed) has no single owner to time it out. Orchestrate the money path.';
       else verdict = '👍 Works. Check the meters to see which trade-off you are paying for.';
       const labels = {
         inv: { label: 'Inventory service', sub: cc.sub },
@@ -318,7 +319,8 @@ SD.register({
       { when: 'Queue-it docs', who: 'Queue-it', title: 'Pre-queue randomization, then FIFO', text: 'Visitors who arrive before the sale wait without a position. At sale start everyone in the pre-queue gets a <b>random</b> place; later arrivals queue FIFO. Outflow is set in visitors per minute and can change live; users return with a <b>signed token</b>.', src: 1 },
       { when: 'by 2022', who: 'SeatGeek', title: 'Own virtual waiting room', text: 'SeatGeek replaced a third-party queue with its own, on <b>AWS Lambda + DynamoDB</b> for queue state, with token validation and routing at the <b>Fastly</b> edge to cut origin load and latency.', src: 2 },
       { when: 'Nov 15, 2022', who: 'Ticketmaster', title: 'Eras Tour presale', text: '<b>3.5M</b> fans registered for Verified Fan; <b>1.5M</b> were invited and 2M wait-listed. Bots and fans without codes drove <b>3.5B system requests</b>, 4× the previous peak. Over 2M tickets still sold that day; Ticketmaster said about 15% of interactions had issues, and the general on-sale was cancelled.', src: 3 },
-      { when: 'Jan 2023', who: 'Live Nation', title: 'Senate testimony', text: 'Live Nation\'s president said the presale saw <b>three times</b> more bot traffic than Ticketmaster had ever experienced and, for the first time in some 400 Verified Fan sales, bots attacked the Verified Fan servers themselves. The company had to slow and pause the sale.', src: 4 }
+      { when: 'Jan 2023', who: 'Live Nation', title: 'Senate testimony', text: 'Live Nation\'s president said the presale saw <b>three times</b> more bot traffic than Ticketmaster had ever experienced and, for the first time in some 400 Verified Fan sales, bots attacked the Verified Fan servers themselves. The company had to slow and pause the sale.', src: 4 },
+      { when: 'Sep 2025', who: 'FTC', title: 'Ticket limits that did not hold', text: 'The FTC and seven states sued Live Nation and Ticketmaster, <b>alleging</b> that brokers routinely beat per-customer ticket limits with <b>thousands of accounts and proxy IPs</b>. The case is pending; the engineering lesson is that a limit keyed only on account id is easy to evade.', src: 8 }
     ],
     lessons: [
       '<span><b>Shape demand before it arrives</b>: pre-registration, codes and randomized pre-queues.</span>',
@@ -334,7 +336,8 @@ SD.register({
       { title: 'Here\'s how Ticketmaster explained the Taylor Swift tour debacle to Congress', url: 'https://www.semafor.com/article/01/24/2023/heres-how-ticketmaster-explained-the-taylor-swift-tour-debacle-to-congress', pub: 'Semafor, 2023' },
       { title: 'How SeatGeek successfully handles high-demand ticket sales (slides)', url: 'https://archive.qconlondon.com/system/files/presentation-slides/qcon_london_seatgeek.pdf', pub: 'QCon London' },
       { title: 'Ticketmaster extends presale period for Taylor Swift Eras tour', url: 'https://www.cnbc.com/2022/11/15/taylor-swift-eras-tour-presale-extended-by-ticketmaster.html', pub: 'CNBC, 2022' },
-      { title: 'Postgres 9.5 feature highlight: SKIP LOCKED for row-level locking', url: 'https://paquier.xyz/postgresql-2/postgres-9-5-feature-highlight-skip-locked-row-level/', pub: 'Michael Paquier' }
+      { title: 'Postgres 9.5 feature highlight: SKIP LOCKED for row-level locking', url: 'https://paquier.xyz/postgresql-2/postgres-9-5-feature-highlight-skip-locked-row-level/', pub: 'Michael Paquier' },
+      { title: 'FTC sues Live Nation and Ticketmaster for illegal ticket resale tactics and deceiving artists and consumers about price and ticket limits', url: 'https://www.ftc.gov/news-events/news/press-releases/2025/09/ftc-sues-live-nation-ticketmaster-engaging-illegal-ticket-resale-tactics-deceiving-artists-consumers', pub: 'FTC press release, Sep 2025' }
     ]
   },
 
@@ -352,7 +355,7 @@ SD.register({
   failures: [
     { f: 'Double sale', detect: 'Two SOLD tickets for one seat (reconciliation job)', fix: 'Single conditional UPDATE per transition; unique (event, seat) on tickets; confirm only WHERE hold_id matches.' },
     { f: 'Origin overload at on-sale', detect: 'Error rate, p99, DB connections', fix: 'Waiting room with a tested outflow; lower outflow live; serve the seat map from cache.' },
-    { f: 'Bots take inventory', detect: 'Velocity per account / card / device', fix: 'Pre-registration codes, edge bot scoring, per-account limits, signed queue tokens bound to the visitor.' },
+    { f: 'Bots take inventory', detect: 'Velocity per account / card / device', fix: 'Pre-registration codes, edge bot scoring, limits per card / phone / device (not just per account), signed queue tokens bound to the visitor.' },
     { f: 'Holds never released', detect: 'Count of HELD past hold_until', fix: 'Treat expired holds as available in the hold query; sweeper with SKIP LOCKED batches.' },
     { f: 'Paid but hold expired', detect: 'Confirm UPDATE returns 0 rows', fix: 'Saga voids the authorization or refunds; try equivalent seats first if policy allows.' },
     { f: 'Duplicate checkout clicks', detect: 'Same idempotency key twice', fix: 'Unique idempotency key on holds and orders; return the stored result.' },
@@ -366,7 +369,7 @@ SD.register({
     { q: 'How do you implement hold expiry?', a: '<p>Store <code>hold_until</code> on the seat. Make the hold query treat <code>status=\'HELD\' AND hold_until &lt; now()</code> as available, so correctness never depends on a timer. A sweeper then resets expired holds in small batches with <code>FOR UPDATE SKIP LOCKED</code> so several workers do not block each other. With Redis holds, the key TTL (<code>PX</code>) does it.</p>', lvl: 'core' },
     { q: 'How do you make booking idempotent?', a: '<p>The client sends an <b>idempotency key</b> per hold and per order. Store it with a unique constraint; a retry returns the stored result instead of creating a second hold or charge. Pass the order\'s key to the PSP too, so a retried authorization is not charged twice.</p>', lvl: 'core' },
     { q: 'Saga or two-phase commit for seats + payment?', a: '<p>The PSP will not join your 2PC, and holding seat locks across a slow external call is exactly what you must avoid. Use a <b>saga</b>: hold (local tx) → authorize → confirm seats (local tx) → capture → issue tickets. Each step has a compensation: release seats, void authorization, refund.</p>', fu: 'Why authorize first and capture last? (So a failed confirm can void instead of refunding.)', lvl: 'deep' },
-    { q: 'How do you fight bots?', a: '<ul><li>Pre-registration with screened accounts and unique codes (Verified Fan).</li><li>Randomized pre-queue so speed at 10:00:00 does not matter.</li><li>Edge bot scoring, device and IP rate limits, CAPTCHA on suspicion.</li><li>Queue tokens bound to the visitor and short-lived; per-account ticket limits.</li></ul>', lvl: 'core' },
+    { q: 'How do you fight bots?', a: '<ul><li>Pre-registration with screened accounts and unique codes (Verified Fan).</li><li>Randomized pre-queue so speed at 10:00:00 does not matter.</li><li>Edge bot scoring, device and IP rate limits, CAPTCHA on suspicion.</li><li>Queue tokens bound to the visitor and short-lived.</li><li>Ticket limits keyed on <b>more than the account</b>: payment card, verified phone, device. Brokers beat account-only limits with thousands of accounts (the 2025 FTC complaint alleges exactly this).</li></ul>', fu: 'Why is a per-account limit not enough?', lvl: 'core' },
     { q: 'How do you serve the seat map to a million viewers?', a: '<p>Treat it as a <b>hint</b>: cache availability per section in Redis/CDN with a 1–2 s TTL, or push section-level deltas. The hold request is the real check. Never read the seat table for every map render.</p>', lvl: 'core' },
     { q: 'What if payment succeeds after the hold expired?', a: '<p>The confirm UPDATE matches 0 rows because the seat moved on. The saga must <b>void or refund</b>, and can offer equivalent seats. Authorize-then-capture keeps this cheap: you void an authorization instead of refunding a capture.</p>', lvl: 'deep' },
     { q: 'FIFO or randomized queue: which is fairer?', a: '<p>For a scheduled on-sale, pure FIFO rewards whoever refreshed fastest at the exact second, which favours scripts and fast connections. Randomizing everyone who arrived before the start, then FIFO for later arrivals, is what Queue-it describes. For unplanned spikes, plain FIFO is fine.</p>', lvl: 'core' },

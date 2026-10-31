@@ -2,9 +2,22 @@
    offline sync from cursor, and dedup of retried sends by client_msg_id. */
 SD.widget('chat', function (root, ctx) {
   const { el, svg } = ctx;
-  const W = 500, ROWS = 6, RH = 34, TOP = 52, H = TOP + ROWS * RH + 6;
-  const XA = 50, XS = 165, RX = { Bob: 290, Carol: 372, Dan: 454 };
-  const NAMES = Object.keys(RX);
+  // two layouts: desktop (500 wide, 6 rows) and phone (360 wide, 5 rows, bigger text)
+  const NAMES = ['Bob', 'Carol', 'Dan'];
+  let W, ROWS, RH, TOP, H, XA, XS, RX, AX, AW, SW, F;
+  function layout(narrow) {
+    if (narrow) {
+      W = 360; ROWS = 5; RH = 38; TOP = 56; XA = 42; XS = 122; AX = 4; AW = 78; SW = 46;
+      RX = { Bob: 200, Carol: 264, Dan: 326 };
+      F = { head: 15, sub: 13, msg: 15, tick: 16, seq: 15, cell: 13, dot: 30 };
+    } else {
+      W = 500; ROWS = 6; RH = 34; TOP = 52; XA = 50; XS = 165; AX = 6; AW = 88; SW = 52;
+      RX = { Bob: 290, Carol: 372, Dan: 454 };
+      F = { head: 14, sub: 11, msg: 13, tick: 14, seq: 13, cell: 12, dot: 26 };
+    }
+    H = TOP + ROWS * RH + 6;
+  }
+  layout(ctx.narrow);
   const D = (ms) => (ctx.reduced ? 0 : ms);
 
   let clock = 0, seq = 0, nMsg = 0, jitter = true, loseAck = false, dups = 0, held = 0;
@@ -32,7 +45,7 @@ SD.widget('chat', function (root, ctx) {
   root.append(el('div', { class: 'w-controls' }, sendBtn, burstBtn, jitBtn, ackBtn), el('div', { class: 'w-controls' }, memBtns, readBtn, resetBtn));
   paintBtns();
 
-  const S_ = svg('svg', { viewBox: `0 0 ${W} ${H}`, style: 'max-width:720px;margin:0 auto;', role: 'img', 'aria-label': 'Message sequence with per-recipient delivery state' });
+  const S_ = svg('svg', { style: 'max-width:720px;margin:0 auto;', role: 'img', 'aria-label': 'Message sequence with per-recipient delivery state' });
   const gHead = svg('g'), gRows = svg('g'), gPk = svg('g');
   S_.append(gHead, gRows, gPk);
   root.append(el('div', { class: 'w-stage' }, S_));
@@ -42,13 +55,19 @@ SD.widget('chat', function (root, ctx) {
   const T = (x, y, text, o) => svg('text', Object.assign({ x, y, 'text-anchor': 'middle', fill: 'var(--text)', style: 'font:600 13px var(--sans)', text }, o || {}));
 
   // header
-  [['Alice', XA], ['Server', XS]].concat(NAMES.map((n) => [n, RX[n]])).forEach(([n, x]) => {
-    gHead.append(T(x, 18, n, { style: 'font:700 14px var(--sans)' }));
-    gHead.append(svg('line', { x1: x, x2: x, y1: 26, y2: H - 4, stroke: 'var(--border)', 'stroke-dasharray': '3 4' }));
-  });
   const dots = {};
-  NAMES.forEach((n) => { dots[n] = svg('circle', { cx: RX[n] - 26, cy: 14, r: 4 }); gHead.append(dots[n]); });
-  gHead.append(T(XS, 36, 'assigns seq', { fill: 'var(--text-3)', style: 'font:500 11px var(--sans)' }));
+  function drawHead() {
+    S_.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    gHead.innerHTML = '';
+    [['Alice', XA], ['Server', XS]].concat(NAMES.map((n) => [n, RX[n]])).forEach(([n, x]) => {
+      gHead.append(T(x, 18, n, { style: `font:700 ${F.head}px var(--sans)` }));
+      gHead.append(svg('line', { x1: x, x2: x, y1: 26, y2: H - 4, stroke: 'var(--border)', 'stroke-dasharray': '3 4' }));
+    });
+    NAMES.forEach((n) => { dots[n] = svg('circle', { cx: RX[n] - F.dot, cy: 13, r: 4 }); gHead.append(dots[n]); });
+    gHead.append(T(XS, 38, 'assigns seq', { fill: 'var(--text-3)', style: `font:500 ${F.sub}px var(--sans)` }));
+  }
+  drawHead();
+  ctx.onResize((n) => { layout(n); drawHead(); render(); });
 
   // ---- protocol ----
   function send(k) {
@@ -119,29 +138,33 @@ SD.widget('chat', function (root, ctx) {
       const y = TOP + i * RH + RH / 2;
       const tk = ticks(m);
       const blue = tk === '✓✓ read';
-      gRows.append(svg('rect', { x: 6, y: y - 12, width: 88, height: 24, rx: 8, fill: 'color-mix(in srgb, var(--accent) 16%, var(--surface))', stroke: 'var(--border)' }));
-      gRows.append(T(28, y + 5, 'm' + m.n, { style: 'font:700 13px var(--mono)' }));
-      gRows.append(T(66, y + 5, tk === '✓✓ read' ? '✓✓' : tk, { fill: blue ? 'var(--accent)' : tk === '…' || tk === 'retrying…' ? 'var(--text-3)' : 'var(--ok)', style: `font:700 ${tk.length > 3 ? 10 : 14}px var(--sans)` }));
+      const aR = AX + AW, sL = XS - SW / 2, h2 = RH / 2 - 5;
+      gRows.append(svg('rect', { x: AX, y: y - h2, width: AW, height: h2 * 2, rx: 8, fill: 'color-mix(in srgb, var(--accent) 16%, var(--surface))', stroke: 'var(--border)' }));
+      gRows.append(T(AX + AW * 0.27, y + 5, 'm' + m.n, { style: `font:700 ${F.msg}px var(--mono)` }));
+      // the long "retrying…" label only fits on desktop; phones show ↻
+      const tkTxt = tk === '✓✓ read' ? '✓✓' : tk === 'retrying…' && ctx.narrow ? '↻' : tk;
+      gRows.append(T(AX + AW * 0.7, y + 5, tkTxt, { fill: blue ? 'var(--accent)' : tk === '…' || tk === 'retrying…' ? 'var(--text-3)' : 'var(--ok)', style: `font:700 ${tkTxt.length > 3 ? 10 : F.tick}px var(--sans)` }));
       if (m.seq) {
-        gRows.append(svg('rect', { x: XS - 26, y: y - 11, width: 52, height: 22, rx: 6, fill: 'var(--surface)', stroke: 'var(--accent)' }));
-        gRows.append(T(XS, y + 5, '#' + m.seq, { style: 'font:700 13px var(--mono)' }));
+        gRows.append(svg('rect', { x: sL, y: y - h2 + 1, width: SW, height: h2 * 2 - 2, rx: 6, fill: 'var(--surface)', stroke: 'var(--accent)' }));
+        gRows.append(T(XS, y + 5, '#' + m.seq, { style: `font:700 ${F.seq}px var(--mono)` }));
       }
-      if (m.retry && m.retry.done) gRows.append(T(XS + 46, y + 5, 'dup', { fill: 'var(--warn)', style: 'font:700 12px var(--sans)' }));
+      if (m.retry && m.retry.done) gRows.append(T(XS + SW / 2 + 20, y + 5, 'dup', { fill: 'var(--warn)', style: `font:700 ${F.cell}px var(--sans)` }));
       // uplinks
-      if (!m.srvDone && clock >= m.t0) gPk.append(svg('circle', { cx: lerp(XA + 44, XS - 26, (clock - m.t0) / Math.max(1, m.up)), cy: y, r: 5, fill: 'var(--accent)' }));
-      if (m.retry && m.retry.sent && !m.retry.done) gPk.append(svg('circle', { cx: lerp(XA + 44, XS - 26, (clock - m.retry.t0) / Math.max(1, D(380))), cy: y, r: 5, fill: 'var(--warn)' }));
-      if (m.ackAt != null && !m.ack) gPk.append(svg('circle', { cx: lerp(XS - 26, XA + 44, 1 - (m.ackAt - clock) / 300), cy: y, r: 4, fill: 'var(--ok)' }));
+      if (!m.srvDone && clock >= m.t0) gPk.append(svg('circle', { cx: lerp(aR, sL, (clock - m.t0) / Math.max(1, m.up)), cy: y, r: 5, fill: 'var(--accent)' }));
+      if (m.retry && m.retry.sent && !m.retry.done) gPk.append(svg('circle', { cx: lerp(aR, sL, (clock - m.retry.t0) / Math.max(1, D(380))), cy: y, r: 5, fill: 'var(--warn)' }));
+      if (m.ackAt != null && !m.ack) gPk.append(svg('circle', { cx: lerp(sL, aR, 1 - (m.ackAt - clock) / 300), cy: y, r: 4, fill: 'var(--ok)' }));
       if (!m.seq) return;
       NAMES.forEach((n) => {
         const r = m.r[n], x = RX[n];
         if (r.state === 'fly') {
           const start = Math.max(m.srvAt, r.arriveAt - D(1800));
-          gPk.append(svg('circle', { cx: lerp(XS + 26, x - 18, (clock - start) / Math.max(1, r.arriveAt - start)), cy: y, r: 4.5, fill: 'var(--accent)', opacity: 0.85 }));
+          gPk.append(svg('circle', { cx: lerp(XS + SW / 2, x - 18, (clock - start) / Math.max(1, r.arriveAt - start)), cy: y, r: 4.5, fill: 'var(--accent)', opacity: 0.85 }));
           return;
         }
         const style = { shown: ['var(--ok)', '#' + m.seq], held: ['var(--warn)', 'held'], queued: ['var(--text-3)', '🔔'] }[r.state];
-        gRows.append(svg('rect', { x: x - 18, y: y - 11, width: 36, height: 22, rx: 6, fill: `color-mix(in srgb, ${style[0]} 22%, var(--surface))`, stroke: style[0] }));
-        gRows.append(T(x, y + 5, style[1], { style: 'font:700 12px var(--mono)' }));
+        const bw = ctx.narrow ? 40 : 36;
+        gRows.append(svg('rect', { x: x - bw / 2, y: y - h2 + 1, width: bw, height: h2 * 2 - 2, rx: 6, fill: `color-mix(in srgb, ${style[0]} 22%, var(--surface))`, stroke: style[0] }));
+        gRows.append(T(x, y + 5, style[1], { style: `font:700 ${F.cell}px var(--mono)` }));
       });
     });
     stats.innerHTML = '';

@@ -1,10 +1,15 @@
 /* ABR player simulation: throughput-based vs buffer-based (BBA-0) rate selection. */
 SD.widget('video-streaming', function (root, ctx) {
   const { el, svg } = ctx;
-  const W = 420, H = 262;
+  // desktop: 420-wide viewBox; phone: 360-wide, bigger text, fewer bars, "next/net" moved into HTML stats
+  const LAYOUT = {
+    wide: { W: 420, H: 262, X0: 44, X1: 412, CT: 18, CB: 150, NBAR: 32, by: 186, f: 11.5, fStat: 12.5, minLbl: 1050 },
+    narrow: { W: 360, H: 266, X0: 42, X1: 354, CT: 26, CB: 150, NBAR: 20, by: 196, f: 13.5, fStat: 15, minLbl: 1750 }
+  };
+  let L, W, H, X0, X1, CT, CB, NBAR, BW;
+  const YMAX = 8000;
   const LADDER = [235, 560, 1050, 1750, 3000, 4300, 5800]; // kbps, an illustrative fixed ladder
   const SEG = 4, MAXBUF = 30, RES = 5, CUSH = 15, SPEED = 4, LAT = 0.08; // seconds (simulated)
-  const X0 = 44, X1 = 412, CT = 18, CB = 150, NBAR = 32, BW = (X1 - X0) / NBAR, YMAX = 8000;
 
   let algo = 'tput', bwSet = 5000, playing = false;
   let st;
@@ -22,7 +27,7 @@ SD.widget('video-streaming', function (root, ctx) {
   bwIn.addEventListener('input', () => { bwSet = +bwIn.value; bwOut.textContent = (bwSet / 1000).toFixed(1) + ' Mbps'; });
   root.append(el('div', { class: 'w-controls' }, playBtn, algoBtn, dropBtn, resetBtn, el('label', null, 'Bandwidth ', bwOut, bwIn)));
 
-  const S = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Segments by bitrate, bandwidth and buffer level', style: 'max-width:560px;margin:0 auto' });
+  const S = svg('svg', { role: 'img', 'aria-label': 'Segments by bitrate, bandwidth and buffer level', style: 'max-width:560px;margin:0 auto' });
   const gGrid = svg('g'), gBars = svg('g'), gLine = svg('g'), gBuf = svg('g');
   S.append(gGrid, gBars, gLine, gBuf);
   root.append(el('div', { class: 'w-stage' }, S));
@@ -30,18 +35,25 @@ SD.widget('video-streaming', function (root, ctx) {
   const log = el('div', { class: 'w-log', 'aria-live': 'polite' });
   root.append(stats, log);
   const say = (t) => { log.prepend(el('div', { html: t })); while (log.children.length > 30) log.lastChild.remove(); };
-  const T = (x, y, text, o) => svg('text', Object.assign({ x, y, text, fill: 'var(--text-3)', style: 'font:500 11.5px var(--mono)' }, o || {}));
+  const T = (x, y, text, o) => svg('text', Object.assign({ x, y, text, fill: 'var(--text-3)', style: `font:500 ${L.f}px var(--mono)` }, o || {}));
   const yOf = (kbps) => CB - (Math.min(kbps, YMAX) / YMAX) * (CB - CT);
   const rungColor = (r) => `color-mix(in srgb, var(--accent) ${25 + 75 * LADDER.indexOf(r) / (LADDER.length - 1)}%, var(--surface))`;
 
-  // static grid: ladder rungs
-  LADDER.forEach((r) => {
-    gGrid.append(svg('line', { x1: X0, x2: X1, y1: yOf(r), y2: yOf(r), stroke: 'var(--border)', 'stroke-dasharray': '2 4' }));
-    if (r >= 1050) gGrid.append(T(X0 - 4, yOf(r) + 3.5, String(r), { 'text-anchor': 'end' }));
-  });
-  gGrid.append(T(4, CT - 6, 'kbps', { 'text-anchor': 'start' }));
-  gGrid.append(svg('line', { x1: X0, x2: X1, y1: CB, y2: CB, stroke: 'var(--text-3)' }));
-  gGrid.append(T(X1, CB + 13, 'segments →', { 'text-anchor': 'end' }));
+  // static grid: ladder rungs (rebuilt when the layout changes)
+  function layout(narrow) {
+    L = narrow ? LAYOUT.narrow : LAYOUT.wide;
+    ({ W, H, X0, X1, CT, CB, NBAR } = L); BW = (X1 - X0) / NBAR;
+    S.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    gGrid.innerHTML = '';
+    LADDER.forEach((r) => {
+      gGrid.append(svg('line', { x1: X0, x2: X1, y1: yOf(r), y2: yOf(r), stroke: 'var(--border)', 'stroke-dasharray': '2 4' }));
+      if (r >= L.minLbl) gGrid.append(T(X0 - 4, yOf(r) + L.f * 0.3, String(r), { 'text-anchor': 'end' }));
+    });
+    gGrid.append(T(4, CT - 6, 'kbps', { 'text-anchor': 'start' }));
+    gGrid.append(svg('line', { x1: X0, x2: X1, y1: CB, y2: CB, stroke: 'var(--text-3)' }));
+    gGrid.append(T(X1, CB + L.f + 1.5, 'segments →', { 'text-anchor': 'end' }));
+  }
+  layout(ctx.narrow);
 
   /* ---------- ABR logic ---------- */
   function harmonic(xs) { return xs.length / xs.reduce((s, x) => s + 1 / x, 0); }
@@ -115,9 +127,9 @@ SD.widget('video-streaming', function (root, ctx) {
     if (pts.length > 1) gLine.append(svg('polyline', { points: pts.join(' '), fill: 'none', stroke: 'var(--warn)', 'stroke-width': 2 }));
     gLine.append(T(X1, CT - 6, '— measured throughput', { 'text-anchor': 'end', fill: 'var(--warn)' }));
     // buffer bar
-    const by = 186, bx = X0, bw = X1 - X0;
+    const by = L.by, bx = X0, bw = X1 - X0, narrow = L === LAYOUT.narrow;
     const fx = (s) => bx + bw * Math.min(s, MAXBUF) / MAXBUF;
-    gBuf.append(T(4, by + 12, 'buffer', { 'text-anchor': 'start' }));
+    gBuf.append(narrow ? T(4, by + 32, 'buffer', { 'text-anchor': 'start' }) : T(4, by + 12, 'buffer', { 'text-anchor': 'start' }));
     gBuf.append(svg('rect', { x: bx, y: by, width: bw, height: 16, rx: 8, fill: 'var(--surface-2)', stroke: 'var(--border)' }));
     const col = st.buf < RES ? 'var(--err)' : st.buf < RES + CUSH ? 'var(--warn)' : 'var(--ok)';
     gBuf.append(svg('rect', { x: bx, y: by, width: Math.max(0, fx(st.buf) - bx), height: 16, rx: 8, fill: col }));
@@ -127,11 +139,12 @@ SD.widget('video-streaming', function (root, ctx) {
     });
     gBuf.append(T(X1, by + 32, `${st.buf.toFixed(1)} s / ${MAXBUF} s`, { 'text-anchor': 'end', fill: 'var(--text-2)' }));
     const label = st.phase === 'stalled' ? '⏸ REBUFFERING' : st.phase === 'startup' ? (playing ? '… starting' : 'press Play') : '▶ playing';
-    gBuf.append(T(4, H - 14, label, { 'text-anchor': 'start', fill: st.phase === 'stalled' ? 'var(--err)' : 'var(--text)', style: 'font:700 12.5px var(--sans)' }));
-    gBuf.append(T(X1, H - 14, `next: ${st.dl ? st.dl.r : st.prev} kbps · net ≈ ${(bandwidth(st.t) / 1000).toFixed(1)} Mbps`, { 'text-anchor': 'end', fill: 'var(--text-2)', style: 'font:600 11px var(--mono)' }));
+    gBuf.append(T(4, H - 14, label, { 'text-anchor': 'start', fill: st.phase === 'stalled' ? 'var(--err)' : 'var(--text)', style: `font:700 ${L.fStat}px var(--sans)` }));
+    if (!narrow) gBuf.append(T(X1, H - 14, `next: ${st.dl ? st.dl.r : st.prev} kbps · net ≈ ${(bandwidth(st.t) / 1000).toFixed(1)} Mbps`, { 'text-anchor': 'end', fill: 'var(--text-2)', style: 'font:600 11px var(--mono)' }));
     const avg = st.segs.length ? Math.round(st.segs.reduce((a, s) => a + s.r, 0) / st.segs.length) : 0;
     stats.innerHTML = '';
     [['ABR', algo === 'tput' ? 'throughput' : 'BBA-0'], ['avg bitrate', avg + ' kbps'], ['rebuffers', st.rebuf], ['stalled', st.stallT.toFixed(1) + ' s'], ['switches', st.switches]]
+      .concat(narrow ? [['next', (st.dl ? st.dl.r : st.prev) + ' kbps'], ['net', '≈ ' + (bandwidth(st.t) / 1000).toFixed(1) + ' Mbps']] : [])
       .forEach(([k, v]) => stats.append(el('span', { class: 'w-stat', html: `${k}: <b>${v}</b>` })));
   }
 
@@ -156,6 +169,7 @@ SD.widget('video-streaming', function (root, ctx) {
   dropBtn.addEventListener('click', () => { st.dropUntil = st.t + 16; say('📉 Bandwidth falls to 20% for 16 s (tunnel, congested Wi-Fi).'); });
   resetBtn.addEventListener('click', () => { fresh(); log.innerHTML = ''; draw(); say('Reset. Try the same drop with each ABR algorithm.'); });
 
+  ctx.onResize((n) => { layout(n); draw(); });
   draw();
   say('Each 4 s segment is fetched at the rung the ABR picks. Simulated time runs at 4×.');
 });

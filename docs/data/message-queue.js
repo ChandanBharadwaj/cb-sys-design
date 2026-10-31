@@ -325,6 +325,7 @@ SD.register({
       { when: '2019', who: 'LinkedIn', title: '7 trillion messages a day', text: 'LinkedIn reports more than <b>100 clusters</b>, <b>4,000+ brokers</b>, 100,000+ topics and 7 million partitions, handling over <b>7 trillion messages per day</b>.', src: 3 },
       { when: '2024', who: 'Apache Kafka 3.9', title: 'Tiered storage production-ready', text: 'KIP-405, in development since 3.6, lets brokers move closed segments to object storage, so retention is no longer bounded by local disks.', src: 4 },
       { when: '2025', who: 'Apache Kafka 4.0', title: 'ZooKeeper removed; new group protocol GA', text: 'The first release without ZooKeeper: metadata lives in the <b>KRaft</b> Raft quorum proposed in KIP-500. It also makes the KIP-848 consumer group protocol generally available to cut rebalance pauses.', src: 5 },
+      { when: '2026', who: 'Apache Kafka 4.2', title: 'Queues for Kafka production-ready', text: '<b>Share groups</b> (KIP-932), early access in 4.0, became production-ready: several consumers can read the same partition, with <b>per-record acknowledgement</b> and delivery counts, so Kafka can serve queue-style task distribution.', src: 7 },
       { when: 'Design', who: 'Apache Pulsar', title: 'Separate serving from storage', text: 'Pulsar brokers are stateless. Data lives in Apache BookKeeper as a sequence of <b>ledgers</b> replicated across bookies, so brokers scale and fail over without moving data.', src: 6 }
     ],
     lessons: [
@@ -334,13 +335,14 @@ SD.register({
       '<span>Consumer lag is the health metric. Alert on it.</span>'
     ],
     sources: [
-      { title: 'Kafka: a Distributed Messaging System for Log Processing', url: 'https://people.csail.mit.edu/matei/courses/2015/6.S897/readings/kafka.pdf', pub: 'Kreps, Narkhede, Rao · NetDB \'11 (course mirror)' },
+      { title: 'Kafka: a Distributed Messaging System for Log Processing (listed under Kafka papers and presentations)', url: 'https://cwiki.apache.org/confluence/display/KAFKA/Kafka+papers+and+presentations', pub: 'Kreps, Narkhede, Rao · NetDB \'11, via the Apache Kafka wiki' },
       { title: 'KIP-98: Exactly Once Delivery and Transactional Messaging', url: 'https://cwiki.apache.org/confluence/display/KAFKA/KIP-98+-+Exactly+Once+Delivery+and+Transactional+Messaging', pub: 'Apache Kafka wiki' },
       { title: 'Exactly-once Semantics are Possible: Here\'s How Apache Kafka Does it', url: 'https://confluent.io/blog/exactly-once-semantics-are-possible-heres-how-apache-kafka-does-it', pub: 'Confluent, 2017' },
       { title: 'How LinkedIn customizes Apache Kafka for 7 trillion messages per day', url: 'https://engineering.linkedin.com/blog/2019/apache-kafka-trillion-messages', pub: 'LinkedIn Engineering, 2019' },
       { title: 'Apache Kafka 3.9.0 Release Announcement', url: 'https://kafka.apache.org/blog/2024/11/06/apache-kafka-3.9.0-release-announcement/', pub: 'Apache Kafka, 2024' },
       { title: 'Apache Kafka 4.0.0 Release Announcement', url: 'https://kafka.apache.org/blog/2025/03/18/apache-kafka-4.0.0-release-announcement/', pub: 'Apache Kafka, 2025' },
-      { title: 'Pulsar architecture overview', url: 'https://pulsar.apache.org/docs/concepts-architecture-overview', pub: 'Apache Pulsar docs' }
+      { title: 'Pulsar architecture overview', url: 'https://pulsar.apache.org/docs/concepts-architecture-overview', pub: 'Apache Pulsar docs' },
+      { title: 'Apache Kafka 4.2.0 Release Announcement', url: 'https://kafka.apache.org/blog/2026/02/17/apache-kafka-4.2.0-release-announcement/', pub: 'Apache Kafka, 2026' }
     ]
   },
 
@@ -377,7 +379,7 @@ SD.register({
     { q: 'At-least-once vs at-most-once: where do you commit?', a: '<p><b>At-most-once</b>: commit, then process. A crash loses the record.</p><p><b>At-least-once</b>: process, then commit. A crash replays it, so the handler must be idempotent (e.g. upsert by event id).</p><p>Disable auto-commit if you need control: auto-commit can commit before processing finishes.</p>', lvl: 'core' },
     { q: 'Why did Kafka remove ZooKeeper?', a: '<p>Metadata lived in a separate system with its own ops and scaling limits, and a new controller had to load all state from ZooKeeper on failover, slow with many partitions.</p><p><b>KRaft</b> (KIP-500) stores metadata in an internal Raft-replicated log on a controller quorum. Standby controllers already have it in memory, so failover is fast. Kafka 4.0 (2025) is KRaft-only.</p>', lvl: 'deep' },
     { q: 'Kafka vs Pulsar: what is the architectural difference?', a: '<p><b>Kafka</b>: brokers own partition data on local disks. Simple, one tier, but moving a partition copies its data.</p><p><b>Pulsar</b>: stateless brokers serve, <b>BookKeeper bookies</b> store topics as a chain of ledgers. Brokers can take over topics instantly; you run more components.</p>', lvl: 'deep' },
-    { q: 'When would you use a queue (SQS, RabbitMQ) instead of a log?', a: '<p>When you want <b>per-message</b> acknowledgement, retries and visibility timeouts for independent tasks, delayed delivery, or competing consumers without partition planning.</p><p>Use a log when you need replay, many independent readers, and ordered streams of events. Kafka 4.0 adds an early-access "share group" queue mode (KIP-932).</p>', lvl: 'core' }
+    { q: 'When would you use a queue (SQS, RabbitMQ) instead of a log?', a: '<p>When you want <b>per-message</b> acknowledgement, retries and visibility timeouts for independent tasks, delayed delivery, or competing consumers without partition planning.</p><p>Use a log when you need replay, many independent readers, and ordered streams of events. Kafka now has a queue mode too: <b>share groups</b> (KIP-932), early access in 4.0 and production-ready in 4.2 (2026), give per-record acks on a shared partition.</p>', lvl: 'core' }
   ],
 
   code: [
@@ -435,16 +437,28 @@ class OrderListener {
     },
     {
       title: 'Python: idempotent consumer (confluent-kafka)', lang: 'python',
-      code: `from confluent_kafka import Consumer
+      code: `import psycopg                                  # psycopg 3
+from confluent_kafka import Consumer
 
 c = Consumer({
     "bootstrap.servers": "kafka-1:9092",
     "group.id": "billing",
-    "enable.auto.commit": False,
+    "enable.auto.commit": False,                 # commit only after the DB commit
     "auto.offset.reset": "earliest",
     "isolation.level": "read_committed",
 })
 c.subscribe(["orders"])
+db = psycopg.connect("dbname=billing", autocommit=True)
+
+def handle(conn, event_id: str, payload: bytes) -> bool:
+    """Apply one event exactly once; False means it was a redelivery."""
+    with conn.transaction():
+        cur = conn.execute("INSERT INTO processed(event_id) VALUES (%s) "
+                           "ON CONFLICT DO NOTHING", (event_id,))
+        if cur.rowcount == 0:
+            return False                         # seen before: skip side effects
+        apply_order(conn, payload)               # business change, same transaction
+    return True
 
 while True:
     msg = c.poll(1.0)
@@ -453,13 +467,11 @@ while True:
     if msg.error():
         print("consumer error:", msg.error())
         continue
-    event_id = msg.key().decode()
-    with db.transaction():                       # your Postgres helper
-        db.execute("INSERT INTO processed(event_id) VALUES (%s) "
-                   "ON CONFLICT DO NOTHING", (event_id,))
-        # ... apply the business change in the same transaction ...
+    # the key is the partition key (e.g. order id), not unique per event
+    event_id = dict(msg.headers() or [])["event_id"].decode()
+    handle(db, event_id, msg.value())
     c.commit(message=msg, asynchronous=False)    # at-least-once`,
-      note: 'The <code>processed</code> table turns at-least-once delivery into effectively-once side effects.'
+      note: 'The <code>processed</code> row and the business change commit together, so a redelivered record is skipped. That turns at-least-once delivery into effectively-once side effects.'
     }
   ],
 

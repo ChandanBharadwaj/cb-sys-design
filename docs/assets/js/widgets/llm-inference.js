@@ -1,9 +1,14 @@
 /* KV block pool with per-sequence block tables: paged vs contiguous allocation, continuous vs static batching, preemption. */
 SD.widget('llm-inference', function (root, ctx) {
   const { el, svg } = ctx;
-  const COLS = 10, ROWS = 6, NB = COLS * ROWS, BT = 4, MAXSEQ = 12, MAXLEN = 32, HIST = 50;
-  const CW = 47, CH = 30, GAP = 2.5, GX = (500 - COLS * (CW + GAP)) / 2, GY = 8;
-  const W = 500, TY = GY + ROWS * (CH + GAP) + 26, TH = 62, H = TY + TH + 22;
+  const NB = 60, BT = 4, MAXSEQ = 12, MAXLEN = 32, HIST = 50, CH = 30, GAP = 2.5, GY = 8, TH = 62;
+  // same 60-block pool in both layouts: 10 × 6 on desktop (500 wide), 6 × 10 on phones (360 wide, bigger text)
+  let COLS, CW, GX, W, TY, H, lF, tF;
+  function geom(n) {
+    COLS = n ? 6 : 10; W = n ? 360 : 500; CW = n ? 56 : 47; lF = n ? 15 : 14; tF = n ? 14 : 15;
+    GX = (W - COLS * (CW + GAP)) / 2; TY = GY + (NB / COLS) * (CH + GAP) + 26; H = TY + TH + 22;
+  }
+  geom(ctx.narrow);
   let paged = true, cont = true, playing = !ctx.reduced, sel = null;
   let blocks, queue, running, nextId, stepN, hist, stat;
 
@@ -19,7 +24,7 @@ SD.widget('llm-inference', function (root, ctx) {
   resetBtn.addEventListener('click', reset);
   root.append(el('div', { class: 'w-controls' }, kvBtn, bBtn, playBtn, stepBtn, resetBtn));
 
-  const S_ = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'GPU KV block pool', style: 'max-width:680px;margin:0 auto' });
+  const S_ = svg('svg', { role: 'img', 'aria-label': 'GPU KV block pool', style: 'max-width:680px;margin:0 auto' });
   const defs = svg('defs', null, svg('pattern', { id: 'llmHatch', width: 6, height: 6, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' }, svg('line', { x1: 0, y1: 0, x2: 0, y2: 6, stroke: 'var(--text-3)', 'stroke-width': 1.6, opacity: 0.5 })));
   const gGrid = svg('g'), gTl = svg('g');
   S_.append(defs, gGrid, gTl);
@@ -29,20 +34,27 @@ SD.widget('llm-inference', function (root, ctx) {
   root.append(stats, log);
   const T = (x, y, t, st, a, f) => svg('text', { x, y, 'text-anchor': a || 'middle', style: st || 'font:700 14px var(--mono)', fill: f || 'var(--text)', text: t });
 
-  const cells = [];
-  for (let i = 0; i < NB; i++) {
-    const x = GX + (i % COLS) * (CW + GAP), y = GY + Math.floor(i / COLS) * (CH + GAP);
-    const bg = svg('rect', { x, y, width: CW, height: CH, rx: 5, fill: 'var(--surface-2)', stroke: 'var(--border)' });
-    const fillR = svg('rect', { x, y, width: 0, height: CH, rx: 5 });
-    const hatch = svg('rect', { x, y, width: CW, height: CH, rx: 5, fill: 'url(#llmHatch)', opacity: 0 });
-    const lab = T(x + CW / 2, y + CH / 2 + 5, '', 'font:700 14px var(--mono);paint-order:stroke;stroke:var(--surface);stroke-width:3px');
-    const g = svg('g', { style: 'cursor:pointer' }, bg, fillR, hatch, lab);
-    g.addEventListener('click', () => { const s = blocks[i].seq; sel = s; if (s) showTable(s); paint(); });
-    gGrid.append(g); cells.push({ bg, fillR, hatch, lab, x });
+  let cells = [], gBars;
+  function build() {
+    S_.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    gGrid.innerHTML = ''; gTl.innerHTML = ''; cells = [];
+    for (let i = 0; i < NB; i++) {
+      const x = GX + (i % COLS) * (CW + GAP), y = GY + Math.floor(i / COLS) * (CH + GAP);
+      const bg = svg('rect', { x, y, width: CW, height: CH, rx: 5, fill: 'var(--surface-2)', stroke: 'var(--border)' });
+      const fillR = svg('rect', { x, y, width: 0, height: CH, rx: 5 });
+      const hatch = svg('rect', { x, y, width: CW, height: CH, rx: 5, fill: 'url(#llmHatch)', opacity: 0 });
+      const lab = T(x + CW / 2, y + CH / 2 + 5, '', `font:700 ${lF}px var(--mono);paint-order:stroke;stroke:var(--surface);stroke-width:3px`);
+      const g = svg('g', { style: 'cursor:pointer' }, bg, fillR, hatch, lab);
+      g.addEventListener('click', () => { const s = blocks[i].seq; sel = s; if (s) showTable(s); paint(); });
+      gGrid.append(g); cells.push({ bg, fillR, hatch, lab, x });
+    }
+    gTl.append(T(GX, TY - 8, 'running sequences per step (max ' + MAXSEQ + ')', `font:600 ${tF}px var(--sans)`, 'start', 'var(--text-3)'),
+      svg('line', { x1: GX, x2: W - GX, y1: TY + TH, y2: TY + TH, stroke: 'var(--border)' }));
+    gBars = svg('g'); gTl.append(gBars);
   }
-  gTl.append(T(GX, TY - 8, 'running sequences per step (max ' + MAXSEQ + ')', 'font:600 15px var(--sans)', 'start', 'var(--text-3)'),
-    svg('line', { x1: GX, x2: W - GX, y1: TY + TH, y2: TY + TH, stroke: 'var(--border)' }));
-  const gBars = svg('g'); gTl.append(gBars);
+  build();
+  ctx.onResize((n) => { geom(n); build(); paint(); });
+
 
   const hue = (id) => (id * 67) % 360;
   const color = (id, a) => `hsl(${hue(id)} 65% 55% / ${a == null ? 1 : a})`;

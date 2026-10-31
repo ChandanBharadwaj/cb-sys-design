@@ -1,12 +1,18 @@
 /* Idempotency key state machine + double-entry T-accounts (every posting must net to zero). */
 SD.widget('payment-gateway', function (root, ctx) {
   const { el, svg } = ctx;
-  const W = 360, H = 388;
+  const W = 360;
+  // desktop keeps the original sizes; phones get bigger text, short account names, legend in HTML
+  const LAYOUT = {
+    wide: { H: 388, f: 12, fPill: 11.5, fChip: 10.5, fSmall: 10, fEntry: 10.5, fBal: 11.5, fSum: 12.5, top: 168, row: 15, rows: 6, short: false },
+    narrow: { H: 372, f: 14, fPill: 14, fChip: 13, fSmall: 13, fEntry: 13.5, fBal: 13.5, fSum: 14, top: 152, row: 17, rows: 5, short: true }
+  };
+  let L = ctx.narrow ? LAYOUT.narrow : LAYOUT.wide, H = L.H;
   const POINTS = ['started', 'payment_created', 'PSP call', 'finished'];
   const ACCTS = [
-    { id: 'rec', name: 'PSP receivable', type: 'asset' },
-    { id: 'mer', name: 'Merchant payable', type: 'liability' },
-    { id: 'fee', name: 'Fee revenue', type: 'revenue' }
+    { id: 'rec', name: 'PSP receivable', short: 'Receivable', type: 'asset' },
+    { id: 'mer', name: 'Merchant payable', short: 'Merchant', type: 'liability' },
+    { id: 'fee', name: 'Fee revenue', short: 'Fees', type: 'revenue' }
   ];
 
   let idemOn = true, crashNext = false, busy = false;
@@ -27,12 +33,13 @@ SD.widget('payment-gateway', function (root, ctx) {
   const S = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Idempotency key state and ledger T-accounts', style: 'max-width:460px;margin:0 auto' });
   const gKey = svg('g'), gCard = svg('g'), gT = svg('g');
   S.append(gKey, gCard, gT);
-  root.append(el('div', { class: 'w-stage' }, S));
+  const legend = el('p', { class: 'muted', style: { margin: '6px 0 0', fontSize: '13px' }, text: 'Card chips: green = booked in the ledger · amber = charged but not booked · red = duplicate charge. Ledger rows show the amount; Dr = debit, Cr = credit.' });
+  root.append(el('div', { class: 'w-stage' }, S, legend));
   const stats = el('div', { class: 'w-stats' });
   const log = el('div', { class: 'w-log', 'aria-live': 'polite' });
   root.append(stats, log);
 
-  const T = (x, y, text, o) => svg('text', Object.assign({ x, y, text, fill: 'var(--text)', style: 'font:600 12px var(--sans)' }, o || {}));
+  const T = (x, y, text, o) => svg('text', Object.assign({ x, y, text, fill: 'var(--text)', style: `font:600 ${L.f}px var(--sans)` }, o || {}));
   const say = (t) => { log.prepend(el('div', { html: t })); while (log.children.length > 30) log.lastChild.remove(); };
   const sleep = (ms) => new Promise((r) => setTimeout(r, ctx.reduced ? 0 : ms));
 
@@ -40,7 +47,7 @@ SD.widget('payment-gateway', function (root, ctx) {
   let keyView = { key: null, at: -1, tone: 'accent' };
   function drawKey() {
     gKey.innerHTML = '';
-    gKey.append(T(4, 14, keyView.key ? `Idempotency key ${keyView.key}` : (idemOn ? 'Idempotency key: none yet' : 'Idempotency OFF: every request is new'), { fill: 'var(--text-2)', style: 'font:600 12px var(--sans)' }));
+    gKey.append(T(4, 14, keyView.key ? `Idempotency key ${keyView.key}` : (idemOn ? 'Idempotency key: none yet' : 'Idempotency OFF: every request is new'), { fill: 'var(--text-2)' }));
     const pw = 166, gap = 20;
     POINTS.forEach((p, i) => {
       const x = 4 + (i % 2) * (pw + gap), y = 22 + Math.floor(i / 2) * 36;
@@ -48,7 +55,7 @@ SD.widget('payment-gateway', function (root, ctx) {
       const cur = idemOn && i === keyView.at;
       const col = cur ? `var(--${keyView.tone})` : done ? 'var(--ok)' : 'var(--border)';
       gKey.append(svg('rect', { x, y, width: pw, height: 30, rx: 15, fill: done ? `color-mix(in srgb, ${col} 18%, var(--surface))` : 'var(--surface-2)', stroke: col, 'stroke-width': cur ? 2.5 : 1.2 }));
-      gKey.append(T(x + pw / 2, y + 19, p, { 'text-anchor': 'middle', style: `font:${cur ? 700 : 500} 11.5px var(--mono)`, fill: done ? 'var(--text)' : 'var(--text-3)' }));
+      gKey.append(T(x + pw / 2, y + 15 + L.fPill * 0.36, p, { 'text-anchor': 'middle', style: `font:${cur ? 700 : 500} ${L.fPill}px var(--mono)`, fill: done ? 'var(--text)' : 'var(--text-3)' }));
       if (i % 2 === 0) gKey.append(T(x + pw + gap / 2, y + 19, '›', { 'text-anchor': 'middle', fill: 'var(--text-3)' }));
     });
   }
@@ -62,40 +69,40 @@ SD.widget('payment-gateway', function (root, ctx) {
       const x = 4 + i * 71, y = 120;
       const col = c.dup ? 'var(--err)' : booked.has(c.id) ? 'var(--ok)' : 'var(--warn)';
       gCard.append(svg('rect', { x, y, width: 66, height: 22, rx: 6, fill: `color-mix(in srgb, ${col} 16%, var(--surface))`, stroke: col }));
-      gCard.append(T(x + 33, y + 15, c.id, { 'text-anchor': 'middle', style: 'font:600 10.5px var(--mono)' }));
+      gCard.append(T(x + 33, y + 11 + L.fChip * 0.36, c.id, { 'text-anchor': 'middle', style: `font:600 ${L.fChip}px var(--mono)` }));
     });
-    if (!card.length) gCard.append(T(4, 135, 'no charges yet', { fill: 'var(--text-3)', style: 'font:500 12px var(--sans)' }));
-    gCard.append(T(4, 158, 'green booked · amber not in ledger · red duplicate', { fill: 'var(--text-3)', style: 'font:500 10.5px var(--sans)' }));
+    if (!card.length) gCard.append(T(4, 136, 'no charges yet', { fill: 'var(--text-3)', style: `font:500 ${L.f}px var(--sans)` }));
+    if (!L.short) gCard.append(T(4, 158, 'green booked · amber not in ledger · red duplicate', { fill: 'var(--text-3)', style: 'font:500 10.5px var(--sans)' }));
   }
 
   /* ---- T-accounts ---- */
   function drawT() {
     gT.innerHTML = '';
-    const tw = 112, top = 168, th = 190;
+    const tw = 112, top = L.top, th = 190;
     ACCTS.forEach((a, i) => {
       const x = 4 + i * (tw + 8);
       const mine = entries.filter((e) => e.acct === a.id);
       const dr = mine.filter((e) => e.dr).reduce((s, e) => s + e.amt, 0);
       const cr = mine.filter((e) => !e.dr).reduce((s, e) => s + e.amt, 0);
       gT.append(svg('rect', { x, y: top, width: tw, height: th, rx: 8, fill: 'var(--surface-2)', stroke: 'var(--border)' }));
-      gT.append(T(x + tw / 2, top + 17, a.name, { 'text-anchor': 'middle' }));
-      gT.append(T(x + tw / 2, top + 31, a.type, { 'text-anchor': 'middle', fill: 'var(--text-3)', style: 'font:500 10px var(--sans)' }));
+      gT.append(T(x + tw / 2, top + 17, L.short ? a.short : a.name, { 'text-anchor': 'middle' }));
+      gT.append(T(x + tw / 2, top + 32, a.type, { 'text-anchor': 'middle', fill: 'var(--text-3)', style: `font:500 ${L.fSmall}px var(--sans)` }));
       gT.append(svg('line', { x1: x + 8, x2: x + tw - 8, y1: top + 40, y2: top + 40, stroke: 'var(--text-2)', 'stroke-width': 1.5 }));
       gT.append(svg('line', { x1: x + tw / 2, x2: x + tw / 2, y1: top + 40, y2: top + th - 30, stroke: 'var(--text-2)', 'stroke-width': 1.5 }));
-      gT.append(T(x + 10, top + 54, 'Dr', { fill: 'var(--text-3)', style: 'font:600 10px var(--sans)' }));
-      gT.append(T(x + tw - 10, top + 54, 'Cr', { 'text-anchor': 'end', fill: 'var(--text-3)', style: 'font:600 10px var(--sans)' }));
-      mine.slice(-6).forEach((e, j) => {
-        const y = top + 70 + j * 15;
+      gT.append(T(x + 10, top + 55, 'Dr', { fill: 'var(--text-3)', style: `font:600 ${L.fSmall}px var(--sans)` }));
+      gT.append(T(x + tw - 10, top + 55, 'Cr', { 'text-anchor': 'end', fill: 'var(--text-3)', style: `font:600 ${L.fSmall}px var(--sans)` }));
+      mine.slice(-L.rows).forEach((e, j) => {
+        const y = top + 72 + j * L.row;
         const tx = e.dr ? x + tw / 2 - 8 : x + tw - 10;
-        gT.append(T(tx, y, `${e.amt} ·t${e.txn}`, { 'text-anchor': 'end', style: 'font:500 10.5px var(--mono)', fill: e.fresh ? 'var(--accent)' : 'var(--text-2)' }));
+        gT.append(T(tx, y, L.short ? `${e.amt}` : `${e.amt} ·t${e.txn}`, { 'text-anchor': 'end', style: `font:500 ${L.fEntry}px var(--mono)`, fill: e.fresh ? 'var(--accent)' : 'var(--text-2)' }));
       });
       const bal = a.type === 'asset' ? dr - cr : cr - dr;
-      gT.append(T(x + tw / 2, top + th - 10, `balance ₹${bal}`, { 'text-anchor': 'middle', style: 'font:700 11.5px var(--mono)' }));
+      gT.append(T(x + tw / 2, top + th - 10, L.short ? `bal ₹${bal}` : `balance ₹${bal}`, { 'text-anchor': 'middle', style: `font:700 ${L.fBal}px var(--mono)` }));
     });
     const sDr = entries.filter((e) => e.dr).reduce((s, e) => s + e.amt, 0);
     const sCr = entries.filter((e) => !e.dr).reduce((s, e) => s + e.amt, 0);
     const ok = sDr === sCr;
-    gT.append(T(W / 2, H - 6, `Σ Dr ₹${sDr} − Σ Cr ₹${sCr} = ${sDr - sCr} ${ok ? '✓' : '✗'}`, { 'text-anchor': 'middle', fill: ok ? 'var(--ok)' : 'var(--err)', style: 'font:700 12.5px var(--mono)' }));
+    gT.append(T(W / 2, H - 6, `Σ Dr ₹${sDr} − Σ Cr ₹${sCr} = ${sDr - sCr} ${ok ? '✓' : '✗'}`, { 'text-anchor': 'middle', fill: ok ? 'var(--ok)' : 'var(--err)', style: `font:700 ${L.fSum}px var(--mono)` }));
   }
 
   function setStats() {
@@ -106,7 +113,11 @@ SD.widget('payment-gateway', function (root, ctx) {
     [['payment intents', intents], ['card charges', card.length + ' (₹' + total + ')'], ['overcharged', '₹' + over], ['charged, not booked', unbooked], ['ledger txns', txnSeq]]
       .forEach(([k, v]) => stats.append(el('span', { class: 'w-stat', html: `${k}: <b>${v}</b>` })));
   }
-  function paint() { drawKey(); drawCard(); drawT(); setStats(); }
+  function paint() {
+    H = L.H; S.setAttribute('viewBox', `0 0 ${W} ${H}`); legend.style.display = L.short ? '' : 'none';
+    drawKey(); drawCard(); drawT(); setStats();
+  }
+  ctx.onResize((n) => { L = n ? LAYOUT.narrow : LAYOUT.wide; paint(); });
 
   function post(chargeId) {
     entries.forEach((e) => { e.fresh = false; });

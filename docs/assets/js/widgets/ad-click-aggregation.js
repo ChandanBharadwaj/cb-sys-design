@@ -106,7 +106,7 @@ SD.widget('ad-click-aggregation', function (root, ctx) {
     g.append(svg('line', { x1: nx, y1: 20, x2: nx, y2: 146, stroke: 'var(--text-3)', 'stroke-width': 1.5 }));
     g.append(svg('text', { x: Math.max(LX + 24, Math.min(wmx - 3, nx - 38)), y: 16, 'text-anchor': 'end', style: 'font:700 14px var(--sans)', fill: 'var(--accent)', text: 'WM' }));
     g.append(svg('text', { x: nx - 3, y: 16, 'text-anchor': 'end', style: 'font:600 14px var(--sans)', fill: 'var(--text-3)', text: 'now' }));
-    g.append(svg('text', { x: 4, y: 32, style: 'font:600 12px var(--sans)', fill: 'var(--text-3)', text: 'event t →' }));
+    g.append(svg('text', { x: 4, y: 32, style: 'font:600 13px var(--sans)', fill: 'var(--text-3)', text: 'event t' }));
     stats.innerHTML = '';
     [['received', st.recv], ['unique', st.seen.size], ['dups dropped', st.dups], ['late re-fires', st.refire], ['too late → recon', st.dropped], ['watermark lag', (st.now - wm()).toFixed(1) + ' s']]
       .forEach(([k, v]) => stats.append(el('span', { class: 'w-stat', html: `${k}: <b>${v}</b>` })));

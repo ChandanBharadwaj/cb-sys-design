@@ -187,7 +187,7 @@ SD.register({
     {
       id: 'search', title: 'Search nearby (2 km)', tone: 'ok',
       steps: [
-        { text: 'The app sends <code>{lat, lng, radius: 2 km, category: "coffee"}</code>. The gateway routes it to any <b>stateless</b> LBS replica.', flow: ['usr>gw', 'gw>lbs'] },
+        { text: 'The app sends <code>{lat, lng, radius: 2 km, category: "coffee"}</code>. The gateway routes it to any <b>stateless</b> location-based service (LBS) replica.', flow: ['usr>gw', 'gw>lbs'] },
         { text: 'The LBS picks a cell size at least as big as the radius (geohash length 5 ≈ 4.9 km) and checks the <b>result cache</b> keyed on <code>(cell, radius, filter)</code>. Miss.', flow: ['lbs>rc'], badges: { rc: ['miss', 'warn'] } },
         { text: 'It reads the user\'s cell <b>plus its 8 neighbours</b> from the in-memory index. Neighbours matter: a café 20 m away can sit in the next cell with a different prefix.', flow: ['lbs>geo'], badges: { geo: '9 cells' } },
         { text: 'Candidates are filtered by <b>true great-circle distance</b> (most of the 9-cell box is outside the circle), then ranked on distance + rating.', flow: ['lbs>rank'], badges: { rank: 'top 20' } },
@@ -197,7 +197,7 @@ SD.register({
     {
       id: 'density', title: 'Dense city vs empty countryside', tone: 'warn',
       steps: [
-        { text: '<b>Downtown:</b> a 2 km circle holds thousands of places. Scanning 9 big cells pulls far more candidates than needed.', flow: ['usr>gw', 'gw>lbs', 'lbs>geo'], warn: ['geo'], badges: { geo: ['12K cand.', 'warn'] }, tone: 'warn' },
+        { text: '<b>Downtown</b> (~1,000 places/km², <em>estimate</em>): a 2 km circle holds ~12K places, but 9 length-5 cells cover ~215 km², so the scan pulls ~17× more candidates than hits.', flow: ['usr>gw', 'gw>lbs', 'lbs>geo'], warn: ['geo'], badges: { geo: ['~215K cand.', 'warn'] }, tone: 'warn' },
         { text: 'Fix: use a <b>finer cell</b> for dense areas (or a quadtree, whose leaves split where data is dense) and stop once you have enough ranked results.', nodes: ['lbs', 'geo'], labels: { geo: { sub: 'finer cells downtown' } }, ok: ['geo'] },
         { text: '<b>Countryside:</b> the same 2 km search returns nothing. The LBS <b>expands the radius</b> (coarser cell, shorter prefix) until it has enough results or hits a cap.', flow: ['lbs>geo', 'lbs>geo'], badges: { geo: '2 → 8 → 30 km' } },
         { text: 'The ranker then trades distance for quality, so a 4.8★ place 12 km away can beat a 3★ place 9 km away. Results are returned with the radius actually used.', flow: ['lbs>rank', 'lbs>gw', 'gw>usr'], tone: 'ok' }
@@ -322,7 +322,7 @@ SD.register({
   realWorld: {
     intro: 'Proximity search shows up as "businesses near me" (Yelp, Maps) and "people near me" (Tinder). The published designs differ mainly in how often the data moves.',
     timeline: [
-      { when: '2016 · ES 5.0', who: 'Lucene / Elastic', title: 'Points indexed in block k-d trees', text: 'Lucene 6 added <b>BKD trees</b> for numeric and 2-D <code>geo_point</code> fields, which Elasticsearch 5.0 used for large indexing and search speedups. Before that, shapes were turned into many quadtree/geohash terms in the inverted index.', src: 3 },
+      { when: '2016 · ES 5.0', who: 'Lucene / Elastic', title: 'Points indexed in block k-d trees', text: 'Lucene 6 added <b>block k-d (BKD) trees</b> for numeric and 2-D points. Elasticsearch 5.0 moved <code>geo_point</code> onto Lucene\'s <code>LatLonPoint</code>, which Elastic said roughly <b>doubled geo-point query speed</b>. <code>geo_shape</code> followed in 7.0; before that, shapes were many quadtree/geohash terms.', src: 9 },
       { when: '2017', who: 'Yelp', title: 'Core business search moves to Elasticsearch', text: 'Yelp\'s core search had run on a custom Lucene backend with its own <b>two-tier sharding</b>. It moved to Elasticsearch while keeping ranking code free of any hard dependency on ES or Lucene.', src: 0 },
       { when: '2019', who: 'Tinder', title: 'Geosharded recommendations on S2', text: 'After comparing geo libraries Tinder chose <b>Google S2</b>. Cells are grouped into shards; the <b>Hilbert curve</b> keeps a shard\'s cells geographically together. Load tests pointed to <b>40–100 geoshards</b> worldwide, and a query only hits the shards whose cells cover its circle.', src: 1 },
       { when: '2019', who: 'Tinder', title: 'Time zones break load balance', text: 'Requests per second could differ by <b>more than 10×</b> between shards at any moment. Tinder placed several shards on the same nodes so their daily peaks average out.', src: 2 },
@@ -344,7 +344,8 @@ SD.register({
       { title: 'GEOSEARCH command', url: 'https://redis.io/docs/latest/commands/geosearch/', pub: 'redis.io' },
       { title: 'S2 cell hierarchy', url: 'https://s2geometry.io/devguide/s2cell_hierarchy', pub: 's2geometry.io' },
       { title: 'Geosharded Recommendations Part 3: Consistency', url: 'https://medium.com/tinder/geosharded-recommendations-part-3-consistency-2d2cb2f0594b', pub: 'Tinder Tech Blog, 2019' },
-      { title: 'ST_DWithin', url: 'https://postgis.net/docs/ST_DWithin.html', pub: 'PostGIS manual' }
+      { title: 'ST_DWithin', url: 'https://postgis.net/docs/ST_DWithin.html', pub: 'PostGIS manual' },
+      { title: 'Elasticsearch 5.0.0 released', url: 'https://www.elastic.co/blog/elasticsearch-5-0-0-released', pub: 'Elastic blog, 2016' }
     ]
   },
 
@@ -369,7 +370,7 @@ SD.register({
 
   interview: [
     { q: 'Why not just put a B-tree on lat and lng?', a: '<p>A B-tree can serve one range efficiently. <code>lat BETWEEN a AND b</code> gives a whole <b>stripe around the globe</b>, which is then filtered by lng. Two separate indexes need an intersection of two huge sets.</p><p>Spatial indexes (geohash, S2, R-tree/GiST) keep points that are close in 2-D close in the index.</p>', lvl: 'core' },
-    { q: 'How does geohash work, and what is the boundary problem?', a: '<p>Geohash alternately halves longitude and latitude and interleaves the bits, then writes them in base32. Longer prefix = smaller cell (length 6 ≈ 1.2 × 0.6 km).</p><p><b>Boundary problem:</b> the Z-order curve jumps, so two points 1 m apart across an edge can share no prefix at all. Always query the cell <b>plus its 8 neighbours</b>, then filter by real distance.</p>', lvl: 'core' },
+    { q: 'How does geohash work, and what is the boundary problem?', a: '<p>Geohash alternately halves longitude and latitude and interleaves the bits, then writes them in base32. Longer prefix = smaller cell (length 6 ≈ 1.2 × 0.6 km at the equator; cells get narrower towards the poles).</p><p><b>Boundary problem:</b> the Z-order curve jumps, so two points 1 m apart across an edge can share no prefix at all. Always query the cell <b>plus its 8 neighbours</b>, then filter by real distance.</p>', lvl: 'core' },
     { q: 'Quadtree vs geohash: when would you pick each?', a: '<ul><li><b>Geohash:</b> fixed grid, stateless to compute, easy to cache and shard by prefix, cheap to update. Uneven density means some cells are huge and some empty.</li><li><b>Quadtree:</b> splits a node when it has more than K points, so leaves adapt to density. Built in memory from the DB; updates of moving points cause splits/merges.</li></ul><p>Static businesses: quadtree or geohash both fine. Moving users: geohash/S2 cells.</p>', lvl: 'core' },
     { q: 'Why are read replicas enough for Yelp-style search?', a: '<p>Writes are tiny (a few hundred place edits per second at most) and can be minutes stale. The index is a few GB, so <b>every replica can hold all of it</b>. Reads scale linearly with replicas and any replica can answer any query. Sharding only becomes necessary for huge or write-heavy data.</p>', lvl: 'core' },
     { q: 'How do you rank by distance and rating together?', a: '<p>Fetch candidates inside the radius, then score, for example <code>score = w1·relevance + w2·rating_bayes − w3·log(1 + distance)</code>. Use a <b>Bayesian average</b> for rating so a single 5★ review does not win. Take the top N with a heap. Learn the weights later from clicks.</p>', lvl: 'core' },
@@ -377,6 +378,7 @@ SD.register({
     { q: 'What does S2 give you that geohash does not?', a: '<p>S2 projects the sphere onto a <b>cube</b> and orders cells along a <b>Hilbert curve</b> (levels 0–30, 64-bit ids). Hilbert has no long jumps, so neighbouring cells usually have close ids. Cells are closer to equal-area, and a region covering uses a mix of cell sizes with little waste. Geohash is a Z-order on lat/lng rectangles, which distort towards the poles.</p>', lvl: 'deep' },
     { q: 'What does the search do in a sparse area?', a: '<p>Expand the radius in steps (coarser cell, or more rings) until there are at least N results or a maximum radius is hit. Return the radius used so the UI can say "nearest results are 12 km away".</p>', lvl: 'core' },
     { q: 'How do business updates reach the index?', a: '<p>Write to the primary DB. Then either rebuild the snapshot nightly, or stream changes with <b>CDC</b> (Debezium on the WAL) and patch each replica: remove the id from the old cell, add it to the new one. New replicas load the latest snapshot and replay CDC from its position.</p>', lvl: 'core' },
+    { q: 'You have no PostGIS and no Redis, just a SQL table or a key-value store. How do you serve radius search?', a: '<p>Store a <b>geohash string</b> column (say length 6) with an ordinary B-tree index. A prefix is a contiguous key range, so <code>WHERE gh LIKE \'9q8yy%\'</code> (or a KV range scan from <code>9q8yy</code> to <code>9q8yy~</code>) is one index seek.</p><p>Pick the prefix length whose cell is at least the radius, run <b>9 range scans</b> (cell + 8 neighbours), then filter by haversine distance in the app. This is exactly how Redis GEO works inside: a geohash as a sorted-set score, searched as a few score ranges.</p>', fu: 'Why not one scan on the common prefix of all 9 cells? (At an edge the common prefix can be very short, so you would scan a huge area.)', lvl: 'core' },
     { q: 'How would you cache search results?', a: '<p>Round the location to a cell and key on <code>(cell, radius, filters, page)</code>. Nearby users then share entries. TTL of about a minute bounds staleness. Do not key on raw lat/lng: every request would be unique.</p>', lvl: 'core' },
     { q: 'When is plain PostGIS the right answer?', a: '<p>Up to tens of millions of rows and a few thousand QPS with replicas. <code>ST_DWithin(geog, point, meters)</code> uses the <b>GiST</b> index for a bounding-box pass and then checks exact distance; <code>ORDER BY geog &lt;-&gt; point</code> gives index-assisted nearest-neighbour. Start here and move to an in-memory index when you measure the need.</p>', lvl: 'deep' }
   ],

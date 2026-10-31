@@ -134,7 +134,7 @@ SD.register({
       { label: 'Commit latency floor (one consensus round)', fmt: 'ms', f: (v) => v.rtt },
       { label: 'Replica failures each range survives', fmt: 'raw', f: (v) => Math.floor((v.rf - 1) / 2) + ' of ' + v.rf }
     ],
-    note: 'Recent CockroachDB versions split ranges at about 512 MiB (it was 64 MiB in older releases; check your version). A quorum round trip is about 1–2 ms between zones of one region and tens of ms between regions: these are <em>estimates</em>. Storage ignores compression and MVCC history. Notice that latency is set by <b>where the quorum lives</b>, not by how many nodes you add.'
+    note: 'CockroachDB\'s default maximum range size (<code>range_max_bytes</code>) is 512 MiB, raised from 64 MiB in 2020 (v20.1); ranges under 128 MiB may merge. A quorum round trip is about 1–2 ms between zones of one region and tens of ms between regions: these are <em>estimates</em>. Storage ignores compression and MVCC history. Notice that latency is set by <b>where the quorum lives</b>, not by how many nodes you add.'
   },
 
   api: [
@@ -315,6 +315,8 @@ SD.register({
       { when: 'Docs', who: 'Cockroach Labs', title: 'Follower reads', text: '<code>AS OF SYSTEM TIME follower_read_timestamp()</code> lets any replica serve a read-only query at a slightly old timestamp, so remote regions avoid the leaseholder round trip.', src: 4 },
       { when: 'Docs', who: 'Cockroach Labs', title: 'Retry on 40001', text: 'Every transaction retry error uses SQLSTATE <b>40001</b>. The server retries on its own when it can. Otherwise the client must roll back, back off and run the whole transaction again.', src: 5 },
       { when: '2023–24', who: 'Cockroach Labs', title: 'READ COMMITTED', text: 'Previewed in 23.2 and generally available in 24.1 (May 2024). The docs say it never returns <code>RETRY_SERIALIZABLE</code> and returns 40001 only in limited cases.', src: 6 },
+      { when: '2020', who: 'Cockroach Labs', title: 'Bigger default ranges', text: 'The default range size went from 64/16 MiB (max/min) to <b>512/128 MiB</b>, an 8× increase, so the same data needs far fewer Raft groups and less heartbeat and metadata overhead.', src: 10 },
+      { when: 'Docs', who: 'Cockroach Labs', title: 'Maximum clock offset', text: '<code>cockroach start --max-offset</code> defaults to <b>500 ms</b>. It bounds the uncertainty window, and a node whose clock drifts past the limit shuts itself down rather than risk inconsistent reads. Cockroach Labs says 250 ms is generally safe if its clock guidance is followed.', src: 11 },
       { when: 'Docs', who: 'Google Cloud', title: 'TrueTime in software', text: 'Spanner Omni runs TrueTime without GPS or atomic-clock hardware. The docs note that uncertainty adds no commit latency while it is <b>smaller than the Paxos round trip</b>.', src: 7 }
     ],
     lessons: [
@@ -333,7 +335,9 @@ SD.register({
       { title: 'Read Committed in 23.2: no more anomaly tables', url: 'https://www.cockroachlabs.com/blog/232-read-committed-no-more-anomaly-tables/', pub: 'Cockroach Labs blog' },
       { title: 'TrueTime and external consistency', url: 'https://docs.cloud.google.com/spanner-omni/true-time-external-consistency', pub: 'Google Cloud docs (Spanner Omni)' },
       { title: 'Spanner (lecture slides)', url: 'https://www.cs.princeton.edu/courses/archive/spr24/cos418/docs/L17-spanner-pt1.pdf', pub: 'Princeton COS 418' },
-      { title: 'Read Committed Transactions', url: 'https://www.cockroachlabs.com/docs/dev/read-committed', pub: 'CockroachDB docs' }
+      { title: 'Read Committed Transactions', url: 'https://www.cockroachlabs.com/docs/dev/read-committed', pub: 'CockroachDB docs' },
+      { title: 'config/zonepb: increase default range size from 64/16 MB to 512/128 MB (#45209)', url: 'https://github.com/cockroachdb/cockroach/pull/45209', pub: 'CockroachDB GitHub, 2020' },
+      { title: 'cockroach start (--max-offset)', url: 'https://cockroachlabs.com/docs/stable/cockroach-start', pub: 'CockroachDB docs' }
     ]
   },
 
@@ -350,7 +354,7 @@ SD.register({
   },
   failures: [
     { f: 'Leaseholder node crashes', detect: 'Raft heartbeats stop; lease expires', fix: 'A follower is elected and takes the lease within seconds. Gateways follow redirects and refresh their range cache.' },
-    { f: 'Clock skew beyond the max offset', detect: 'Clock-offset metrics; node compares offsets with peers', fix: 'The node shuts itself down rather than risk anomalies. Fix NTP (use slewing) before restarting it.' },
+    { f: 'Clock skew beyond the max offset (default 500 ms)', detect: 'Clock-offset metrics; node compares offsets with peers', fix: 'The node shuts itself down rather than risk anomalies. Fix NTP (use slewing) before restarting it.' },
     { f: 'Retry storm on contended rows', detect: 'Rising 40001 rate and txn restarts', fix: 'Lock early with <code>SELECT … FOR UPDATE</code>, keep txns short, back off with jitter, or use READ COMMITTED.' },
     { f: 'Hot range from sequential keys', detect: 'One range or node far above the rest in QPS and CPU', fix: 'Switch to UUIDs or a hash-sharded index. Load-based splitting alone only moves the hot tail.' },
     { f: 'Quorum lost (2 of 3 replicas down)', detect: 'Ranges reported unavailable / under-replicated', fix: 'Bring a replica back. Prevent it with 5 replicas across 3 regions or zones for critical data.' },
@@ -368,6 +372,7 @@ SD.register({
     { q: 'How do you handle hot ranges?', a: '<p>The usual cause is a <b>monotonic key</b> (SERIAL, timestamp) that sends every insert to the last range. Splitting does not help, because the tail is always hot.</p><p>Use random UUIDs or a <b>hash-sharded index</b> that prefixes a bucket number. For a single hot row (a counter), shard the counter into N rows and sum them on read.</p>', lvl: 'core' },
     { q: 'What latency choices do you have in a multi-region deployment?', a: '<ul><li><b>Survive zone</b>: quorum in one region, fast writes, a region outage takes that data offline.</li><li><b>Survive region</b>: 5 replicas across 3 regions, every write pays a cross-region round trip.</li><li><b>REGIONAL BY ROW</b>: each row\'s leaseholder in its home region.</li><li><b>GLOBAL</b> tables: fast reads everywhere, slow writes.</li><li><b>Follower reads</b> for anything that can be a few seconds stale.</li></ul>', lvl: 'deep' },
     { q: 'Why must clients retry, and how should the loop look?', a: '<p>Under SERIALIZABLE, a transaction can be <b>pushed</b> by a conflict and fail to commit at a valid timestamp. CockroachDB retries internally when it has not yet sent results to the client. Otherwise it returns <b>SQLSTATE 40001</b>.</p><p>The client rolls back, sleeps with exponential backoff and jitter, and re-runs the <i>whole</i> transaction, including its reads. Keep side effects (emails, payments) outside the loop.</p>', lvl: 'core' },
+    { q: 'The connection drops during COMMIT. Did the transaction commit?', a: '<p>You cannot know: this is an <b>ambiguous result</b>. The commit may have reached a quorum just before the failure. CockroachDB reports it as SQLSTATE <b>40003</b> ("result is ambiguous"), not as a retryable 40001.</p><p>Blindly retrying a non-idempotent transfer could apply it twice. Make writes <b>idempotent</b> instead: store a client-generated request id with a unique constraint, so a retry either inserts nothing or finds the row and returns the earlier result. Or read back and check before retrying.</p>', fu: 'Why is this worse in a distributed database than in one Postgres? (More hops between client and quorum, so more places where the ack can be lost after the write is durable.)', lvl: 'deep' },
     { q: 'How can a follower serve a consistent read?', a: '<p>The leaseholder regularly publishes a <b>closed timestamp</b>: a promise that it will accept no more writes at or below it. Any follower that has applied the log up to that point holds a complete snapshot at that time.</p><p>A read at a timestamp below the closed timestamp is therefore consistent on any up-to-date follower. That is what <code>follower_read_timestamp()</code> picks.</p>', lvl: 'deep' },
     { q: 'What happens when a range loses its quorum?', a: '<p>With 3 replicas, losing 2 leaves no majority. The range cannot elect a leader or commit writes, so it becomes <b>unavailable</b> (consistency over availability, as CAP predicts). Data that was committed is still on the surviving replica.</p><p>Plan for this with replication factor 5 and placement across failure domains.</p>', lvl: 'core' },
     { q: 'Serializable vs read committed: which would you choose?', a: '<p><b>Serializable</b> stops anomalies like write skew (two doctors both going off call) but causes more 40001 retries. <b>Read committed</b> takes a fresh snapshot per statement, matches what most Postgres apps assume, and rarely asks for retries.</p><p>Choose serializable for money and inventory. For RC, add explicit locks (<code>FOR UPDATE</code>) on read-modify-write paths.</p>', lvl: 'core' }
@@ -379,6 +384,8 @@ SD.register({
       code: `@Component
 public class CrdbTx {
   private static final int MAX_ATTEMPTS = 6;
+  // 40001 = serialization failure / restart; 40P01 = deadlock (Postgres; harmless on CRDB)
+  private static final Set<String> RETRYABLE = Set.of("40001", "40P01");
   private final DataSource ds;
   public CrdbTx(DataSource ds) { this.ds = ds; }
 
@@ -394,7 +401,7 @@ public class CrdbTx {
           return result;
         } catch (SQLException e) {
           c.rollback();
-          if (!"40001".equals(e.getSQLState()) || attempt == MAX_ATTEMPTS) throw e;
+          if (!RETRYABLE.contains(e.getSQLState()) || attempt == MAX_ATTEMPTS) throw e;
         }
       }
       long backoff = Math.min(2_000, 25L << attempt);           // exponential, capped
@@ -418,7 +425,7 @@ public class CrdbTx {
     });
   }
 }`,
-      note: 'Do not wrap this in Spring <code>@Transactional</code>: the loop must own the whole transaction. Keep side effects outside it. If a commit outcome is <b>ambiguous</b> (the connection dropped during COMMIT), only retry when the work is idempotent.'
+      note: 'Retrying 40P01 (deadlock) as well makes the same helper safe on plain Postgres, where two opposite transfers can deadlock; CockroachDB reports those as 40001. Do not wrap this in Spring <code>@Transactional</code>: the loop must own the whole transaction. Keep side effects outside it. If a commit outcome is <b>ambiguous</b> (40003, or the connection dropped during COMMIT), only retry when the work is idempotent.'
     },
     {
       title: 'SQL: multi-region schema, hot-key fix, follower reads', lang: 'sql',

@@ -1,7 +1,9 @@
 /* Real HNSW (layered graph, greedy descent + ef beam search) and real k-means IVF over 2-D points, vs brute force. */
 SD.widget('vector-db', function (root, ctx) {
   const { el, svg } = ctx;
-  const W = 500, H = 320, N = 170, K = 5, M = 5, M0 = 2 * M, EFC = 24, ML = 1 / Math.log(M), NLIST = 8;
+  // phones: a squarer 360 × 360 canvas with bigger dots and rings; desktop keeps 500 × 320
+  let W = ctx.narrow ? 360 : 500, H = ctx.narrow ? 360 : 320, SC = ctx.narrow ? 1.35 : 1;
+  const N = 170, K = 5, M = 5, M0 = 2 * M, EFC = 24, ML = 1 / Math.log(M), NLIST = 8;
   const LAYER_COL = ['var(--text-3)', 'var(--accent-2)', 'var(--accent)', 'var(--warn)'];
   let mode = 'hnsw', ef = 6, nprobe = 2, busy = false;
   let pts, levels, links, entry, maxL, cent, assign, cnt = 0;
@@ -9,11 +11,11 @@ SD.widget('vector-db', function (root, ctx) {
   // ---------- controls ----------
   const hBtn = el('button', { class: 'btn primary', text: 'HNSW' });
   const iBtn = el('button', { class: 'btn', text: 'IVF (k-means, 8 lists)' });
-  const setMode = (m) => { if (busy) return; mode = m; hBtn.classList.toggle('primary', m === 'hnsw'); iBtn.classList.toggle('primary', m === 'ivf'); syncSlider(); drawBase(); fx.innerHTML = ''; };
+  const setMode = (m) => { if (busy) return; mode = m; hBtn.classList.toggle('primary', m === 'hnsw'); iBtn.classList.toggle('primary', m === 'ivf'); syncSlider(); drawBase(); drawLegend(); fx.innerHTML = ''; };
   hBtn.addEventListener('click', () => setMode('hnsw'));
   iBtn.addEventListener('click', () => setMode('ivf'));
   const qBtn = el('button', { class: 'btn primary', text: '🎯 Random query' });
-  qBtn.addEventListener('click', () => search({ x: 30 + Math.random() * 440, y: 30 + Math.random() * 260 }));
+  qBtn.addEventListener('click', () => search({ x: 30 + Math.random() * (W - 60), y: 30 + Math.random() * (H - 60) }));
   const nBtn = el('button', { class: 'btn', text: '↻ New data' });
   nBtn.addEventListener('click', () => { if (!busy) build(); });
   const sOut = el('b'); const sLab = el('span');
@@ -27,8 +29,19 @@ SD.widget('vector-db', function (root, ctx) {
 
   const S_ = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Vector index in 2-D', style: 'cursor:crosshair;max-width:720px;margin:0 auto' });
   const gE = svg('g'), gP = svg('g'), fx = svg('g');
-  S_.append(svg('rect', { x: 0, y: 0, width: W, height: H, rx: 10, fill: 'var(--surface-2)' }), gE, gP, fx);
-  root.append(el('div', { class: 'w-stage' }, S_));
+  const bg = svg('rect', { x: 0, y: 0, width: W, height: H, rx: 10, fill: 'var(--surface-2)' });
+  S_.append(bg, gE, gP, fx);
+  // legend in HTML, so it stays readable on phones
+  const dot = (c, sq) => el('span', { style: { display: 'inline-block', width: '10px', height: '10px', borderRadius: sq ? '2px' : '50%', background: c, margin: '0 4px 0 10px', verticalAlign: 'middle' } });
+  const ringK = (c, dash) => el('span', { style: { display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', border: `2px ${dash ? 'dashed' : 'solid'} ${c}`, margin: '0 4px 0 10px', verticalAlign: 'middle' } });
+  const legend = el('div', { style: { font: '500 13px var(--sans)', color: 'var(--text-2)', margin: '6px 0 2px', lineHeight: '1.8' } });
+  function drawLegend() {
+    legend.innerHTML = '';
+    if (mode === 'hnsw') legend.append(el('span', { text: 'Top layer:' }), ...LAYER_COL.flatMap((c, l) => [dot(c), el('span', { text: String(l) })]));
+    else legend.append(el('span', { text: 'Colour = k-means list;' }), dot('hsl(0 60% 42%)', true), el('span', { text: 'centroid' }));
+    legend.append(el('br'), ringK('var(--text)', true), el('span', { text: 'true top-5' }), ringK('var(--ok)'), el('span', { text: 'found' }), dot('var(--err)'), el('span', { text: 'query' }));
+  }
+  root.append(el('div', { class: 'w-stage' }, S_), legend);
   const stats = el('div', { class: 'w-stats' });
   const log = el('div', { class: 'w-log', 'aria-live': 'polite' });
   root.append(stats, log);
@@ -103,7 +116,7 @@ SD.widget('vector-db', function (root, ctx) {
   }
 
   function build() {
-    const blobs = Array.from({ length: 6 }, () => ({ x: 60 + Math.random() * 380, y: 50 + Math.random() * 220 }));
+    const blobs = Array.from({ length: 6 }, () => ({ x: 50 + Math.random() * (W - 100), y: 50 + Math.random() * (H - 100) }));
     pts = Array.from({ length: N }, () => {
       if (Math.random() < 0.82) { const b = blobs[Math.floor(Math.random() * blobs.length)]; const r = 34 * Math.sqrt(-2 * Math.log(1 - Math.random())), a = Math.random() * 2 * Math.PI; return { x: Math.max(8, Math.min(W - 8, b.x + r * Math.cos(a))), y: Math.max(8, Math.min(H - 8, b.y + r * Math.sin(a))) }; }
       return { x: 10 + Math.random() * (W - 20), y: 10 + Math.random() * (H - 20) };
@@ -125,23 +138,23 @@ SD.widget('vector-db', function (root, ctx) {
         const seen = new Set();
         Object.keys(links[l]).forEach((k) => links[l][k].forEach((n) => {
           const a = +k, key = a < n ? a + '-' + n : n + '-' + a; if (seen.has(key)) return; seen.add(key);
-          gE.append(svg('line', { x1: pts[a].x, y1: pts[a].y, x2: pts[n].x, y2: pts[n].y, stroke: LAYER_COL[l], 'stroke-width': l ? 1.2 + l * 0.6 : 0.7, opacity: l ? 0.55 : 0.35 }));
+          gE.append(svg('line', { x1: pts[a].x, y1: pts[a].y, x2: pts[n].x, y2: pts[n].y, stroke: LAYER_COL[l], 'stroke-width': (l ? 1.2 + l * 0.6 : 0.7) * SC, opacity: l ? 0.55 : 0.35 }));
         }));
       }
-      pts.forEach((p, i) => gP.append(svg('circle', { cx: p.x, cy: p.y, r: 3 + levels[i] * 2.2, fill: LAYER_COL[levels[i]], stroke: 'var(--surface)', 'stroke-width': 1 })));
+      pts.forEach((p, i) => gP.append(svg('circle', { cx: p.x, cy: p.y, r: (3 + levels[i] * 2.2) * SC, fill: LAYER_COL[levels[i]], stroke: 'var(--surface)', 'stroke-width': 1 })));
     } else {
-      pts.forEach((p, i) => gP.append(svg('circle', { cx: p.x, cy: p.y, r: 3.6, fill: `hsl(${assign[i] * 45} 60% 52%)`, opacity: 0.85 })));
-      cent.forEach((c, j) => gP.append(svg('rect', { x: c.x - 6, y: c.y - 6, width: 12, height: 12, rx: 2, fill: `hsl(${j * 45} 60% 42%)`, stroke: 'var(--surface)', 'stroke-width': 2 })));
+      pts.forEach((p, i) => gP.append(svg('circle', { cx: p.x, cy: p.y, r: 3.6 * SC, fill: `hsl(${assign[i] * 45} 60% 52%)`, opacity: 0.85 })));
+      cent.forEach((c, j) => gP.append(svg('rect', { x: c.x - 6 * SC, y: c.y - 6 * SC, width: 12 * SC, height: 12 * SC, rx: 2, fill: `hsl(${j * 45} 60% 42%)`, stroke: 'var(--surface)', 'stroke-width': 2 })));
     }
   }
 
-  function ring(i, color, dash, r) { fx.append(svg('circle', { cx: pts[i].x, cy: pts[i].y, r: r || 8, fill: 'none', stroke: color, 'stroke-width': 2.2, 'stroke-dasharray': dash || '' })); }
+  function ring(i, color, dash, r) { fx.append(svg('circle', { cx: pts[i].x, cy: pts[i].y, r: (r || 8) * SC, fill: 'none', stroke: color, 'stroke-width': 2.2 * SC, 'stroke-dasharray': dash || '' })); }
   function exactTopK(q) { return pts.map((p, i) => [raw(q, p), i]).sort((a, b) => a[0] - b[0]).slice(0, K).map((x) => x[1]); }
 
   async function search(q) {
     if (busy) return;
     busy = true; fx.innerHTML = ''; drawBase();
-    fx.append(svg('path', { d: `M${q.x - 8},${q.y} h16 M${q.x},${q.y - 8} v16`, stroke: 'var(--err)', 'stroke-width': 3 }), svg('circle', { cx: q.x, cy: q.y, r: 4, fill: 'var(--err)' }));
+    fx.append(svg('path', { d: `M${q.x - 8 * SC},${q.y} h${16 * SC} M${q.x},${q.y - 8 * SC} v${16 * SC}`, stroke: 'var(--err)', 'stroke-width': 3 }), svg('circle', { cx: q.x, cy: q.y, r: 4 * SC, fill: 'var(--err)' }));
     const exact = exactTopK(q);
     let found, extra;
     cnt = 0;
@@ -151,12 +164,12 @@ SD.widget('vector-db', function (root, ctx) {
       for (let l = maxL; l >= 1; l--) ep = greedy(q, ep, l, path);
       say(`Start at entry point (layer ${maxL}). Greedy descent: ${path.length} hop(s) through upper layers.`);
       for (const [a, b, l] of path) {
-        fx.append(svg('line', { x1: pts[a].x, y1: pts[a].y, x2: pts[b].x, y2: pts[b].y, stroke: LAYER_COL[l], 'stroke-width': 3.5, 'stroke-linecap': 'round' }));
+        fx.append(svg('line', { x1: pts[a].x, y1: pts[a].y, x2: pts[b].x, y2: pts[b].y, stroke: LAYER_COL[l], 'stroke-width': 3.5 * SC, 'stroke-linecap': 'round' }));
         await sleep(260);
       }
       const efs = Math.max(ef, K);
       const { res, visited } = searchLayer(q, [ep], efs, 0);
-      visited.forEach((i) => fx.append(svg('circle', { cx: pts[i].x, cy: pts[i].y, r: 4.5, fill: 'var(--warn)', opacity: 0.8 })));
+      visited.forEach((i) => fx.append(svg('circle', { cx: pts[i].x, cy: pts[i].y, r: 4.5 * SC, fill: 'var(--warn)', opacity: 0.8 })));
       await sleep(400);
       found = res.slice(0, K).map((x) => x[1]);
       extra = { 'upper-layer hops': path.length, 'layer-0 visited': visited.size };
@@ -184,6 +197,13 @@ SD.widget('vector-db', function (root, ctx) {
   function say(t) { log.prepend(el('div', { html: t })); while (log.children.length > 30) log.lastChild.remove(); }
 
   syncSlider();
+  drawLegend();
   build();
-  search({ x: 250, y: 160 });
+  search({ x: W / 2, y: H / 2 });
+  ctx.onResize((n) => {
+    W = n ? 360 : 500; H = n ? 360 : 320; SC = n ? 1.35 : 1;
+    S_.setAttribute('viewBox', `0 0 ${W} ${H}`); bg.setAttribute('width', W); bg.setAttribute('height', H);
+    const again = () => { if (busy) return setTimeout(again, 200); build(); search({ x: W / 2, y: H / 2 }); };
+    again();
+  });
 });

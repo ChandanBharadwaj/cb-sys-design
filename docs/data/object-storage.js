@@ -141,7 +141,7 @@ SD.register({
 
   api: [
     { m: 'PUT', p: '/{bucket}/{key}', d: 'Single upload. The object becomes visible <b>atomically</b> once its data is durable and the metadata commit succeeds. A later GET or LIST sees it (strong consistency).' },
-    { m: 'POST', p: '/{bucket}/{key}?uploads', d: 'Start a <b>multipart upload</b> and get an <code>uploadId</code>. Parts are then uploaded in parallel and retried independently. S3 allows up to 10,000 parts.' },
+    { m: 'POST', p: '/{bucket}/{key}?uploads', d: 'Start a <b>multipart upload</b> and get an <code>uploadId</code>. Parts are then uploaded in parallel and retried independently. S3: 5 MiB to 5 GiB per part (the last part may be smaller), up to 10,000 parts.' },
     { m: 'PUT', p: '/{bucket}/{key}?partNumber=N&uploadId=…', d: 'Upload one part (often through a <b>presigned URL</b> straight from the browser). Returns an ETag per part.' },
     { m: 'POST', p: '/{bucket}/{key}?uploadId=…', d: 'Complete: send the list of (partNumber, ETag). Metadata stitches the parts into one object version in a single commit.' },
     { m: 'GET', p: '/{bucket}/{key}  Range: bytes=0-1048575', d: 'Look up the version → stripes → fragment locations, read the fragments needed, and stream. Range reads touch only the stripes that cover the range.' },
@@ -313,7 +313,8 @@ SD.register({
       { when: '2017', who: 'Apache Hadoop', title: 'HDFS erasure coding (Hadoop 3)', text: 'Default policy <b>RS-6-3-1024k</b>. The docs compare 3× replication\'s <b>200% overhead</b> with no more than 50% for typical EC setups, and note that RS(6,3) needs at least 3 racks.', src: 3 },
       { when: 'Dec 2020', who: 'AWS', title: 'S3 strong consistency', text: 'All GET, PUT and LIST operations became <b>strongly consistent</b> for all objects in all regions, automatically and at no extra cost. Before that, overwrites and deletes were eventually consistent.', src: 4 },
       { when: '2021', who: 'AWS', title: 'ShardStore (SOSP)', text: 'S3\'s new storage-node software, written in <b>Rust</b>, checked with <b>lightweight formal methods</b>: executable reference models plus property-based testing. The paper reports it kept 16 issues, including crash-consistency bugs, out of production.', src: 5 },
-      { when: '2023', who: 'AWS', title: 'Building a "pretty big" storage system', text: 'Andy Warfield\'s FAST keynote and post: S3 runs on huge fleets of hard drives whose random-I/O rate has barely improved for decades. Spreading each customer\'s data over very many drives is what turns slow disks into high aggregate throughput.', src: 6 }
+      { when: '2023', who: 'AWS', title: 'Building a "pretty big" storage system', text: 'Andy Warfield\'s FAST keynote and post: S3 runs on huge fleets of hard drives whose random-I/O rate has barely improved for decades. Spreading each customer\'s data over very many drives is what turns slow disks into high aggregate throughput.', src: 6 },
+      { when: 'Dec 2025', who: 'AWS', title: 'S3 objects up to 50 TB', text: 'The maximum object size rose <b>tenfold, from 5 TB to 50 TB</b>. Multipart limits stayed at 10,000 parts of at most 5 GiB, so big uploads must pick a larger part size.', src: 8 }
     ],
     lessons: [
       'Separate <b>metadata</b> (small, strongly consistent, sharded) from <b>data</b> (huge, immutable fragments).',
@@ -328,7 +329,9 @@ SD.register({
       { title: 'HDFS Erasure Coding', url: 'https://hadoop.apache.org/docs/r3.4.0/hadoop-project-dist/hadoop-hdfs/HDFSErasureCoding.html', pub: 'Apache Hadoop docs' },
       { title: 'Amazon S3 now delivers strong read-after-write consistency automatically for all applications', url: 'https://aws.amazon.com/about-aws/whats-new/2020/12/amazon-s3-now-delivers-strong-read-after-write-consistency-automatically-for-all-applications', pub: 'AWS What\'s New, Dec 2020' },
       { title: 'Using Lightweight Formal Methods to Validate a Key-Value Storage Node in Amazon S3', url: 'https://www.cs.utexas.edu/~bornholt/papers/shardstore-sosp21.pdf', pub: 'SOSP 2021' },
-      { title: 'Building and operating a pretty big storage system called S3', url: 'https://www.allthingsdistributed.com/2023/07/building-and-operating-a-pretty-big-storage-system.html', pub: 'All Things Distributed, 2023' }
+      { title: 'Building and operating a pretty big storage system called S3', url: 'https://www.allthingsdistributed.com/2023/07/building-and-operating-a-pretty-big-storage-system.html', pub: 'All Things Distributed, 2023' },
+      { title: 'Amazon S3 multipart upload limits', url: 'https://docs.aws.amazon.com/AmazonS3/latest/userguide/qfacts.html', pub: 'Amazon S3 user guide' },
+      { title: 'Amazon S3 increases the maximum object size to 50 TB', url: 'https://aws.amazon.com/about-aws/whats-new/2025/12/amazon-s3-maximum-object-size-50-tb/', pub: 'AWS What\'s New, Dec 2025' }
     ]
   },
 
@@ -350,6 +353,7 @@ SD.register({
     { f: 'Hot key range in metadata', detect: 'Partition latency and throttling', fix: 'Split ranges automatically. Clients add a hash prefix to spread keys.' },
     { f: 'Abandoned multipart uploads', detect: 'Storage growth with no visible objects', fix: 'A lifecycle rule <code>AbortIncompleteMultipartUpload</code> after N days.' },
     { f: 'Repair storm after a big outage', detect: 'Repair backlog and network saturation', fix: 'Prioritise stripes with the fewest surviving fragments and throttle the rest.' },
+    { f: 'Orphaned fragments', detect: 'Raw bytes on disk exceed what metadata references (a PUT wrote data, then its metadata commit failed)', fix: 'Background mark-and-sweep: delete fragments no metadata version references, after a grace period longer than any in-flight upload.' },
     { f: 'Accidental delete or overwrite', detect: 'Audit logs, user report', fix: 'Versioning plus object lock / retention; restore the previous version.' }
   ],
 
@@ -358,7 +362,7 @@ SD.register({
     { q: 'Erasure coding vs replication?', a: '<ul><li><b>3× replication</b>: 3.0× bytes, survives 2 lost copies, repair = copy 1×, reads hit one disk.</li><li><b>RS(6,3)</b>: 1.5× bytes, survives <i>any</i> 3 lost fragments, repair reads 6 fragments per lost one, reads touch 6 disks.</li><li><b>RS(10,4)</b>: 1.4×, survives 4.</li></ul><p>EC wins on cost for big, cold data. Replication wins on latency, repair cost and small objects.</p>', lvl: 'core' },
     { q: 'How do you scale the metadata?', a: '<p>Separate it from data. Store <code>(bucket, key) → version → layout</code> in a sorted, <b>range-sharded</b>, replicated index (Raft or Paxos per shard). Sorted order makes LIST-by-prefix a range scan. Hot ranges split. GFS\'s single in-memory master only worked because chunks were 64 MB and files were few.</p>', lvl: 'core' },
     { q: 'What is the small-file problem, and how do you fix it?', a: '<p>Billions of tiny objects mean billions of metadata rows, per-object request overhead and wasteful stripes (4 KB cut into 9 fragments).</p><p>Fix: <b>pack</b> small objects into large append-only volumes and index <code>key → (volume, offset, length)</code>, as Haystack and f4 do. Erasure-code whole sealed volumes, and compact them to reclaim deleted space.</p>', lvl: 'core' },
-    { q: 'How does multipart upload work, and why use it?', a: '<p>Initiate to get an uploadId, upload parts (5 MiB to 5 GiB each in S3) in parallel with independent retries, then <b>complete</b> with the list of part ETags. The object appears atomically at complete.</p><p>Benefits: throughput, resumability, and uploading before you know the final size. Presigned part URLs let browsers upload directly, without your servers proxying the bytes.</p>', lvl: 'core' },
+    { q: 'How does multipart upload work, and why use it?', a: '<p>Initiate to get an uploadId, upload parts (5 MiB to 5 GiB each in S3, at most 10,000 of them) in parallel with independent retries, then <b>complete</b> with the list of part ETags. The object appears atomically at complete.</p><p>Benefits: throughput, resumability, and uploading before you know the final size. Presigned part URLs let browsers upload directly, without your servers proxying the bytes.</p>', lvl: 'core' },
     { q: 'How can you put 9 fragments in 3 AZs and survive an AZ loss?', a: '<p>Put at most m fragments in each AZ. RS(6,3) puts 3 in each, so an AZ loss leaves exactly 6 = k and the data stays readable. RS(10,4) has 14 fragments, 5 in at least one AZ, so it cannot survive that AZ without extra cross-zone protection.</p>', lvl: 'deep' },
     { q: 'Why is repair the hard part of erasure coding?', a: '<p>Rebuilding one lost fragment reads <b>k</b> others, so a 20 TB disk failure under RS(10,4) causes ~200 TB of reads across the cluster. Mitigations: parallel repair across many disks, prioritising stripes with the fewest survivors, local reconstruction codes (LRC) that repair from a smaller group, and throttling so repair does not starve user traffic.</p>', lvl: 'deep' },
     { q: 'How would you provide strong read-after-write consistency?', a: '<p>Make the metadata commit the linearization point: data fragments are written first, then one atomic metadata update makes the new version visible. Every read resolves the key through the owning metadata partition, or validates any cached entry against it.</p><p>S3 has done this for all operations, including LIST, since December 2020.</p>', lvl: 'deep' },
@@ -374,16 +378,17 @@ SD.register({
 @Service
 public class UploadService {
   private static final String BUCKET = "media";
-  private static final long PART = 64L * 1024 * 1024;   // S3: 5 MiB..5 GiB per part, max 10,000 parts
+  private static final long MIN_PART = 64L * 1024 * 1024;  // S3: 5 MiB..5 GiB per part, max 10,000 parts
   private final S3Client s3;
   private final S3Presigner presigner;
 
   public UploadService(S3Client s3, S3Presigner presigner) { this.s3 = s3; this.presigner = presigner; }
 
-  public record Started(String uploadId, List<URL> partUrls) {}
+  public record Started(String uploadId, long partSize, List<URL> partUrls) {}
 
   public Started start(String key, long size) {
-    int parts = (int) ((size + PART - 1) / PART);
+    long part = Math.max(MIN_PART, (size + 9_999) / 10_000);  // grow parts so ≤ 10,000 of them
+    int parts = (int) ((size + part - 1) / part);
     String uploadId = s3.createMultipartUpload(b -> b.bucket(BUCKET).key(key)).uploadId();
     List<URL> urls = IntStream.rangeClosed(1, parts)
         .mapToObj(n -> presigner.presignUploadPart(p -> p
@@ -391,7 +396,7 @@ public class UploadService {
                 .uploadPartRequest(u -> u.bucket(BUCKET).key(key).uploadId(uploadId).partNumber(n)))
             .url())
         .toList();
-    return new Started(uploadId, urls);          // the browser PUTs each part straight to S3
+    return new Started(uploadId, part, urls);    // the browser PUTs each part straight to S3
   }
 
   /** etags: partNumber → ETag header returned by each part PUT. */

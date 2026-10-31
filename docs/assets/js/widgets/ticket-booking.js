@@ -3,8 +3,13 @@
    Held seats count down and either sell or expire back to the pool. */
 SD.widget('ticket-booking', function (root, ctx) {
   const { el, svg } = ctx;
-  const W = 500, COLS = 8, ROWS = 4, SW = 48, SH = 28, GX = 56, GY = 35, SX = 54, SY = 42;
-  const LY = 196, LH = 40, TX0 = 66, TX1 = 490;
+  // Two layouts: desktop (viewBox 500 wide) and phone (360 wide, bigger text). Seat state survives a rebuild.
+  const COLS = 8, ROWS = 4;
+  const GEO = {
+    wide: { W: 500, SW: 48, SH: 28, GX: 56, GY: 35, SX: 54, SY: 42, LY: 196, LH: 40, TX0: 66, TX1: 490, f: { seat: 14, stage: 12, name: 14, res: 12, ms: 12, hint: 14 } },
+    narrow: { W: 360, SW: 38, SH: 30, GX: 42, GY: 38, SX: 33, SY: 48, LY: 210, LH: 46, TX0: 62, TX1: 352, f: { seat: 14, stage: 14, name: 15, res: 14, ms: 13, hint: 14 } }
+  };
+  let G = ctx.narrow ? GEO.narrow : GEO.wide;
   const BUYERS = [['Ann', 'var(--k-client)'], ['Ben', 'var(--k-queue)'], ['Cy', 'var(--k-compute)']];
   const SEG = { read: ['var(--text-3)', 'read'], think: ['var(--border)', 'app logic'], wait: ['var(--warn)', 'lock wait'], write: ['var(--accent)', 'UPDATE'], commit: ['var(--ok)', 'commit'], fail: ['var(--err)', '0 rows / abort'] };
   const STRATS = [['none', 'No locking (broken)'], ['pess', 'SELECT … FOR UPDATE'], ['opt', '@Version'], ['cond', 'Conditional UPDATE']];
@@ -12,7 +17,8 @@ SD.widget('ticket-booking', function (root, ctx) {
   let stats = { sold: 0, double: 0, wait: 0, conflicts: 0, expired: 0 };
 
   const seats = [];
-  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) seats.push({ id: 'ABCD'[r] + (c + 1), x: SX + c * GX, y: SY + r * GY, st: 'free', owner: null, t: 0, payAt: 0 });
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) seats.push({ id: 'ABCD'[r] + (c + 1), r, c, st: 'free', owner: null, t: 0, payAt: 0 });
+  const sx = (s) => G.SX + s.c * G.GX, sy = (s) => G.SY + s.r * G.GY;
 
   // controls
   const sBtns = STRATS.map(([v, l]) => el('button', { class: 'btn' + (v === strat ? ' primary' : ''), text: l, onclick: () => { if (busy) return; strat = v; sBtns.forEach((b, i) => b.className = 'btn' + (STRATS[i][0] === strat ? ' primary' : '')); } }));
@@ -23,24 +29,32 @@ SD.widget('ticket-booking', function (root, ctx) {
   const resetBtn = el('button', { class: 'btn', text: '↺ Reset', onclick: () => { if (busy) return; seats.forEach((s) => { s.st = 'free'; s.owner = null; }); stats = { sold: 0, double: 0, wait: 0, conflicts: 0, expired: 0 }; race = null; say('Reset.'); } });
   root.append(el('div', { class: 'w-controls' }, sBtns), el('div', { class: 'w-controls' }, raceBtn, el('label', null, 'Hold TTL (demo) ', tOut, ' ', tIn), resetBtn));
 
-  const H = LY + 3 * LH + 26;
-  const S_ = svg('svg', { viewBox: `0 0 ${W} ${H}`, style: 'max-width:680px;margin:0 auto;', role: 'img', 'aria-label': 'Seat map and transaction lanes' });
+  const S_ = svg('svg', { style: 'max-width:680px;margin:0 auto;', role: 'img', 'aria-label': 'Seat map and transaction lanes' });
   const gSeats = svg('g'), gLanes = svg('g'), gStatic = svg('g');
   S_.append(gStatic, gSeats, gLanes);
-  root.append(el('div', { class: 'w-stage' }, S_));
+  // lane legend lives in HTML so it never shrinks on a phone
+  const legend = el('div', { style: { display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '4px 14px', fontSize: '12.5px', color: 'var(--text-2)', margin: '6px 0 2px' } },
+    Object.values(SEG).map(([c, l]) => el('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '5px' } }, el('i', { style: { width: '11px', height: '11px', borderRadius: '2px', background: c, display: 'inline-block' } }), l)));
+  root.append(el('div', { class: 'w-stage' }, S_), legend);
   const statEl = el('div', { class: 'w-stats' }), log = el('div', { class: 'w-log', 'aria-live': 'polite' });
   root.append(statEl, log);
   const say = (t) => { log.prepend(el('div', { html: t })); while (log.children.length > 40) log.lastChild.remove(); };
-  const T = (x, y, text, st, fill) => svg('text', { x, y, 'text-anchor': 'middle', fill: fill || 'var(--text)', style: st || 'font:600 11px var(--sans)', text });
+  const T = (x, y, text, w, size, fill, fam) => svg('text', { x, y, 'text-anchor': 'middle', fill: fill || 'var(--text)', style: `font:${w} ${size}px var(${fam || '--sans'})`, text });
 
-  // static: stage, lane labels, legend
-  gStatic.append(svg('rect', { x: SX - SW / 2, y: 4, width: (COLS - 1) * GX + SW, height: 18, rx: 9, fill: 'var(--surface-2)', stroke: 'var(--border)' }), T(SX + (COLS - 1) * GX / 2, 17, 'STAGE', 'font:700 12px var(--sans)', 'var(--text-3)'));
-  BUYERS.forEach(([n, c], i) => {
-    gStatic.append(svg('circle', { cx: 12, cy: LY + i * LH + 14, r: 6, fill: c }), svg('text', { x: 23, y: LY + i * LH + 19, fill: 'var(--text)', style: 'font:700 14px var(--sans)', text: n }));
-    gStatic.append(svg('line', { x1: TX0, x2: TX1, y1: LY + i * LH + 14, y2: LY + i * LH + 14, stroke: 'var(--border)', 'stroke-dasharray': '2 4' }));
-  });
-  let lx = 8;
-  Object.values(SEG).forEach(([c, l]) => { gStatic.append(svg('rect', { x: lx, y: H - 17, width: 11, height: 11, rx: 2, fill: c }), svg('text', { x: lx + 14, y: H - 7, fill: 'var(--text-2)', style: 'font:500 11px var(--sans)', text: l })); lx += 22 + l.length * 6.4; });
+  // static: stage, lane labels
+  function drawStatic() {
+    const H = G.LY + 3 * G.LH + 6;
+    S_.setAttribute('viewBox', `0 0 ${G.W} ${H}`);
+    gStatic.innerHTML = '';
+    gStatic.append(svg('rect', { x: G.SX - G.SW / 2, y: 4, width: (COLS - 1) * G.GX + G.SW, height: G.f.stage + 8, rx: 9, fill: 'var(--surface-2)', stroke: 'var(--border)' }), T(G.SX + (COLS - 1) * G.GX / 2, 8 + G.f.stage * 0.8, 'STAGE', 700, G.f.stage, 'var(--text-3)'));
+    BUYERS.forEach(([n, c], i) => {
+      const y = G.LY + i * G.LH + 14;
+      gStatic.append(svg('circle', { cx: 10, cy: y, r: 6, fill: c }), svg('text', { x: 21, y: y + 5, fill: 'var(--text)', style: `font:700 ${G.f.name}px var(--sans)`, text: n }));
+      gStatic.append(svg('line', { x1: G.TX0, x2: G.TX1, y1: y, y2: y, stroke: 'var(--border)', 'stroke-dasharray': '2 4' }));
+    });
+  }
+  drawStatic();
+  ctx.onResize((n) => { G = n ? GEO.narrow : GEO.wide; drawStatic(); render(); });
 
   // ---- simulate one race on one row lock (times in ms of DB time) ----
   function simulate(kind) {
@@ -118,33 +132,34 @@ SD.widget('ticket-booking', function (root, ctx) {
 
   function render() {
     gSeats.innerHTML = ''; gLanes.innerHTML = '';
+    const f = G.f;
     seats.forEach((s) => {
-      const target = race && !race.done && race.seat === s;
+      const target = race && !race.done && race.seat === s, x = sx(s), y = sy(s);
       const fill = { free: 'color-mix(in srgb, var(--ok) 18%, var(--surface))', held: 'color-mix(in srgb, var(--warn) 30%, var(--surface))', sold: 'var(--surface-2)', double: 'color-mix(in srgb, var(--err) 35%, var(--surface))' }[s.st];
       const g = svg('g', { style: 'cursor:pointer' });
-      g.append(svg('rect', { x: s.x - SW / 2, y: s.y - SH / 2, width: SW, height: SH, rx: 6, fill, stroke: target ? 'var(--accent)' : s.st === 'double' ? 'var(--err)' : 'var(--border)', 'stroke-width': target ? 2.5 : 1 }));
+      g.append(svg('rect', { x: x - G.SW / 2, y: y - G.SH / 2, width: G.SW, height: G.SH, rx: 6, fill, stroke: target ? 'var(--accent)' : s.st === 'double' ? 'var(--err)' : 'var(--border)', 'stroke-width': target ? 2.5 : 1 }));
       const label = s.st === 'held' ? BUYERS[s.owner][0] : s.st === 'sold' ? '✓' : s.st === 'double' ? '×' + s.owner.length : s.id;
-      g.append(T(s.x, s.y + 5, label, 'font:700 14px var(--sans)', s.st === 'sold' ? 'var(--text-3)' : 'var(--text)'));
-      if (s.st === 'held') g.append(svg('rect', { x: s.x - SW / 2 + 3, y: s.y + SH / 2 - 4, width: Math.max(0, (SW - 6) * (1 - s.t / ttl)), height: 3, rx: 1, fill: 'var(--warn)' }));
+      g.append(T(x, y + 5, label, 700, f.seat, s.st === 'sold' ? 'var(--text-3)' : 'var(--text)'));
+      if (s.st === 'held') g.append(svg('rect', { x: x - G.SW / 2 + 3, y: y + G.SH / 2 - 4, width: Math.max(0, (G.SW - 6) * (1 - s.t / ttl)), height: 3, rx: 1, fill: 'var(--warn)' }));
       g.addEventListener('click', () => start(s));
       gSeats.append(g);
     });
-    if (!race) { gLanes.append(T((TX0 + TX1) / 2, LY + LH * 1.5 + 4, 'Tap a green seat to start a race', 'font:500 14px var(--sans)', 'var(--text-3)')); }
+    if (!race) { gLanes.append(T((G.TX0 + G.TX1) / 2, G.LY + G.LH * 1.5 + 4, 'Tap a green seat to start a race', 500, f.hint, 'var(--text-3)')); }
     else {
-      const sc = (TX1 - TX0) / Math.max(30, race.sim.end);
+      const sc = (G.TX1 - G.TX0) / Math.max(30, race.sim.end);
       race.sim.lanes.forEach((segs, i) => {
-        const y = LY + i * LH + 3;
+        const y = G.LY + i * G.LH + 3;
         segs.forEach((g) => {
           if (g.a > race.cursor) return;
           const b = Math.min(g.b, race.cursor);
-          gLanes.append(svg('rect', { x: TX0 + g.a * sc, y, width: Math.max(1, (b - g.a) * sc), height: 22, rx: 4, fill: SEG[g.k][0], stroke: g.k === 'think' ? 'var(--text-3)' : 'none', 'stroke-width': 0.6 }));
+          gLanes.append(svg('rect', { x: G.TX0 + g.a * sc, y, width: Math.max(1, (b - g.a) * sc), height: 22, rx: 4, fill: SEG[g.k][0], stroke: g.k === 'think' ? 'var(--text-3)' : 'none', 'stroke-width': 0.6 }));
         });
         if (race.done) {
           const r = race.sim.res[i], dbl = race.seat.st === 'double';
-          gLanes.append(T(TX1 - 34, y + 35, dbl ? 'confirmed?!' : r.ok ? 'got it' : 'taken', 'font:700 12px var(--sans)', dbl ? 'var(--err)' : r.ok ? 'var(--ok)' : 'var(--text-3)'));
+          gLanes.append(T(G.TX1 - 40, y + 22 + f.res + 1, dbl ? 'confirmed?!' : r.ok ? 'got it' : 'taken', 700, f.res, dbl ? 'var(--err)' : r.ok ? 'var(--ok)' : 'var(--text-3)'));
         }
       });
-      gLanes.append(T(TX1 - 70, LY - 8, Math.round(race.cursor) + ' ms (DB time)', 'font:600 12px var(--mono)', 'var(--text-3)'));
+      gLanes.append(T(G.TX1 - 70, G.LY - 8, Math.round(race.cursor) + ' ms (DB time)', 600, f.ms, 'var(--text-3)', '--mono'));
     }
     statEl.innerHTML = '';
     const held = seats.filter((s) => s.st === 'held').length;

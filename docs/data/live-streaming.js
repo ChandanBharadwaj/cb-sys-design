@@ -7,7 +7,7 @@ SD.register({
   tldr: {
     problem: 'Live audiences arrive in waves of millions within minutes: the toss, a wicket, the last over. Video segments are identical for everyone and cache well. The API tier (login, entitlement, home page, ads) does not, and autoscaling reacts too late.',
     idea: 'Encode once into an <b>ABR ladder</b>, package short <b>HLS/DASH segments</b>, and serve them through an <b>origin shield</b> and <b>several CDNs</b>. Pre-scale the API tier on a <b>ladder keyed to forecast concurrency</b>, and keep <b>panic switches</b> that shed non-critical features before playback suffers.',
-    insight: 'Hotstar\'s engineers wrote that, given how long it takes, autoscaling is "a useless strategy" for spikes. They scale <i>ahead</i> of the event and keep headroom, then step capacity up or down a ladder as concurrency moves.',
+    insight: 'Hotstar\'s engineers wrote that autoscaling is useless for spikes, because new capacity arrives too late. They scale <i>ahead</i> of the event and keep headroom, then step capacity up or down a ladder as concurrency moves.',
     numbers: [
       { v: '25.3M', l: 'concurrent viewers, India v NZ World Cup semi-final (Hotstar, July 2019)' },
       { v: '18.6M', l: 'concurrent viewers, IPL final (Akamai press release, 2019)' },
@@ -319,8 +319,8 @@ SD.register({
   realWorld: {
     intro: 'Hotstar (now JioHotstar) has written the most about this problem. Later JioHotstar records of 50M+ appear only in unofficial blogs, so they are not used here.',
     timeline: [
-      { when: '2017', who: 'Hotstar', title: '"Scaling is not an accident"', text: 'Hotstar rejected autoscaling for spikes because provisioning takes too long. It built <b>pessimistic traffic models</b> that produced <b>ladders</b>: server-farm sizes for each level of estimated concurrency. Client-server calls were reviewed so the system could signal high load gracefully, or use <b>panic switches</b>.', src: 1 },
-      { when: 'Pre-2019', who: 'Hotstar', title: 'Progressive degradation', text: 'Because bandwidth is hard-limited, bitrates are stepped down as concurrency rises. Every panic scenario was tested against its stated behaviour before the event.', src: 2 },
+      { when: 'After Jun 2017', who: 'Hotstar', title: 'T for Tsunami: the shape of the wave', text: 'Written after Hotstar beat its earlier record of <b>3M concurrent</b> viewers at the Champions Trophy (June 2017). The fleet had been sized for 7M, but not for the <b>tsunami</b> shape of viewers arriving all at once. The post also describes <b>progressive degradation</b>: bandwidth is hard-limited, so bitrates are stepped down as concurrency rises, and every panic scenario is tested before the event.', src: 2 },
+      { when: 'Undated', who: 'Hotstar', title: '"Scaling is not an accident"', text: 'Written after 6+ months of preparing for the IPL. Hotstar rejected autoscaling for spikes because provisioning takes too long. It built <b>pessimistic traffic models</b> that produced <b>ladders</b>: server-farm sizes for each level of estimated concurrency. Clients add <b>jitter</b> to retries, and client-server calls were reviewed so the system could signal high load gracefully, or use <b>panic switches</b>.', src: 1 },
       { when: 'May 2019', who: 'Hotstar · Akamai', title: '18.6M concurrent for the IPL final', text: 'Akamai announced that Hotstar streamed the VIVO IPL final to <b>18.6 million simultaneous viewers</b>, a record at the time.', src: 0 },
       { when: 'Jul 2019', who: 'Hotstar', title: '25.3M concurrent and the re:Invent talk', text: 'The India v New Zealand semi-final reached <b>25.3M</b>. At re:Invent (CMY302) Hotstar explained why AWS autoscaling groups failed them (insufficient capacity errors, one instance type per group, step-size limits). It described pre-warming before matches, scaling on request rate or platform concurrency, and its <b>Project HULK</b> load tests and chaos engineering on ~108K CPUs across 8 regions.', src: 4 },
       { when: '2019', who: 'Hotstar', title: 'Kubernetes and a custom scaler', text: 'Hotstar described static ladders stepped up or down "basis the amount of headroom left", a bet on Kubernetes for 2019, and a custom autoscaling engine that ran in shadow mode until there was enough data to trust it.', src: 3 },
@@ -374,6 +374,7 @@ SD.register({
     { q: 'How do you steer traffic across several CDNs?', a: '<p>Make the choice at <b>session start</b> in the playback API, from live QoE per CDN, region and ISP (rebuffer rate, start time, errors), plus each contract\'s committed capacity. Players can also fail over to a backup CDN URL on repeated errors. DNS-only steering is coarse and slow because resolvers cache answers.</p>', lvl: 'deep' },
     { q: 'How do you load-test for 25M viewers?', a: '<p>Generate traffic that looks like a real match: the join wave, browsing, heartbeats and segment fetches. Hotstar built <b>Project HULK</b> for this, plus "tsunami" tests and chaos engineering. Run tests well before the event, from several regions, and verify every panic switch.</p>', lvl: 'deep' },
     { q: 'What latency budget does classic HLS give you, and why?', a: '<p>Players usually buffer about <b>three segments</b> before playing. With 6 s segments that alone is ~18 s, plus encode, packaging and CDN time, so 20–30 s glass to glass. Shorter segments or LL-HLS parts cut the buffer, at the cost of more requests.</p>', lvl: 'core' },
+    { q: 'Your own push notification ("Toss done, watch now!") causes the spike. What do you change?', a: '<p>Treat the notification as a load you schedule. Send it in <b>batches</b> over a few minutes, by region or user segment, rather than to 50M devices in one second. Add a random <b>client-side delay (jitter)</b> before the app makes its first API calls.</p><p>Point the deep link at a screen that is cheap to render from CDN-cached data, and pre-warm the API ladder one level <b>before</b> sending. The push system becomes an input to capacity planning.</p>', lvl: 'deep' },
     { q: 'What happens if the primary encoder fails mid-match?', a: '<p>Run <b>A/B ingest and encoders</b> in different regions, both producing the same segment numbering from the same timecode. The packager or origin switches to B\'s output; players see at most one segment of glitch. Test the failover during rehearsals.</p>', lvl: 'deep' }
   ],
 
@@ -457,7 +458,7 @@ def target_level(viewers: int, headroom: float = 0.3) -> int:
 ffmpeg -i "srt://0.0.0.0:9000?mode=listener" \\
   -filter_complex "[0:v]split=3[a][b][c];[a]scale=-2:1080[v0];[b]scale=-2:720[v1];[c]scale=-2:480[v2]" \\
   -map "[v0]" -map "[v1]" -map "[v2]" -map 0:a -map 0:a -map 0:a \\
-  -c:v libx264 -preset veryfast -g 50 -keyint_min 50 -sc_threshold 0 \\
+  -c:v libx264 -preset veryfast -pix_fmt yuv420p -g 50 -keyint_min 50 -sc_threshold 0 \\
   -b:v:0 5000k -maxrate:v:0 5350k -bufsize:v:0 7500k \\
   -b:v:1 2800k -maxrate:v:1 3000k -bufsize:v:1 4200k \\
   -b:v:2 1400k -maxrate:v:2 1500k -bufsize:v:2 2100k \\

@@ -9,9 +9,9 @@ SD.register({
     idea: '<b>Continuous batching</b> (iteration-level scheduling) keeps the GPU full by letting requests join and leave the batch every step. <b>PagedAttention</b> stores the KV cache in fixed-size blocks behind a per-sequence block table, so memory is not wasted on reservations. <b>Prefix caching</b> reuses shared prompts.',
     insight: '<b>Prefill</b> (whole prompt in one pass) is compute-bound. <b>Decode</b> (one token per step) is memory-bandwidth-bound: every step re-reads the weights and the KV cache. A bigger batch amortizes that read, and batch size is limited by KV memory. So <b>KV memory ≈ throughput</b>.',
     numbers: [
-      { v: '320 KiB', l: 'KV cache per token for a Llama-3-70B-class model in FP16 (2 × 80 × 8 × 128 × 2 B)' },
+      { v: '320 KiB', l: 'KV cache per token for a typical 70B model with grouped-query attention, FP16 (2 × 80 × 8 × 128 × 2 B)' },
       { v: '2–4×', l: 'throughput of vLLM vs FasterTransformer / Orca at the same latency (SOSP \'23)' },
-      { v: '36.9×', l: 'Orca vs FasterTransformer throughput on GPT-3 175B (OSDI \'22)' }
+      { v: '36.9×', l: 'Orca vs FasterTransformer throughput on a 175B-parameter model (OSDI \'22)' }
     ]
   },
 
@@ -134,7 +134,7 @@ SD.register({
       { label: 'Decode step lower bound: read batch KV at ~3.35 TB/s', fmt: 'ms', f: (v) => (2 * v.L * v.H * v.D * v.B * v.ctx * v.seqs) / 3.35e12 * 1000 },
       { label: '80 GB GPUs needed just for this KV', f: (v) => Math.ceil((2 * v.L * v.H * v.D * v.B * v.ctx * v.seqs) / 80e9) }
     ],
-    note: 'Defaults are a Llama-3-70B-class config (80 layers, 8 KV heads via grouped-query attention, head_dim 128). Per token: 2 × 80 × 8 × 128 × 2 B = <b>327,680 B = 320 KiB</b>, so one 8K-token sequence holds <b>2.5 GiB</b>. The factor 2 is K <i>and</i> V. With 64 query heads and no GQA it would be 8× more. ~3.35 TB/s HBM bandwidth is an <em>estimate</em> for one high-end GPU; weights are read every step on top of this.'
+    note: 'Defaults are a typical open 70B-parameter config (80 layers, 8 KV heads via grouped-query attention, head_dim 128). Per token: 2 × 80 × 8 × 128 × 2 B = <b>327,680 B = 320 KiB</b>, so one 8K-token sequence holds <b>2.5 GiB</b>. The factor 2 is K <i>and</i> V. With 64 query heads and no GQA it would be 8× more. ~3.35 TB/s HBM bandwidth is an <em>estimate</em> for one high-end GPU; weights are read every step on top of this.'
   },
 
   api: [
@@ -297,7 +297,9 @@ SD.register({
       if (!fits) verdict = '❌ <b>The model does not fit.</b> Weights need ' + SD.fmt.bytes(Wt / tp) + ' per GPU before any KV cache. Add GPUs (TP=4) or quantize.';
       else if (s.batch !== 'continuous') verdict = '⚠ <b>GPU time is being wasted.</b> Without iteration-level scheduling, finished sequences hold slots and new requests wait for the batch to drain.';
       else if (!paged) verdict = '⚠ <b>Memory-limited batch.</b> Reserving max_len per request wastes ~' + Math.round(waste * 100) + '% of KV memory. Paged KV would roughly ' + Math.round((Math.min(256, Math.floor(capTok / (LIVE + 8)))) / Math.max(1, maxSeqs)) + '× the batch.';
-      else if (s.prefix === 'on' && tp === 4 && s.mode !== 'spec') verdict = '✅ <b>What vLLM / TensorRT-LLM / SGLang do by default:</b> continuous batching, paged KV, prefix caching, and a TP size that just fits the model with room for KV.';
+      else if (s.mode === 'spec') verdict = '👍 <b>Speculative decoding</b> trims TPOT, but at a batch of ~' + Math.round(B) + ' the GPU has little spare compute, so throughput gains are small. It shines at low concurrency.';
+      else if (s.mode === 'disagg') verdict = '👍 <b>Disaggregated prefill/decode</b> keeps TPOT steady under prompt bursts, at the price of ~1.5× GPUs and shipping KV between pools. Worth it at large scale with strict TPOT SLOs.';
+      else if (s.prefix === 'on' && tp === 4) verdict = '✅ <b>What vLLM / TensorRT-LLM / SGLang do by default:</b> continuous batching, paged KV, prefix caching, and a TP size that just fits the model with room for KV.';
       else verdict = '👍 Good setup. Check TTFT vs TPOT vs cost to see which way this choice leans.';
       const flow = ['client>gw', 'gw>router'].concat(s.mode === 'disagg' ? ['router>pre', 'pre>kvm', 'kvm>gpu'] : ['router>sched', 'sched>kvm', 'sched>gpu']).concat(s.mode === 'spec' ? ['draft>gpu'] : []).concat(['gpu>sched', 'sched>router']);
       return {
@@ -325,10 +327,10 @@ SD.register({
   realWorld: {
     intro: 'The modern serving stack came together between 2022 and 2024, mostly from systems papers that are now defaults in open-source engines.',
     timeline: [
-      { when: '2022', who: 'Seoul National Univ. / FriendliAI', title: 'Orca: iteration-level scheduling', text: 'Schedule per model <b>iteration</b> instead of per request, so new requests join after one step. <b>Selective batching</b> batches every operation except attention. <b>36.9×</b> throughput vs FasterTransformer at the same latency on GPT-3 175B (OSDI \'22).', src: 0 },
-      { when: 'Jun 2023', who: 'UC Berkeley (LMSYS)', title: 'vLLM released', text: 'Launch post: <b>14–24×</b> throughput vs Hugging Face Transformers and 2.2–2.5× vs TGI on their benchmarks. It served Vicuna / Chatbot Arena and <b>cut the GPUs used by 50%</b>.', src: 1 },
+      { when: '2022', who: 'Seoul National Univ. / FriendliAI', title: 'Orca: iteration-level scheduling', text: 'Schedule per model <b>iteration</b> instead of per request, so new requests join after one step. <b>Selective batching</b> batches every operation except attention. <b>36.9×</b> throughput vs FasterTransformer at the same latency on a 175B-parameter GPT-style model (OSDI \'22).', src: 0 },
+      { when: 'Jun 2023', who: 'UC Berkeley (LMSYS)', title: 'vLLM released', text: 'Launch post: <b>14–24×</b> throughput vs Hugging Face Transformers and 2.2–2.5× vs TGI on their benchmarks. It served LMSYS\'s Chatbot Arena demo and <b>cut the GPUs used by 50%</b>.', src: 1 },
       { when: 'Oct 2023', who: 'UC Berkeley', title: 'PagedAttention (SOSP \'23)', text: 'KV cache in fixed-size blocks behind a block table, inspired by OS virtual memory. <b>Near-zero waste</b>, sharing across sequences, and <b>2–4×</b> throughput vs FasterTransformer and Orca at the same latency.', src: 2 },
-      { when: '2023', who: 'Google', title: 'Speculative decoding (ICML \'23)', text: 'A small model drafts several tokens and the big one verifies them in parallel, with a sampling scheme that keeps the output distribution <b>identical</b>. <b>2–3×</b> faster on T5-XXL with no retraining.', src: 3 },
+      { when: '2023', who: 'Google', title: 'Speculative decoding (ICML \'23)', text: 'A small model drafts several tokens and the big one verifies them in parallel, with a sampling scheme that keeps the output distribution <b>identical</b>. <b>2–3×</b> faster on their benchmark model with no retraining or architecture change.', src: 3 },
       { when: '2023', who: 'NVIDIA', title: 'TensorRT-LLM in-flight batching', text: 'The batch manager provides <b>in-flight</b> (continuous / iteration-level) batching with a paged KV cache and options for block reuse across requests.', src: 4 },
       { when: 'Jan 2024', who: 'LMSYS', title: 'SGLang RadixAttention', text: 'Keeps KV cache in a <b>radix tree</b> keyed by token sequences for automatic reuse across calls, with LRU eviction and <b>cache-aware scheduling</b>. Ideal for agents and few-shot prompts.', src: 5 },
       { when: '2024', who: 'Microsoft / UW', title: 'Splitwise (ISCA \'24)', text: 'Runs prompt (prefill) and token phases on <b>different machines</b>, moving KV state over fast interconnects. <b>1.4×</b> throughput at 20% lower cost, or 2.35× throughput at equal cost and power.', src: 6 },
@@ -349,7 +351,7 @@ SD.register({
       { title: 'Fast and Expressive LLM Inference with RadixAttention and SGLang', url: 'https://lmsys.org/blog/2024-01-17-sglang', pub: 'LMSYS blog, Jan 2024' },
       { title: 'Splitwise: Efficient generative LLM inference using phase splitting', url: 'https://www.microsoft.com/en-us/research/publication/splitwise-efficient-generative-llm-inference-using-phase-splitting/', pub: 'Microsoft Research, ISCA 2024' },
       { title: 'DistServe: Disaggregating Prefill and Decoding for Goodput-optimized LLM Serving', url: 'https://www.usenix.org/conference/osdi24/presentation/zhong-yinmin', pub: 'USENIX OSDI 2024' },
-      { title: 'vLLM design: Automatic Prefix Caching', url: 'https://docs.vllm.ai/en/latest/design/v1/prefix_caching/', pub: 'vLLM docs' },
+      { title: 'vLLM design: Automatic Prefix Caching', url: 'https://docs.vllm.ai/en/latest/design/prefix_caching/', pub: 'vLLM docs' },
       { title: 'vLLM: Optimization and Tuning (chunked prefill)', url: 'https://docs.vllm.ai/en/latest/configuration/optimization/', pub: 'vLLM docs' }
     ]
   },
@@ -372,13 +374,13 @@ SD.register({
     { f: 'Cold start during a spike', detect: 'Replica Pending/Loading for minutes while TTFT climbs', fix: 'Warm pool, pre-scaling for known events, weights on local NVMe, priority shedding.' },
     { f: 'One GPU fails in a TP group', detect: 'NCCL timeout / Xid errors, replica health check', fix: 'Whole replica restarts; router drains it; keep N+1 replicas.' },
     { f: 'Prefix cache thrash', detect: 'Low hit rate despite shared prompts', fix: 'Prefix-aware (consistent-hash) routing, keep the system prompt byte-identical, more cache memory.' },
-    { f: 'Cross-tenant cache side channel', detect: 'Security review: shared prefix blocks across tenants', fix: 'Per-tenant cache salt in the block hash, so only the same tenant can reuse blocks.' }
+    { f: 'Cross-tenant cache side channel', detect: 'Security review: shared prefix blocks across tenants', fix: 'Per-tenant cache salt in the block hash (vLLM\'s <code>cache_salt</code>), so only requests with the same salt can reuse blocks.' }
   ],
 
   interview: [
     { q: 'Why is decode memory-bound while prefill is compute-bound?', a: '<p><b>Prefill</b> processes thousands of prompt tokens at once: big matrix–matrix multiplies, so FLOPs dominate.</p><p><b>Decode</b> produces one token per sequence per step: matrix–vector work. Each step must stream <b>all weights</b> (140 GB for 70B FP16) plus the KV cache from HBM, with little arithmetic per byte. The fix is batching: one weight read serves every sequence in the batch.</p>', lvl: 'core' },
     { q: 'TTFT vs TPOT: what drives each?', a: '<p><b>TTFT</b> (time to first token) = queueing + prefill time. It grows with prompt length and with waiting for batch slots or KV memory. Prefix caching and chunked prefill help.</p><p><b>TPOT</b> (time per output token) = decode step time. It grows with batch size and context length (more KV to read) and with prefill interference. Disaggregation and speculative decoding help.</p>', lvl: 'core' },
-    { q: 'How big is the KV cache? Give the formula.', a: '<p><b>bytes/token = 2 × layers × kv_heads × head_dim × bytes_per_element</b> (2 = K and V).</p><p>Llama-3-70B-class: 2 × 80 × 8 × 128 × 2 = <b>327,680 B ≈ 320 KiB/token</b>. An 8K-token sequence is 2.5 GiB, and 64 of them need 160 GiB, more than the 140 GB of weights.</p><p>GQA (8 KV heads instead of 64) is what keeps this 8× smaller than full multi-head attention.</p>', fu: 'How would FP8 KV cache change the batch size?', lvl: 'core' },
+    { q: 'How big is the KV cache? Give the formula.', a: '<p><b>bytes/token = 2 × layers × kv_heads × head_dim × bytes_per_element</b> (2 = K and V).</p><p>A typical 70B model with GQA: 2 × 80 × 8 × 128 × 2 = <b>327,680 B ≈ 320 KiB/token</b>. An 8K-token sequence is 2.5 GiB, and 64 of them need 160 GiB, more than the 140 GB of weights.</p><p>GQA (8 KV heads instead of 64) is what keeps this 8× smaller than full multi-head attention.</p>', fu: 'How would FP8 KV cache change the batch size?', lvl: 'core' },
     { q: 'Why continuous batching?', a: '<p>Output lengths vary wildly. With static batching, a batch runs until its longest sequence ends, so finished slots sit idle and new requests wait.</p><p><b>Iteration-level scheduling</b> (Orca) re-forms the batch every step: finished sequences leave and waiting ones join. GPU utilization stays high and TTFT drops.</p>', lvl: 'core' },
     { q: 'What problem does PagedAttention solve?', a: '<p>Naive engines reserve a contiguous KV region of max_len per request. Most of it stays empty (internal fragmentation) and the gaps between reservations fragment memory further.</p><p>PagedAttention stores KV in <b>fixed-size blocks</b> (e.g. 16 tokens) mapped by a <b>block table</b>, like OS paging. Allocation happens on demand, waste is under one block per sequence, and blocks can be <b>shared</b> (prefixes, parallel samples) with copy-on-write. Bigger batches mean higher throughput.</p>', lvl: 'core' },
     { q: 'How does prefix caching work, and how do you route for it?', a: '<p>Each full KV block gets a hash of (parent block hash, its tokens). A new request walks its prompt block by block and reuses every hit, so only the uncached tail needs prefill.</p><p>Routing matters: send requests with the same prefix to the same replica (consistent hashing on the prefix) but fall back when that replica is overloaded. SGLang uses a radix tree for the same purpose.</p>', lvl: 'deep' },
@@ -387,24 +389,26 @@ SD.register({
     { q: 'How does speculative decoding give the same output faster?', a: '<p>A cheap draft proposes k tokens. The target model scores all k in <b>one forward pass</b>, accepting tokens left to right with a rejection-sampling rule that provably preserves the target distribution. Expected accepted tokens per pass > 1.</p><p>It wins when decode is memory-bound with spare compute (small batches). At large batch the extra compute competes with real work.</p>', lvl: 'deep' },
     { q: 'When is prefill/decode disaggregation worth it?', a: '<p>When prefill bursts hurt TPOT for running streams, and you have the scale to keep two pools busy. Each pool gets its own parallelism and hardware.</p><p>The cost is <b>shipping KV</b>: about 470 MiB for a 1.5K-token prompt on a 70B model. That needs RDMA/NVLink-class networking and a smart scheduler (Splitwise, DistServe).</p>', lvl: 'deep' },
     { q: 'How do you autoscale GPU inference?', a: '<p>Scale on <b>queue depth, KV-cache usage and TTFT</b>, not CPU. Replicas take minutes to start (weight loading), so keep a warm pool, pre-scale for known peaks, and shed or degrade low-priority traffic in the meantime. Scale in slowly to protect running streams.</p>', lvl: 'core' },
+    { q: 'How do you serve many fine-tuned variants (LoRA adapters) cheaply?', a: '<p>A <b>LoRA</b> adapter is a pair of small low-rank matrices added to some weight matrices, often well under 1% of the base model. Keep <b>one copy of the base weights</b> on the GPU and load adapters on demand, with an LRU cache of hot adapters in GPU memory and the rest in CPU memory or on disk.</p><p>Batch requests for <b>different adapters together</b>: the base matmul is shared, and a custom kernel applies each row\'s own adapter. vLLM supports this with <code>--enable-lora</code> and a cap on adapters per batch. Include the adapter id in the prefix-cache key, because the same tokens give different KV under different adapters.</p>', fu: 'When would you merge an adapter into the weights instead? (One very hot variant: merging removes the extra matmul, but that replica then serves only that variant.)', lvl: 'deep' },
     { q: 'What are the trade-offs of quantization?', a: '<p><b>Weights</b> in FP8 or INT4 cut memory 2–4× and speed up memory-bound decode. Quality loss is usually small for FP8, and INT4 needs careful methods (e.g. AWQ / GPTQ).</p><p><b>KV cache</b> in FP8 halves KV memory, so batches can double. Always validate on your own evals, especially for long context and reasoning.</p>', lvl: 'core' }
   ],
 
   code: [
     {
       title: 'FastAPI streaming proxy → vLLM', lang: 'python',
-      code: `# vllm serve meta-llama/Llama-3.1-8B-Instruct --max-model-len 8192 \\
+      code: `# vllm serve $MODEL --max-model-len 8192 \\
 #   --gpu-memory-utilization 0.90 --enable-prefix-caching
 # pip install fastapi uvicorn openai
-import asyncio, json
+import asyncio, json, os
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from openai import AsyncOpenAI
 from pydantic import BaseModel
 
+MODEL = os.environ["MODEL"]                     # same name vLLM was started with
 app = FastAPI()
 llm = AsyncOpenAI(base_url="http://vllm:8000/v1", api_key="unused")
-slots = asyncio.Semaphore(256)                 # in-flight streams per proxy
+slots = asyncio.Semaphore(256)                  # in-flight streams per proxy
 
 class Ask(BaseModel):
     messages: list[dict]
@@ -418,21 +422,22 @@ async def chat(body: Ask, request: Request):
     async def events():
         async with slots:
             stream = await llm.chat.completions.create(
-                model="meta-llama/Llama-3.1-8B-Instruct",
-                messages=body.messages, max_tokens=body.max_tokens,
+                model=MODEL, messages=body.messages, max_tokens=body.max_tokens,
                 stream=True, stream_options={"include_usage": True})
-            async for chunk in stream:
-                if await request.is_disconnected():
-                    await stream.close()        # vLLM aborts → KV blocks freed
-                    return
-                if chunk.choices and chunk.choices[0].delta.content:
-                    yield f"data: {json.dumps({'t': chunk.choices[0].delta.content})}\\n\\n"
-                elif chunk.usage:               # final chunk: token accounting
-                    yield f"data: {json.dumps({'usage': chunk.usage.model_dump()})}\\n\\n"
-            yield "data: [DONE]\\n\\n"
+            try:
+                async for chunk in stream:
+                    if await request.is_disconnected():
+                        return
+                    if chunk.choices and chunk.choices[0].delta.content:
+                        yield f"data: {json.dumps({'t': chunk.choices[0].delta.content})}\\n\\n"
+                    elif chunk.usage:           # final chunk: token accounting
+                        yield f"data: {json.dumps({'usage': chunk.usage.model_dump()})}\\n\\n"
+                yield "data: [DONE]\\n\\n"
+            finally:                            # done, client gone, or cancelled:
+                await stream.close()            # vLLM aborts the request, KV blocks freed
 
     return StreamingResponse(events(), media_type="text/event-stream")`,
-      note: 'Prefix caching is on by default in recent vLLM versions, and the flag makes it explicit. Keep the system prompt <b>byte-identical</b> across calls to get cache hits.'
+      note: 'Prefix caching is on by default in recent vLLM versions; the flag makes it explicit. Closing the upstream stream in <code>finally</code> also covers the case where the server cancels the generator on disconnect. Keep the system prompt <b>byte-identical</b> across calls to get cache hits.'
     },
     {
       title: 'KV sizing + paged block table', lang: 'python',
@@ -442,7 +447,7 @@ from math import ceil
 def kv_bytes_per_token(layers: int, kv_heads: int, head_dim: int, dtype_bytes: int = 2) -> int:
     return 2 * layers * kv_heads * head_dim * dtype_bytes   # K and V, every layer
 
-# Llama-3-70B-class: 80 layers, 8 KV heads (GQA), head_dim 128, FP16
+# typical 70B config: 80 layers, 8 KV heads (GQA), head_dim 128, FP16
 assert kv_bytes_per_token(80, 8, 128) == 327_680          # 320 KiB per token
 print(8192 * 327_680 / 2**30, "GiB per 8K-token sequence")  # 2.5
 

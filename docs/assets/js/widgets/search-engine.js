@@ -84,9 +84,37 @@ SD.widget('search-engine', function (root, ctx) {
     return { N, avgdl, termInfo, ranked: Object.values(scores).sort((a, b) => b.total - a.total) };
   }
 
+  // phone: 360-wide viewBox, buffer panel stacked above the segment row, 14–15-unit text
+  function drawNarrow() {
+    S_.setAttribute('viewBox', '0 0 360 262');
+    const T = (x, y, t, st, fill, a) => svg('text', { x, y, 'text-anchor': a || 'start', style: st, fill: fill || 'var(--text)', text: t });
+    gSeg.append(T(6, 18, 'Indexing buffer (RAM, hidden)', 'font:700 15px var(--sans)', 'var(--text-2)'),
+      svg('rect', { x: 6, y: 28, width: 348, height: 44, rx: 8, fill: 'color-mix(in srgb, var(--warn) 12%, var(--surface))', stroke: 'var(--warn)', 'stroke-dasharray': '5 4' }));
+    buffer.slice(0, 5).forEach((id, i) => gSeg.append(T(22 + i * 58, 56, id, 'font:600 15px var(--mono)')));
+    if (!buffer.length) gSeg.append(T(180, 56, 'empty', 'font:15px var(--sans)', 'var(--text-3)', 'middle'));
+    if (buffer.length > 5) gSeg.append(T(340, 56, '+' + (buffer.length - 5), 'font:15px var(--mono)', 'var(--text-3)', 'end'));
+    gSeg.append(svg('path', { d: 'M180,76 L180,92', stroke: 'var(--text-3)', 'stroke-width': 2 }), svg('path', { d: 'M175,88 L180,95 L185,88 z', fill: 'var(--text-3)' }),
+      T(192, 90, 'refresh', 'font:600 14px var(--sans)', 'var(--text-3)'),
+      T(6, 114, 'Immutable segments (searchable)', 'font:700 15px var(--sans)', 'var(--text-2)'));
+    const n = Math.max(1, segments.length), gap = 6, w = Math.min(110, (348 - gap * (n - 1)) / n);
+    segments.forEach((sg, i) => {
+      const x = 6 + i * (w + gap);
+      gSeg.append(svg('rect', { x, y: 124, width: w, height: 132, rx: 8, fill: 'color-mix(in srgb, var(--ok) 14%, var(--surface))', stroke: 'var(--ok)' }),
+        T(x + w / 2, 146, sg.name, 'font:700 15px var(--mono)', 'var(--text)', 'middle'));
+      sg.ids.slice(0, 4).forEach((id, j) => gSeg.append(T(x + w / 2, 172 + j * 20, id, 'font:15px var(--mono)', 'var(--text-2)', 'middle')));
+      if (sg.ids.length > 4) gSeg.append(T(x + w / 2, 250, '+' + (sg.ids.length - 4), 'font:14px var(--mono)', 'var(--text-3)', 'middle'));
+    });
+  }
+  ctx.onResize(() => render());
+
   function render() {
     // segments diagram
     gSeg.innerHTML = '';
+    if (ctx.narrow) drawNarrow(); else drawWide();
+    renderSearch();
+  }
+  function drawWide() {
+    S_.setAttribute('viewBox', '0 0 500 150');
     gSeg.append(svg('text', { x: 8, y: 16, style: 'font:700 13px var(--sans)', fill: 'var(--text-2)', text: 'Indexing buffer (RAM)' }),
       svg('text', { x: 180, y: 16, style: 'font:700 13px var(--sans)', fill: 'var(--text-2)', text: 'Immutable segments (searchable)' }));
     gSeg.append(svg('rect', { x: 8, y: 26, width: 150, height: 112, rx: 8, fill: 'color-mix(in srgb, var(--warn) 12%, var(--surface))', stroke: 'var(--warn)', 'stroke-dasharray': '5 4' }));
@@ -102,7 +130,8 @@ SD.widget('search-engine', function (root, ctx) {
       s.ids.slice(0, 5).forEach((id, j) => gSeg.append(svg('text', { x: x + w / 2, y: 66 + j * 16, 'text-anchor': 'middle', style: 'font:14px var(--mono)', fill: 'var(--text-2)', text: id })));
       if (s.ids.length > 5) gSeg.append(svg('text', { x: x + w / 2, y: 134, 'text-anchor': 'middle', style: 'font:11px var(--mono)', fill: 'var(--text-3)', text: '+' + (s.ids.length - 5) }));
     });
-    // search
+  }
+  function renderSearch() {
     const r = search(qIn.value);
     stats.innerHTML = '';
     [['searchable docs N', r.N], ['in buffer', buffer.length], ['segments', segments.length], ['avgdl', r.avgdl.toFixed(1) + ' terms'], ['segments visited per query', segments.length]]

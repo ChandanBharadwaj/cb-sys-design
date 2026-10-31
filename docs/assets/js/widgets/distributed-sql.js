@@ -1,8 +1,9 @@
 /* Two mini-sims: TrueTime commit wait (interval clocks, real 2ε wait math) and Raft leader election (randomized timeouts, terms, majority votes). */
 SD.widget('distributed-sql', function (root, ctx) {
   const { el, svg } = ctx;
-  const W = 440, H = 312;
-  let mode = 'tt';
+  // phones get a 360-wide viewBox (same font units, so text is ~22% larger on screen); desktop keeps 440
+  const H = 312;
+  let narrow = ctx.narrow, W = narrow ? 360 : 440, mode = 'tt';
   const T = (x, y, t, o) => svg('text', Object.assign({ x, y, 'text-anchor': 'middle', fill: 'var(--text)', style: 'font:600 13px var(--sans)', text: t }, o || {}));
 
   const ttBtn = el('button', { class: 'btn primary', text: 'TrueTime' });
@@ -42,7 +43,8 @@ SD.widget('distributed-sql', function (root, ctx) {
   runBtn.onclick = () => runTT();
   ctlTT.append(runBtn, waitBtn, skewBtn, el('label', null, 'ε ', epsOut, epsIn));
 
-  const X0 = 24, X1 = 420, ROW_A = 78, ROW_B = 196;
+  let X0 = 24, X1 = W - 20;
+  const ROW_A = 78, ROW_B = 196;
   function runTT() {
     const offA = worst ? 0.9 * eps : (Math.random() * 2 - 1) * eps;
     const offB = worst ? -0.9 * eps : (Math.random() * 2 - 1) * eps;
@@ -61,9 +63,9 @@ SD.widget('distributed-sql', function (root, ctx) {
   function drawTT() {
     gTT.innerHTML = '';
     if (!tt) {
-      gTT.append(T(W / 2, 120, 'Each node knows time only as [earliest, latest].', { style: 'font:700 15px var(--sans)' }),
-        T(W / 2, 150, 'Press ▶ Run to commit T1 on node A,', { fill: 'var(--text-3)', style: 'font:600 15px var(--sans)' }),
-        T(W / 2, 174, 'then start T2 on node B after the ack.', { fill: 'var(--text-3)', style: 'font:600 15px var(--sans)' }));
+      const lines = narrow ? ['Each node knows time only', 'as an interval [earliest, latest].', 'Press ▶ Run to commit T1 on node A,', 'then start T2 on node B after the ack.']
+        : ['Each node knows time only as [earliest, latest].', '', 'Press ▶ Run to commit T1 on node A,', 'then start T2 on node B after the ack.'];
+      lines.forEach((l, i) => { if (l) gTT.append(T(W / 2, narrow ? 100 + i * 26 : [120, 0, 150, 174][i], l, { fill: i < 2 ? 'var(--text)' : 'var(--text-3)', style: `font:${i < 2 ? 700 : 600} 15px var(--sans)` })); });
       return;
     }
     const t = tt.t;
@@ -102,24 +104,28 @@ SD.widget('distributed-sql', function (root, ctx) {
   }
 
   /* ---------------- Raft ---------------- */
-  const N = 5, CX = 220, CY = 150, R = 104, HB = 50;
+  const N = 5, CY = 150, R = 104, HB = 50;
+  let CX = W / 2;
   let nodes, msgs, now, noQuorum = false;
   const killBtn = el('button', { class: 'btn primary', text: '✖ Kill leader' });
   const revBtn = el('button', { class: 'btn', text: '↺ Revive all' });
-  ctlRF.append(killBtn, revBtn, el('label', null, 'Tap a node to kill or revive it'));
+  ctlRF.append(killBtn, revBtn, el('label', null, 'Tap a node to kill or revive it (slow motion)'));
   const gEdges = svg('g'), gMsg = svg('g'), gNodes = svg('g');
-  gRF.append(gEdges, gMsg, gNodes, T(W / 2, H - 4, 'timeouts 150–300 ms · heartbeats 50 ms · slow motion', { style: 'font:600 13px var(--sans)', fill: 'var(--text-3)' }));
+  const rfCap = T(W / 2, H - 4, '', { style: 'font:600 13px var(--sans)', fill: 'var(--text-3)' });
+  gRF.append(gEdges, gMsg, gNodes, rfCap);
+  function capRF() { rfCap.setAttribute('x', W / 2); rfCap.textContent = narrow ? 'timeouts 150–300 ms · heartbeats 50 ms' : 'timeouts 150–300 ms · heartbeats 50 ms · slow motion'; }
+  capRF();
+  function placeNodes() { nodes.forEach((n, i) => { const a = -Math.PI / 2 + i * 2 * Math.PI / N; n.x = CX + R * Math.cos(a); n.y = CY + R * Math.sin(a) * 0.95; }); }
   const rnd = () => 150 + Math.random() * 150;
   function resetRaft() {
     now = 0; msgs = [];
     nodes = Array.from({ length: N }, (_, i) => {
-      const a = -Math.PI / 2 + i * 2 * Math.PI / N;
-      return { id: i + 1, x: CX + R * Math.cos(a), y: CY + R * Math.sin(a) * 0.95, alive: true, state: 'follower', term: 1, voted: null, votes: 0, deadline: rnd(), timeout: 0, lastHb: 0 };
+      return { id: i + 1, x: 0, y: 0, alive: true, state: 'follower', term: 1, voted: null, votes: 0, deadline: rnd(), timeout: 0, lastHb: 0 };
     });
     nodes.forEach((n) => { n.timeout = n.deadline; });
     nodes[0].state = 'leader'; nodes[0].voted = 1;
     nodes.forEach((n) => { n.voted = 1; });
-    buildNodes();
+    placeNodes(); buildNodes();
   }
   function buildNodes() {
     gNodes.innerHTML = ''; gEdges.innerHTML = '';
@@ -220,5 +226,10 @@ SD.widget('distributed-sql', function (root, ctx) {
   });
   drawTT(); paintRaft();
   setMode('tt');
+  ctx.onResize((n) => {
+    narrow = n; W = n ? 360 : 440; X1 = W - 20; CX = W / 2;
+    S_.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    placeNodes(); buildNodes(); paintRaft(); capRF(); drawTT();
+  });
   say('TrueTime: run once with commit wait on, then turn it off and run again.');
 });

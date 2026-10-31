@@ -1,0 +1,10 @@
+# stream-analytics review
+
+- Widget: added a phone layout (`ctx.narrow`, rebuilt and restarted on `ctx.onResize`). The phone viewBox is 360 wide with four 10 s windows (desktop keeps six), 14–17-unit text and bigger dots. Font check went from min 9.2 / p25 9.2px (0% ≥12px) to min 13.2 / p25 13.2px. The watermark logic, allowed lateness, re-fire, purge and side-output behaviour are unchanged.
+- Widget bug: "Inject late event" did not repaint while paused, so the window labels and stats lagged behind the log. It now repaints after each injection.
+- Correctness: the Cloudflare timeline said rollups were used "rather than storing every raw request". The 2018 post (checked in search) also has a non-aggregated requests table; long raw retention was just too expensive. Reworded, and named which engine holds what (SummingMergeTree counters, AggregatingMergeTree unique IPs).
+- Consistency: the knob model used a 30 s checkpoint interval, but the scenarios and the Flink code use 60 s. The knob now uses 60 s ("≤60 s commit").
+- Knobs: the fallback "Workable" verdict now states the trade-off for session windows (results wait for the gap), sliding windows (≈6× state), long watermark lag (every result waits) and the heap backend (full checkpoints, GC risk). All options change meters and/or verdict.
+- Clarity: defined two-phase commit (2PC) in the exactly-once note and SST files in the checkpoint scenario.
+- Gaps: added one interview question on enrichment / stream-table joins (broadcast state or temporal join from CDC, keyed state, Async I/O with cache), with a replay follow-up.
+- Checked and left alone: Uber "20+ ES clusters per region, millions of logs/s, several PB" (confirmed in search), Flink 1.3 incremental checkpoints, 1.4 TwoPhaseCommitSinkFunction, the Kafka `transaction.timeout.ms` 900000 (= broker default max), the Duration-based window APIs (Flink 1.19+), ReplacingMergeTree + FINAL, and the calculator (estimates already labelled). The Java snippet needs Flink jars, so it was reviewed but not compiled. There is no Python.

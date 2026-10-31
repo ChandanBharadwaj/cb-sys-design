@@ -112,7 +112,7 @@ SD.register({
     ],
     nonFunctional: [
       'Exactly-once counts: they feed invoices',
-      'Click → visible in ~1–2 min for budget pacing',
+      'Click → visible in ~2–3 min for budget pacing (window + watermark + checkpoint)',
       '10⁴–10⁶ clicks/s at peak (<em>estimate</em>, depends on scale)',
       'No data loss: raw events kept for replay',
       'Correct handling of events minutes late',
@@ -197,7 +197,7 @@ SD.register({
         { text: 'The user double-taps and the browser sends the <b>same click_id</b> again. State says "seen", so it is dropped. This is why the id must be created upstream, not on arrival.', flow: ['usr>redir', 'redir>kraw', 'kraw>dedup'], warn: ['dedup'], badges: { dedup: ['dup dropped', 'warn'] }, tone: 'warn' },
         { text: 'The aggregator adds the click to <b>ad 42, window 12:00–12:01</b> by its <i>event</i> time. When the watermark passes 12:01:00 the window fires: 1,382 clicks.', flow: ['dedup>agg', 'agg>kagg'], badges: { agg: 'ad 42 · 1,382' } },
         { text: 'The result is written inside a Kafka transaction that commits with the next checkpoint. Pacing and the OLAP store read only committed data and <b>upsert</b> by (ad_id, minute).', flow: [['kagg>budget', 'kagg>olap']], tone: 'ok', badges: { olap: 'upserted' } },
-        { text: 'The advertiser\'s dashboard shows the minute about a minute or two after the click.', flow: ['adv>api', 'api>olap'], tone: 'ok' }
+        { text: 'The advertiser\'s dashboard shows the minute about 2–3 minutes after the click: window + watermark delay + checkpoint commit.', flow: ['adv>api', 'api>olap'], tone: 'ok' }
       ]
     },
     {
@@ -291,6 +291,10 @@ SD.register({
       else if (s.hot === 'none') verdict = '⚠ <b>The hot ad will stall one subtask.</b> Use two-stage aggregation with salted keys.';
       else if (s.win === '1h') verdict = '⚠ <b>Too coarse for pacing.</b> Use 1-minute windows and roll up for reports.';
       else if (s.del === 'eo' && s.arch === 'kappa') verdict = '✅ <b>Close to Uber\'s 2021 design:</b> Flink + Kafka transactions + upserts, with a batch reconciliation job as the audit.';
+      else if (s.arch === 'lambda') verdict = '👍 <b>Correct, but two codebases:</b> the batch layer gives a nightly truth, and the stream and batch logic must agree forever. Kappa plus a batch audit job is usually cheaper.';
+      else if (s.del === 'dedup') verdict = '👍 <b>Correct if every sink upserts</b> by (ad_id, window): no transactions and fresher results, but any consumer that appends or sums will double count after a replay.';
+      else if (s.win === '5m') verdict = '👍 <b>Correct, fewer rows</b>, but pacing reacts in ~6½ min instead of ~2½, so fast-spending campaigns overshoot their budget more.';
+      else if (s.win === '10s') verdict = '👍 <b>Correct and very fresh</b>, but 6× the rows of 1-min windows. Roll up to minutes for storage.';
       else verdict = '👍 Correct counts. The meters show what you pay in freshness and operational effort.';
       const flow = ['usr>redir', 'redir>kraw', 'kraw>dedup', 'dedup>agg', 'agg>kagg', 'kagg>olap'].concat(s.arch === 'lambda' ? ['kraw>lake', 'lake>recon', 'recon>olap'] : []);
       return {
@@ -318,11 +322,11 @@ SD.register({
     intro: 'Ad counting drove much of the theory and practice of exactly-once stream processing.',
     timeline: [
       { when: '2013', who: 'Google', title: 'Photon (SIGMOD)', text: 'Joins search queries with ad clicks across datacenters. It never emits a duplicate at any point and reaches <b>exactly-once eventually</b>. It handles millions of events per minute at peak with <b>under 10 s</b> average latency, and survives a datacenter outage without manual work.', src: 0 },
-      { when: '2013', who: 'Google', title: 'The IdRegistry trick', text: 'Workers retry until they succeed (at-least-once), and a <b>Paxos-replicated in-memory key-value store</b> of click_ids accepts each id only once (at-most-once). Together that gives exactly-once joins.', src: 1 },
-      { when: '2014', who: 'Google', title: 'Mesa (VLDB)', text: 'The data warehouse for Google\'s advertising measurements: geo-replicated, near real-time updates, and multi-versioned so queries see consistent snapshots. Only metadata goes through Paxos.', src: 2 },
-      { when: '2014', who: 'Jay Kreps', title: '"Questioning the Lambda Architecture"', text: 'Maintaining the same logic in a batch layer and a stream layer is costly. If the stream system can <b>replay a log</b>, reprocessing is just running the stream job again. This became known as <b>Kappa</b>.', src: 3 },
-      { when: '2017', who: 'Apache Kafka', title: 'Exactly-once semantics', text: 'Kafka 0.11 added the <b>idempotent producer</b> (sequence numbers per partition) and <b>transactions</b> across partitions, with consumer offsets committed in the same transaction and <code>read_committed</code> consumers.', src: 4 },
-      { when: '2021', who: 'Uber', title: 'Exactly-once ad events', text: 'Uber Eats ads: <b>3 Flink jobs in 2 regions</b>, Kafka transactions committed by <b>checkpoints every 2 min</b>, consumers on read_committed, a UUID per aggregate as the idempotency key, and Pinot <b>upsert</b> support added by Uber.', src: 5 }
+      { when: '2013', who: 'Google', title: 'The IdRegistry trick', text: 'Workers retry until they succeed (at-least-once), and a <b>Paxos-replicated in-memory key-value store</b> of click_ids accepts each id only once (at-most-once). Together that gives exactly-once joins.', src: 0 },
+      { when: '2014', who: 'Google', title: 'Mesa (VLDB)', text: 'The data warehouse for Google\'s advertising measurements: geo-replicated, near real-time updates, and multi-versioned so queries see consistent snapshots. Only metadata goes through Paxos.', src: 1 },
+      { when: '2014', who: 'Jay Kreps', title: '"Questioning the Lambda Architecture"', text: 'Maintaining the same logic in a batch layer and a stream layer is costly. If the stream system can <b>replay a log</b>, reprocessing is just running the stream job again. This became known as <b>Kappa</b>.', src: 2 },
+      { when: '2017', who: 'Apache Kafka', title: 'Exactly-once semantics', text: 'Kafka 0.11 added the <b>idempotent producer</b> (sequence numbers per partition) and <b>transactions</b> across partitions, with consumer offsets committed in the same transaction and <code>read_committed</code> consumers.', src: 3 },
+      { when: '2021', who: 'Uber', title: 'Exactly-once ad events', text: 'Uber Eats ads: <b>3 Flink jobs in 2 regions</b>, Kafka transactions committed by <b>checkpoints every 2 min</b>, consumers on read_committed, a UUID per aggregate as the idempotency key, and Pinot <b>upsert</b> support added by Uber.', src: 4 }
     ],
     lessons: [
       'Create the <b>dedup key upstream</b> (signed into the impression) so retries carry the same id.',
@@ -332,7 +336,6 @@ SD.register({
     ],
     sources: [
       { title: 'Photon: Fault-tolerant and Scalable Joining of Continuous Data Streams', url: 'https://research.google/pubs/photon-fault-tolerant-and-scalable-joining-of-continuous-data-streams/', pub: 'Google Research, SIGMOD 2013' },
-      { title: 'Photon: Fault-tolerant and Scalable Joining of Continuous Data Streams (reading notes)', url: 'https://manuzhang.github.io/posts/2015-07-15-photon/index.html', pub: 'Manu Zhang, 2015' },
       { title: 'Mesa: Geo-Replicated, Near Real-Time, Scalable Data Warehousing', url: 'https://research.google/pubs/mesa-geo-replicated-near-real-time-scalable-data-warehousing/', pub: 'Google Research, VLDB 2014' },
       { title: 'Lambda architecture questions', url: 'https://www.infoq.com/news/2014/09/lambda-architecture-questions', pub: 'InfoQ, 2014 (on Jay Kreps\' O\'Reilly post)' },
       { title: 'Exactly-Once Semantics Are Possible: Here\'s How Kafka Does It', url: 'https://www.confluent.io/blog/exactly-once-semantics-are-possible-heres-how-apache-kafka-does-it/', pub: 'Confluent, 2017' },
@@ -356,6 +359,7 @@ SD.register({
     { f: 'Aggregator crash mid-window', detect: 'Job restarts, checkpoint restore', fix: 'Restore offsets and state together. The uncommitted Kafka transaction is aborted, and read_committed consumers never see it.' },
     { f: 'Late events lost', detect: 'Side-output volume, reconciliation deltas', fix: 'Tune the watermark delay and allowed lateness. Send the rest to a side output and let reconciliation count it.' },
     { f: 'Hot ad backpressure', detect: 'Kafka consumer lag, one busy subtask', fix: 'Two-stage aggregation with salted keys and local pre-aggregation inside the job.' },
+    { f: 'Kafka unreachable from the click tracker', detect: 'Producer send errors, local spool size, tracker-vs-Kafka count gap', fix: 'Still 302 the user. Append to a bounded local disk spool and replay when Kafka is back; the upstream click_id makes the replay safe. Alert before the spool fills.' },
     { f: 'Click-fraud spike', detect: 'Clicks per IP or device, low conversion, sudden CTR jumps', fix: 'Filter in the stream, and re-score in the nightly batch job. Never bill fraud the stream missed.' },
     { f: 'Idle Kafka partition stalls the watermark', detect: 'Windows stop firing, watermark flat', fix: 'Use <code>withIdleness</code> so idle partitions do not hold back the global watermark.' },
     { f: 'Dedup state grows without bound', detect: 'Checkpoint size and duration climbing', fix: 'Set a state TTL (e.g. 24 h), use RocksDB with incremental checkpoints, or use a Bloom filter per hour.' }
@@ -372,6 +376,7 @@ SD.register({
     { q: 'Lambda or Kappa?', a: '<p><b>Lambda</b> runs a batch layer (truth) and a speed layer (fresh results) and merges them, at the cost of two codebases that must agree. <b>Kappa</b> keeps one streaming codebase and recomputes by replaying the log.</p><p>A common middle ground is Kappa for serving, plus a batch <b>reconciliation</b> job used only as an audit.</p>', lvl: 'core' },
     { q: 'What query patterns must the store support?', a: '<ul><li>Clicks for one ad over a time range (time series).</li><li>Top-N ads per minute or hour, often filtered by country or campaign.</li><li>Rollups by campaign and advertiser.</li></ul><p>A columnar OLAP store (Pinot, Druid, ClickHouse) partitioned by time does this well. Precompute top-N per window if it is on a hot dashboard.</p>', lvl: 'core' },
     { q: 'Why not count with Redis INCR per ad per minute?', a: '<p>INCR is fast but <b>not idempotent</b>: a retry or replay increments again. There is also no event-time handling or late data, and no consistent snapshot with the Kafka offsets.</p><p>Redis is fine as a cache for live pacing next to an exactly-once pipeline, not as the system of record.</p>', lvl: 'deep' },
+    { q: 'The click tracker cannot reach Kafka. What happens to the click?', a: '<p>The user is redirected anyway: analytics must never block the landing page. The tracker appends the event to a <b>bounded local spool on disk</b> and a background sender replays it when Kafka recovers.</p><p>Because the click_id was created upstream, a replayed or double-sent event is removed by dedup. If the spool fills up, you must choose to drop (and count the loss) or shed load, so alert well before that point.</p>', fu: 'Why not write to the database synchronously instead? (It adds latency to every click and moves the outage there.)', lvl: 'deep' },
     { q: 'How did Google\'s Photon avoid double-joining a click across datacenters?', a: '<p>Workers in several datacenters process the same click streams and retry until they succeed. Before writing output, a joiner must <b>insert the click_id into the IdRegistry</b>, a Paxos-replicated in-memory key-value store. Only the first insert wins, so output has no duplicates, and retries guarantee nothing is lost in the end.</p>', lvl: 'deep' }
   ],
 
