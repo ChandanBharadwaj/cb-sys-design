@@ -31,6 +31,40 @@ const slugs = slugs0.length ? slugs0 : fs.readdirSync(path.join(DOCS, 'data')).m
         document.querySelectorAll('body *').forEach(e => { const r = e.getBoundingClientRect(); if (r.right > iw + 1 && r.width > 0 && getComputedStyle(e).position !== 'fixed') { if (!e.closest('.tscroll,.secnav-inner,.scen-tabs,pre,.ix-net,.w-log')) wide.push(e.tagName + '.' + e.className); } });
         return { sw, iw, wide: wide.slice(0, 6), sections: [...document.querySelectorAll('section.section')].map(s => s.id) };
       });
+      // global navigation drawer
+      const navR = { ok: true, why: [] };
+      try {
+        const btn = page.locator('.nav-btn');
+        if (!(await btn.count())) { navR.ok = false; navR.why.push('no Systems button'); }
+        else {
+          await btn.click(); await page.waitForTimeout(300);
+          const st = await page.evaluate(() => {
+            const p = document.querySelector('.gn-panel');
+            return { open: p && !p.hidden, links: document.querySelectorAll('.gn-item').length, cur: document.querySelectorAll('.gn-item.current').length,
+              focusIn: p && p.contains(document.activeElement), overflow: document.documentElement.scrollWidth - window.innerWidth };
+          });
+          if (!st.open) navR.why.push('drawer did not open');
+          if (st.links !== 41) navR.why.push('drawer has ' + st.links + ' links');
+          if (slug !== '__index__' && st.cur !== 1) navR.why.push('current page not highlighted');
+          if (!st.focusIn) navR.why.push('focus not moved into drawer');
+          if (st.overflow > 1) navR.why.push('overflow with drawer open ' + st.overflow + 'px');
+          await page.keyboard.type('kafka'); await page.waitForTimeout(100);
+          const n = await page.evaluate(() => [...document.querySelectorAll('.gn-item')].filter((a) => a.offsetParent !== null).length);
+          if (!(n >= 1 && n < 41)) navR.why.push('search kept ' + n + ' results');
+          await page.keyboard.press('Escape'); await page.waitForTimeout(300);
+          const after = await page.evaluate(() => ({ hidden: document.querySelector('.gn-panel').hidden, focusBtn: document.activeElement && document.activeElement.classList.contains('nav-btn') }));
+          if (!after.hidden) navR.why.push('Esc did not close');
+          if (!after.focusBtn) navR.why.push('focus not returned to button');
+          if (slug !== '__index__') {
+            const links = await page.evaluate(() => [...document.querySelectorAll('.crumb a, .nav-arrows a')].map((a) => a.getAttribute('href')));
+            if (!links.some((h) => /index\.html#domain-\d/.test(h))) navR.why.push('breadcrumb has no domain link');
+            if (!links.some((h) => /^[a-z0-9-]+\.html$/.test(h))) navR.why.push('no prev/next arrows');
+          }
+        }
+      } catch (e) { navR.why.push('nav error: ' + e.message.split('\n')[0]); }
+      navR.ok = !navR.why.length;
+      await page.goto(url, { waitUntil: 'load' }); await page.waitForTimeout(300);
+
       let interact = {};
       if (slug !== '__index__') {
         interact = await page.evaluate(async () => {
@@ -93,7 +127,7 @@ const slugs = slugs0.length ? slugs0 : fs.readdirSync(path.join(DOCS, 'data')).m
           if (await loc.count()) { await loc.scrollIntoViewIfNeeded(); await page.waitForTimeout(2200); await loc.screenshot({ path: path.join(OUT, `${slug}-${name}-${sec}.png`) }); }
         }
       }
-      report.push({ slug, size: name, overflow: info.sw > info.iw ? info.sw - info.iw : 0, wide: info.wide, errs: errs.slice(0, 5), ...interact });
+      report.push({ nav: navR, slug, size: name, overflow: info.sw > info.iw ? info.sw - info.iw : 0, wide: info.wide, errs: errs.slice(0, 5), ...interact });
       await page.close();
     }
     await ctx.close();
@@ -104,6 +138,7 @@ const slugs = slugs0.length ? slugs0 : fs.readdirSync(path.join(DOCS, 'data')).m
     const problems = [];
     if (r.overflow) problems.push('overflow ' + r.overflow + 'px ' + r.wide.join(','));
     if (r.errs.length) problems.push('errors: ' + r.errs.join(' | '));
+    if (r.nav && !r.nav.ok) problems.push('global nav: ' + r.nav.why.join(', '));
     if (r.slug !== '__index__') {
       if (!r.scen) problems.push('no scenarios');
       if (r.knobs && r.knobChanges < Math.min(2, r.knobs - 1)) problems.push('knobs do not change outcome');

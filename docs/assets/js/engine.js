@@ -135,6 +135,121 @@
   SD.themeButton = themeButton;
   applyTheme(themePref());
 
+  /* ---------------- global navigation: "All systems" drawer ----------------
+     opts.current: slug of this page (null on the home page)
+     opts.base:    prefix for system links ('' on system pages, 'systems/' on the home page)
+     opts.home:    link to the home page */
+  function globalNav(opts) {
+    opts = opts || {};
+    const cat = window.SD_CATALOG || { domains: [], systems: [] };
+    const base = opts.base || '';
+    const visited = new Set(store.get('sd-visited', []));
+    const cur = cat.systems.find((s) => s.slug === opts.current);
+    const btn = el('button', { class: 'icon-btn nav-btn', 'aria-haspopup': 'dialog', 'aria-expanded': 'false', 'aria-label': 'All systems', title: 'All systems (press / to search)' },
+      el('span', { class: 'ti', text: '☰' }), el('span', { class: 'tl', text: 'Systems' }));
+    const backdrop = el('div', { class: 'gn-backdrop', hidden: true });
+    const input = el('input', { type: 'search', placeholder: `Search ${cat.systems.length} systems…`, 'aria-label': 'Search systems', autocomplete: 'off' });
+    const closeBtn = el('button', { class: 'icon-btn', 'aria-label': 'Close', text: '✕' });
+    const list = el('div', { class: 'gn-list' });
+    const empty = el('div', { class: 'gn-empty', hidden: true, text: 'No systems match that search.' });
+    const panel = el('div', { class: 'gn-panel', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'gn-title', hidden: true },
+      el('div', { class: 'gn-head' }, el('h2', { id: 'gn-title', text: 'All systems' }), closeBtn),
+      el('label', { class: 'search gn-search' }, el('span', { 'aria-hidden': 'true', text: '⌕' }), input),
+      el('a', { class: 'gn-home', href: opts.home || 'index.html' }, '⌂ Home: overview of all ' + cat.domains.length + ' domains'),
+      list, empty);
+    const items = [];
+    const groups = [];
+    cat.domains.forEach((d) => {
+      const sys = cat.systems.filter((s) => s.domain === d.id);
+      const det = el('details', { class: 'gn-dom' });
+      det.open = !cur || cur.domain === d.id;
+      det.append(el('summary', null, el('span', { class: 'gn-di', text: d.icon, 'aria-hidden': 'true' }), el('span', { class: 'gn-dn', text: d.name }), el('span', { class: 'gn-count', text: sys.length })));
+      const ul = el('ul');
+      sys.forEach((s) => {
+        const isCur = s.slug === opts.current;
+        const a = el('a', { href: base + s.slug + '.html', class: 'gn-item' + (isCur ? ' current' : ''), 'aria-current': isCur ? 'page' : null },
+          el('span', { class: 'gn-t' }, el('span', { text: s.title }),
+            s.added ? el('span', { class: 'gn-new', text: 'new' }) : null,
+            visited.has(s.slug) ? el('span', { class: 'gn-seen', title: 'Visited', text: '✓' }) : null),
+          s.one ? el('span', { class: 'gn-one', text: s.one }) : null);
+        const li = el('li', null, a);
+        ul.append(li);
+        items.push({ li, a, det, text: [s.title, s.one || '', s.examples, (s.tags || []).join(' '), d.name].join(' ').toLowerCase() });
+      });
+      det.append(ul);
+      list.append(det);
+      groups.push({ det, initial: det.open });
+    });
+
+    const visibleLinks = () => items.filter((x) => !x.li.hidden && x.det.open && !x.det.hidden).map((x) => x.a);
+    function filter() {
+      const terms = input.value.toLowerCase().trim().split(/\s+/).filter(Boolean);
+      let shown = 0;
+      items.forEach((x) => { const ok = terms.every((t) => x.text.includes(t)); x.li.hidden = !ok; if (ok) shown++; });
+      groups.forEach((g) => {
+        const any = items.some((x) => x.det === g.det && !x.li.hidden);
+        g.det.hidden = !any;
+        g.det.open = terms.length ? any : g.initial;
+      });
+      empty.hidden = shown > 0;
+    }
+    input.addEventListener('input', filter);
+
+    let lastFocus = null;
+    function open() {
+      if (!panel.hidden) return;
+      lastFocus = document.activeElement;
+      panel.hidden = false; backdrop.hidden = false;
+      document.body.classList.add('gn-lock');
+      btn.setAttribute('aria-expanded', 'true');
+      requestAnimationFrame(() => { panel.classList.add('show'); backdrop.classList.add('show'); });
+      input.focus();
+      const c = panel.querySelector('.gn-item.current');
+      if (c) c.scrollIntoView({ block: 'center' });
+    }
+    function close() {
+      if (panel.hidden) return;
+      panel.classList.remove('show'); backdrop.classList.remove('show');
+      document.body.classList.remove('gn-lock');
+      btn.setAttribute('aria-expanded', 'false');
+      const done = () => { panel.hidden = true; backdrop.hidden = true; };
+      if (reduced) done(); else setTimeout(done, 200);
+      (lastFocus && lastFocus.focus ? lastFocus : btn).focus();
+    }
+    btn.addEventListener('click', () => (panel.hidden ? open() : close()));
+    closeBtn.addEventListener('click', close);
+    backdrop.addEventListener('click', close);
+    panel.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); close(); return; }
+      if (e.key === 'Enter' && e.target === input) {
+        const first = visibleLinks()[0]; if (first) { e.preventDefault(); first.click(); }
+        return;
+      }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        const links = visibleLinks(); if (!links.length) return;
+        const i = links.indexOf(document.activeElement);
+        const next = e.key === 'ArrowDown' ? (i < 0 ? 0 : Math.min(links.length - 1, i + 1)) : (i <= 0 ? -1 : i - 1);
+        e.preventDefault();
+        (next < 0 ? input : links[next]).focus();
+        return;
+      }
+      if (e.key === 'Tab') {   // keep focus inside the dialog
+        const f = [...panel.querySelectorAll('button, input, a[href], summary')].filter((x) => x.offsetParent !== null);
+        if (!f.length) return;
+        if (e.shiftKey && document.activeElement === f[0]) { e.preventDefault(); f[f.length - 1].focus(); }
+        else if (!e.shiftKey && document.activeElement === f[f.length - 1]) { e.preventDefault(); f[0].focus(); }
+      }
+    });
+    document.addEventListener('keydown', (e) => {
+      const typing = e.target.closest && e.target.closest('input, textarea, select, [contenteditable]');
+      if ((e.key === 'k' || e.key === 'K') && (e.ctrlKey || e.metaKey)) { e.preventDefault(); panel.hidden ? open() : close(); }
+      else if (e.key === '/' && !typing && panel.hidden) { e.preventDefault(); open(); }
+    });
+    document.body.append(backdrop, panel);
+    return btn;
+  }
+  SD.globalNav = globalNav;
+
   /* ---------------- visibility helpers ---------------- */
   function onVisible(node, cb, opts) {
     if (!('IntersectionObserver' in window)) { cb(true); return () => {}; }
@@ -925,10 +1040,22 @@
 
     const app = document.getElementById('app');
     app.innerHTML = '';
+    const order = cat.systems;
+    const pos = order.findIndex((x) => x.slug === D.slug);
+    const prevSys = pos > 0 ? order[pos - 1] : null;
+    const nextSys = pos >= 0 && pos < order.length - 1 ? order[pos + 1] : null;
+    const arrow = (s, dir) => s
+      ? el('a', { class: 'icon-btn nav-arrow', href: s.slug + '.html', title: (dir < 0 ? 'Previous: ' : 'Next: ') + s.title, 'aria-label': (dir < 0 ? 'Previous system: ' : 'Next system: ') + s.title, text: dir < 0 ? '‹' : '›' })
+      : el('span', { class: 'icon-btn nav-arrow disabled', 'aria-hidden': 'true', text: dir < 0 ? '‹' : '›' });
     const top = el('header', { class: 'topbar' },
-      el('a', { class: 'brand', href: '../index.html' }, el('span', { class: 'brand-mark', text: '◇' }), el('span', { text: 'Design Atlas' })),
-      el('span', { class: 'crumb', text: `${dom.name || ''} › ${D.title}` }),
+      el('a', { class: 'brand', href: '../index.html' }, el('span', { class: 'brand-mark', text: '◇' }), el('span', { class: 'brand-t', text: 'Design Atlas' })),
+      globalNav({ current: D.slug, base: '', home: '../index.html' }),
+      el('nav', { class: 'crumb', 'aria-label': 'Breadcrumb' },
+        el('a', { class: 'cr-home', href: '../index.html', text: 'Home' }), el('span', { class: 'cr-sep cr-home', text: '›' }),
+        dom.id ? el('a', { href: '../index.html#domain-' + dom.id, text: dom.name }) : null,
+        el('span', { class: 'cr-sep cr-title', text: '›' }), el('span', { class: 'cr-title', 'aria-current': 'page', text: D.title })),
       el('span', { class: 'spacer' }),
+      el('div', { class: 'nav-arrows' }, arrow(prevSys, -1), arrow(nextSys, 1)),
       themeButton());
     const nav = el('nav', { class: 'secnav', 'aria-label': 'Sections' });
     const navInner = el('div', { class: 'secnav-inner' }); nav.append(navInner);
@@ -1145,13 +1272,10 @@
       const s = add('related', 'Related designs', 'Related');
       s.append(el('div', { class: 'related' }, rel.map((r) => el('a', { href: r.slug + '.html', text: r.title }))));
     }
-    const order = cat.systems;
-    const i = order.findIndex((x) => x.slug === D.slug);
-    if (i >= 0) {
-      const prev = order[i - 1]; const next = order[i + 1];
+    if (pos >= 0) {
       main.append(el('div', { class: 'pager' },
-        prev ? el('a', { href: prev.slug + '.html' }, el('div', { class: 'dir', text: '← Previous' }), prev.title) : el('span'),
-        next ? el('a', { class: 'next', href: next.slug + '.html' }, el('div', { class: 'dir', text: 'Next →' }), next.title) : null));
+        prevSys ? el('a', { href: prevSys.slug + '.html' }, el('div', { class: 'dir', text: '← Previous' }), prevSys.title) : el('span'),
+        nextSys ? el('a', { class: 'next', href: nextSys.slug + '.html' }, el('div', { class: 'dir', text: 'Next →' }), nextSys.title) : null));
     }
     main.append(el('footer', { class: 'foot', html: 'System Design Atlas · numbers labelled <em>estimate</em> are back-of-envelope; everything attributed to a company links to its source.' }));
 
@@ -1162,6 +1286,14 @@
       const a = el('a', { href: '#' + id, text: label }); links[id] = a; navInner.append(a);
       const t = el('a', { href: '#' + id, text: label }); tocLinks[id] = t; toc.append(t);
     });
+    // lateral navigation: the other systems in this domain
+    const siblings = cat.systems.filter((x) => x.domain === meta.domain);
+    if (siblings.length > 1) {
+      toc.append(el('div', { class: 'toc-h toc-h2', text: 'More in ' + (dom.name || 'this domain') }));
+      siblings.forEach((x) => toc.append(x.slug === D.slug
+        ? el('span', { class: 'toc-sys current', 'aria-current': 'page', text: x.title })
+        : el('a', { class: 'toc-sys', href: x.slug + '.html', text: x.title })));
+    }
     if ('IntersectionObserver' in window) {
       const io = new IntersectionObserver((ents) => {
         ents.forEach((e) => {
