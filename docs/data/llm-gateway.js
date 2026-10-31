@@ -480,7 +480,7 @@ router_settings:
   fallbacks: [{"large-model": ["small-model"]}]
 
 litellm_settings:
-  cache: true                                # Redis from REDIS_HOST / REDIS_PORT env
+  cache: true                                # Redis: REDIS_HOST, REDIS_PORT, REDIS_PASSWORD
   cache_params:
     type: redis-semantic
     similarity_threshold: 0.95               # min cosine similarity to serve a hit

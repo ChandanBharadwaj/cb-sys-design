@@ -412,8 +412,10 @@ public class AssignmentRound {
 
   @Scheduled(fixedDelayString = "\${dispatch.round-ms:5000}")
   public void run() {
-    for (long zone : jdbc.queryForList("SELECT id FROM zones WHERE active", Long.class))
-      tx.executeWithoutResult(s -> runZone(zone));
+    for (long zone : jdbc.queryForList("SELECT id FROM zones WHERE active", Long.class)) {
+      try { tx.executeWithoutResult(s -> runZone(zone)); }
+      catch (IllegalStateException lostRace) { /* this zone rolled back; the others still run */ }
+    }
   }
 
   void runZone(long zone) {

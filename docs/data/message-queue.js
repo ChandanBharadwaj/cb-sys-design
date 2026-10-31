@@ -404,7 +404,9 @@ spring:
       enable-auto-commit: false           # commit after processing
       auto-offset-reset: earliest
       isolation-level: read_committed
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
       properties:
+        spring.json.trusted.packages: com.example.orders   # OrderEvent's package
         partition.assignment.strategy: org.apache.kafka.clients.consumer.CooperativeStickyAssignor
     listener:
       ack-mode: manual
