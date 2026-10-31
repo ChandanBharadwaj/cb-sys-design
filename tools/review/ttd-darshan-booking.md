@@ -1,0 +1,39 @@
+# ttd-darshan-booking review
+
+- **New page.** It covers TTD's monthly darshan and seva release: a known T0, CDN and a pre-rendered calendar, pre-scaling, a virtual queue with signed tokens, FIFO vs randomised-at-T0 positions, date × slot counters, holds with a TTL, per-ID limits, OTP, the hold bounce after "quota full", and a seeded seva lucky dip. It links to `ticket-booking` (generic seat-level flash sale) and `live-streaming` (ladder pre-scaling) rather than repeating them.
+- **Research:** 10 WebSearches.
+  - Brief facts used and cited:
+    - TTD Sep 2026: ≈6 lakh simultaneous users, ≈2.69 lakh quota, ≈4 per user (≈24 lakh, ≈9×), Virtual Queue, "Slot Unavailable" = quota full, and payment failures from banks or gateways. Sources: Telangana Today, Deccan Chronicle, UNI.
+    - 2021: the Jio-built portal on a JioMart domain (Deccan Herald), and 1.10 lakh concurrent hits vs a normal 30–40K capacity (Deccan Chronicle, Aug 2021).
+    - 2017: the Arjitha seva online dip (Hans India).
+  - New and cited:
+    - TCS as technology partner (Business Standard, Feb 2015).
+    - About 2.4 lakh tickets in about 1 hour with about 1 crore hits (Zee News, Sep 2021). Deccan Chronicle said about 2 hours, and the page says the timing is approximate.
+    - 807 reservations on one mobile and 926 on one email (Deccan Chronicle, undated).
+    - Srivani online booking needs Aadhaar and a registered mobile (Deccan Chronicle).
+    - A vigilance finding of software-assisted Srivani bulk booking, and TTD considering a lucky dip for Srivani (Deccan Chronicle; the year is not confirmed, so labelled "Undated report").
+  - **Google Cloud:** two searches now show that UNI's report of the Sep 2026 statement quotes TTD saying the platform is "supported by technologies such as Google Cloud Platform, load balancing, auto-scaling and distributed architecture". The page includes it, attributed as TTD's own description via UNI. It was not independently verified.
+- **Not used (unverified):**
+  - A "once in 90 days" per-person rule and a "6 per booking" cap. These come only from booking-agency blogs, so the page presents per-ID and group limits as our design and gives no TTD numbers.
+  - The 300/day Srivani donor quota, which appeared only on forums and agency blogs.
+  - The official portal domain. Results disagreed between `ttdevasthanams.ap.gov.in` and `tirupatibalaji.ap.gov.in`, so neither is named.
+  - The release day of the month. Reports differ, so none is hard-coded. The intro's "10:00" is a conceptual example.
+- **Our design vs fact:** the architecture, queue algorithm (random pre-queue then FIFO), token format, counter schema, TTLs, admission rate and the commit-reveal draw are all our design. The real-world intro says that TTD has not published its internals.
+- **Knobs:** the crowd and quota use TTD's figures. Capacities, the 10% bot share, payment outcomes (75% pay, 15% bank failures freed in about 1 min, 10% abandoned) and a 2-min mean payment time are labelled as estimates in the knobs intro. The 2021 freeze roughly matches the "no queue + autoscale" case: about 1.7 h to quota full, mostly errors. Every option changes a meter or the verdict (checker: 9/9).
+- **Widget:**
+  - 600 sessions and a 270-ticket quota, scaled 1:1,000.
+  - 60 bot sessions under 12 identities, all in the pre-queue, clicking within 0.25 s.
+  - A token bucket admits R/s. Holds are an atomic counter decrement per slot, with TTL expiry, immediate release on bank failure, and refunds for payments that arrive after expiry. The per-ID check frees the identity when a hold is released.
+  - The same seeded crowd is replayed for each policy.
+  - Typical run (seed 0): FIFO with no limit gives bots ≈89% of tickets; FIFO with the limit ≈18%; random with no limit ≈35%; random with the limit ≈17%.
+  - Phone: a 360-wide viewBox with 13–13.5-unit text (min 12.3 px, p25 12.7 px). The legend and stats are in HTML.
+- **Code:**
+  - Java token issuer: compiled clean with `javac --release 21 -proc:none -Xlint:deprecation,removal` against `/tmp/snipbuild/cp.txt`. It was run with a fixed `Clock`: valid → true; wrong session, tampered signature, garbage, and expired after 11 min → false.
+  - SQL: ran on a throwaway Postgres 16.15.
+    - With quota 8, two holds of 4 commit and the third updates 0 rows.
+    - A retried idempotency key inserts 0 rows, so the app rolls back.
+    - A second confirm for the same ID and period fails on `bookings_id_hash_period_key`.
+    - A confirm after expiry changes 0 rows.
+    - The test showed that the same ID can still park a second *hold* until it expires, because the constraint fires at confirm. The note now says this and suggests a claim row per `(id_hash, period)`.
+  - Python lucky dip: ran on Python 3.13. 36 entries win against 60 places (mixed 1- and 2-devotee entries), and the ranking is identical when the input order is reversed.
+- **Checker:** `node tools/check.js --require-intro --fonts ttd-darshan-booking` → all ✓ (phone and desk). I looked at the screenshots of the intro, architecture, knobs and deep dive at both sizes. I shortened the knob hints, which had squeezed the meter labels, and renamed "Payment orchestrator" to "Pay orchestrator" so it fits the 18-character label limit.
