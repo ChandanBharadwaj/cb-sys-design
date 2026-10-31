@@ -29,8 +29,8 @@ SD.register({
         text: 'Store places in a table with <code>lat</code> and <code>lng</code> columns, each with an ordinary index. A search asks for rows where latitude <b>and</b> longitude both fall in a small box around the user. It is one SQL query, and for a city\'s worth of places it is fast enough.',
         scene: {
           nodes: [
-            { id: 'usr', label: 'User', sub: 'coffee near me', kind: 'client', at: [70, 110] },
-            { id: 'api', label: 'Search', sub: 'builds a box', kind: 'service', at: [210, 110] },
+            { id: 'usr', label: 'User', sub: 'coffee near me', kind: 'client', at: [70, 0] },
+            { id: 'api', label: 'Search', sub: 'builds a box', kind: 'service', at: [70, 110] },
             { id: 'db', label: 'Places table', sub: 'index on lat, lng', kind: 'store', at: [350, 110] }
           ],
           edges: [{ from: 'usr', to: 'api' }, { from: 'api', to: 'db' }],
@@ -43,8 +43,8 @@ SD.register({
         text: 'An ordinary index sorts on one column, so it can narrow the search to only one range. The latitude range is a <b>thin stripe around the whole Earth</b>. The database must then check the longitude of every place in that stripe, one row at a time. With hundreds of millions of places and thousands of searches a second, it cannot keep up.',
         scene: {
           nodes: [
-            { id: 'usr', label: 'Users', sub: 'thousands/s', kind: 'client', at: [70, 110] },
-            { id: 'api', label: 'Search', sub: 'waiting', kind: 'service', at: [210, 110] },
+            { id: 'usr', label: 'Users', sub: 'thousands/s', kind: 'client', at: [70, 0] },
+            { id: 'api', label: 'Search', sub: 'waiting', kind: 'service', at: [70, 110] },
             { id: 'db', label: 'Places table', sub: 'scans a stripe', kind: 'store', at: [350, 110] }
           ],
           edges: [{ from: 'usr', to: 'api' }, { from: 'api', to: 'db' }],
@@ -60,8 +60,8 @@ SD.register({
         text: 'Split the map into <b>cells</b> whose ids sort so that nearby cells sit close together (a <b>geohash</b> or S2 cell). A search reads the user\'s cell and its <b>8 neighbours</b>, then keeps only places within the true distance. Because places rarely change, the whole index is read-only, fits in memory, and is <b>copied to many servers</b>: more searches, add more copies.',
         scene: {
           nodes: [
-            { id: 'usr', label: 'Users', sub: 'thousands/s', kind: 'client', at: [70, 110] },
-            { id: 'api', label: 'Search', sub: 'my cell + 8', kind: 'service', at: [210, 110] },
+            { id: 'usr', label: 'Users', sub: 'thousands/s', kind: 'client', at: [70, 0] },
+            { id: 'api', label: 'Search', sub: 'my cell + 8', kind: 'service', at: [70, 110] },
             { id: 'g1', label: 'Geo index', sub: 'copy 1 · RAM', kind: 'cache', at: [350, 0] },
             { id: 'g2', label: 'Geo index', sub: 'copy 2 · RAM', kind: 'cache', at: [350, 110] },
             { id: 'g3', label: 'Geo index', sub: 'copy 3 · RAM', kind: 'cache', at: [350, 220] },

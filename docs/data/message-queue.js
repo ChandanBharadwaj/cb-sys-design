@@ -29,7 +29,7 @@ SD.register({
         text: 'After saving an order, the order service makes a direct network call to each service that cares. It is easy to write and easy to follow, and with two or three services and light traffic it works fine.',
         scene: {
           nodes: [
-            { id: 'ord', label: 'Order service', sub: 'new order', kind: 'service', at: [70, 110] },
+            { id: 'ord', label: 'Order service', sub: 'new order', kind: 'service', at: [70, 0] },
             { id: 'pay', label: 'Payments', sub: 'charge card', kind: 'service', at: [350, 0] },
             { id: 'wh', label: 'Warehouse', sub: 'pack items', kind: 'service', at: [350, 110] },
             { id: 'email', label: 'Email', sub: 'send receipt', kind: 'service', at: [350, 220] }
@@ -44,7 +44,7 @@ SD.register({
         text: 'If the email service is down, the order service must retry, give up, or fail the checkout. During a sale, the warehouse cannot keep up and calls pile up. Every new service that wants order events means another change to the order service. The services are <b>tightly coupled</b>: each depends on all the others being up and fast.',
         scene: {
           nodes: [
-            { id: 'ord', label: 'Order service', sub: 'waits on all', kind: 'service', at: [70, 110] },
+            { id: 'ord', label: 'Order service', sub: 'waits on all', kind: 'service', at: [70, 0] },
             { id: 'pay', label: 'Payments', sub: 'charge card', kind: 'service', at: [350, 0] },
             { id: 'wh', label: 'Warehouse', sub: 'falling behind', kind: 'service', at: [350, 110] },
             { id: 'email', label: 'Email', sub: 'down', kind: 'service', at: [350, 220] }
@@ -62,8 +62,8 @@ SD.register({
         text: 'The order service <b>appends</b> the event to a <b>topic</b>: an ordered log on disk, copied to several servers so one crash loses nothing. Once it is safely stored, checkout is done. Each consuming service <b>pulls</b> messages at its own speed and remembers how far it has read. If the email sender was down, it simply catches up when it comes back.',
         scene: {
           nodes: [
-            { id: 'ord', label: 'Order service', sub: 'append event', kind: 'service', at: [70, 110] },
-            { id: 'log', label: 'Topic log', sub: '3 copies · disk', kind: 'queue', at: [210, 110] },
+            { id: 'ord', label: 'Order service', sub: 'append event', kind: 'service', at: [70, 0] },
+            { id: 'log', label: 'Topic log', sub: '3 copies · disk', kind: 'queue', at: [70, 110] },
             { id: 'pay', label: 'Payments', sub: 'own bookmark', kind: 'service', at: [350, 0] },
             { id: 'wh', label: 'Warehouse', sub: 'own bookmark', kind: 'service', at: [350, 110] },
             { id: 'email', label: 'Email', sub: 'catches up', kind: 'service', at: [350, 220] }
