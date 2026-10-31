@@ -136,8 +136,8 @@ SD.widget('object-storage', function (root, ctx) {
       g.append(box);
       g.append(svg('text', { x: x + 7, y: y + 18, style: 'font:700 14px var(--sans);pointer-events:none', fill: st === 'lost' ? 'var(--err)' : 'var(--text)', text: label(i) + (st === 'lost' ? ' ✖' : st === 'rebuilt' ? ' ✓' : '') }));
       const f = frags[i];
-      const preview = st === 'lost' ? 'lost' : i < k ? '"' + new TextDecoder().decode(f.slice(0, 9)).replace(/ /g, '·') + (f.length > 9 ? '…' : '') + '"' : Array.from(f.slice(0, 4), (b) => b.toString(16).padStart(2, '0')).join(' ');
-      g.append(svg('text', { x: x + 7, y: y + 36, style: 'font:500 13px var(--mono);pointer-events:none', fill: st === 'lost' ? 'var(--err)' : 'var(--text-2)', text: preview }));
+      const preview = st === 'lost' ? 'lost' : i < k ? '"' + new TextDecoder().decode(f.slice(0, 8)).replace(/ /g, '·') + (f.length > 8 ? '…' : '') + '"' : Array.from(f.slice(0, 4), (b) => b.toString(16).padStart(2, '0')).join(' ');
+      g.append(svg('text', { x: x + 7, y: y + 36, style: 'font:500 14px var(--mono);pointer-events:none', fill: st === 'lost' ? 'var(--err)' : 'var(--text-2)', text: preview }));
     }
     const lost = status.filter((s) => s === 'lost').length;
     stats.innerHTML = '';

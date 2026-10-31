@@ -239,7 +239,7 @@ SD.register({
         { v: 'fixed', l: 'Fixed: large model' }, { v: 'cost', l: 'Cost-aware classifier' }, { v: 'latency', l: 'Latency-based' }, { v: 'cascade', l: 'Cascade small → large' }] },
       { id: 'cache', label: 'Cache', type: 'seg', value: 'exact', options: [
         { v: 'none', l: 'None' }, { v: 'exact', l: 'Exact match' }, { v: 'semantic', l: 'Semantic' }] },
-      { id: 'th', label: 'Semantic similarity threshold', type: 'range', min: 0.8, max: 0.99, step: 0.01, value: 0.95, fmt: (v) => v.toFixed(2) },
+      { id: 'th', label: 'Similarity threshold (semantic cache only)', type: 'range', min: 0.8, max: 0.99, step: 0.01, value: 0.95, fmt: (v) => v.toFixed(2) },
       { id: 'unit', label: 'Rate-limit unit', type: 'seg', value: 'tokens', options: [
         { v: 'req', l: 'Requests / min' }, { v: 'tokens', l: 'Tokens / min' }] },
       { id: 'guard', label: 'Guardrails', type: 'seg', value: 'regex', options: [
@@ -328,7 +328,8 @@ SD.register({
     timeline: [
       { when: '2023', who: 'Zilliz', title: 'GPTCache', text: 'An open-source semantic cache: embed the prompt, search a vector store for similar past prompts, and return the cached answer once a similarity check passes a threshold. Zilliz notes it can produce false positives and negatives.', src: 4 },
       { when: 'May 2023', who: 'Stanford', title: 'FrugalGPT: LLM cascades', text: 'Chen, Zaharia and Zou describe prompt adaptation, LLM approximation and <b>LLM cascades</b>. On their benchmarks a learned cascade matched the best single model with <b>up to 98% lower cost</b>.', src: 6 },
-      { when: 'Docs', who: 'LiteLLM', title: 'Retries, fallbacks, load balancing', text: 'Deployments listed under the same <code>model_name</code> are load-balanced. After <code>num_retries</code> fail, the router <b>falls back</b> to another model group, configured in <code>router_settings</code>.', src: 0 },
+      { when: 'Docs', who: 'LiteLLM', title: 'Retries, fallbacks, load balancing', text: 'Deployments listed under the same <code>model_name</code> are load-balanced. After <code>num_retries</code> fail, the router <b>falls back</b> to another model group; <code>allowed_fails</code> and <code>cooldown_time</code> take a failing deployment out for a while.', src: 0 },
+      { when: 'Docs', who: 'LiteLLM', title: 'Semantic cache', text: '<code>type: redis-semantic</code> serves a cached answer above a cosine <code>similarity_threshold</code>, using an embedding model from the model list. The docs warn it is built for <b>single-shot prompts</b> and can replay stale answers on multi-turn or agentic traffic.', src: 7 },
       { when: 'Docs', who: 'Portkey', title: 'Open-source AI gateway', text: 'Fallbacks triggered on chosen status codes, weighted load balancing, conditional routing and guardrail checks, configured as JSON.', src: 1 },
       { when: 'Docs', who: 'Cloudflare', title: 'AI Gateway at the edge', text: 'Caching with configurable TTL, rate limiting by requests per window (sliding or fixed), and retries plus model fallbacks through a universal endpoint that takes an ordered list of providers.', src: 2 },
       { when: 'Docs', who: 'Kong', title: 'AI rate limiting and semantic cache', text: 'Kong\'s AI Rate Limiting Advanced plugin limits LLM traffic. Its changelog includes a fix so that <b>semantic-cache hits no longer decrement token counters</b>: an easy bug when caching and limiting interact.', src: 3 },
@@ -347,7 +348,8 @@ SD.register({
       { title: 'AI Rate Limiting Advanced: changelog', url: 'https://developer.konghq.com/plugins/ai-rate-limiting-advanced/changelog/', pub: 'Kong docs' },
       { title: 'What is GPTCache?', url: 'https://zilliz.com/what-is-gptcache', pub: 'Zilliz' },
       { title: 'Our approach to API rate limits', url: 'https://support.anthropic.com/en/articles/8243635-our-approach-to-api-rate-limits', pub: 'Anthropic support' },
-      { title: 'FrugalGPT: How to Use Large Language Models While Reducing Cost and Improving Performance', url: 'https://arxiv.org/abs/2305.05176', pub: 'arXiv, 2023' }
+      { title: 'FrugalGPT: How to Use Large Language Models While Reducing Cost and Improving Performance', url: 'https://arxiv.org/abs/2305.05176', pub: 'arXiv, 2023' },
+      { title: 'Semantic caching (proxy)', url: 'https://docs.litellm.ai/docs/proxy/caching_semantic', pub: 'LiteLLM docs' }
     ]
   },
 
@@ -375,7 +377,7 @@ SD.register({
   interview: [
     { q: 'Why rate-limit by tokens instead of requests?', a: '<p>Cost, GPU time and provider quotas all scale with <b>tokens</b>. Providers enforce input and output tokens per minute. A request limit treats a 50-token prompt and a 50K-token prompt the same, so one batch job with huge prompts can drain the shared provider quota and cause 429s for every team.</p>', lvl: 'core' },
     { q: 'You do not know the output length up front. How do you charge tokens?', a: '<p>Reserve <b>input estimate + max_tokens</b> from the bucket before calling the provider. When the stream ends, read the exact usage and <b>refund</b> the difference. Cap <code>max_tokens</code> per key so reservations stay sane.</p><p>Alternative: charge after the fact and let a bucket go negative (debt), which blocks the next requests instead.</p>', lvl: 'deep' },
-    { q: 'What are the risks of a semantic cache?', a: '<ul><li><b>Wrong answers</b>: "cancel my order" ≈ "cancel my subscription".</li><li><b>Data leaks</b> across users or tenants if the scope is too wide.</li><li><b>Stale</b> answers after facts change.</li></ul><p>Mitigate with a high threshold, a scope key (model, system prompt, tenant), TTLs, no caching of personalized or tool-using requests, and audits of hits.</p>', lvl: 'core' },
+    { q: 'What are the risks of a semantic cache?', a: '<ul><li><b>Wrong answers</b>: "cancel my order" ≈ "cancel my subscription".</li><li><b>Data leaks</b> across users or tenants if the scope is too wide.</li><li><b>Stale</b> answers after facts change.</li></ul><ul><li><b>Multi-turn and agent traffic</b>: if you embed only the last user message, "yes, do it" matches every other "yes, do it" regardless of the conversation. Cache single-shot calls only, or key on the whole conversation.</li></ul><p>Mitigate with a high threshold, a scope key (model, system prompt, tenant), TTLs, no caching of personalized or tool-using requests, and audits of hits.</p>', lvl: 'core' },
     { q: 'How do you stream responses through a proxy?', a: '<p>Use a non-blocking server (WebFlux, Netty, Go) and forward each SSE chunk as it arrives: <b>no buffering</b> in the gateway or any load balancer in front of it, long idle timeouts, and heartbeats. Propagate client cancellation upstream so you stop paying for tokens nobody reads.</p><p>Count tokens on the way through, and use the provider\'s final usage event as the source of truth.</p>', lvl: 'core' },
     { q: 'How do you fail over between providers safely?', a: '<p>Map an alias to several <b>equivalent</b> deployments. On 429 or 5xx, put that deployment on cooldown (respecting retry-after) and retry on the next one.</p><p>Watch for differences: prompt formats, tool-calling schemas, context limits, tokenizers and output quality. Never retry after tokens have streamed, and keep retries bounded.</p>', lvl: 'core' },
     { q: 'How do you attribute cost to teams and features?', a: '<p>Give each team a <b>virtual key</b> and let callers add tags (feature, user). For every request, log tokens in/out from the provider\'s usage field, the model, cache status and the <b>price valid at that time</b>. Aggregate in a column store for chargeback and budget alerts.</p>', lvl: 'core' },
@@ -384,6 +386,7 @@ SD.register({
     { q: 'Where should PII redaction happen, and what does it cost?', a: '<p>In the gateway, <b>before</b> caching, logging and the provider call, so no path sees raw PII. Use fast regex/NER inline (a few ms). LLM-based classifiers are more accurate but add a model call, so run them async or only on risky routes.</p><p>Use reversible placeholders if the answer must refer back to the data.</p>', lvl: 'deep' },
     { q: 'What if Redis, which holds the buckets, goes down?', a: '<p>Decide up front: <b>fail open</b> (traffic flows, spend unmetered for a while) or <b>fail closed</b> (safe, but an outage). Most teams fail open with a conservative <b>local, per-pod bucket</b> as a backstop, alert, and reconcile spend from usage logs afterwards.</p>', lvl: 'deep' },
     { q: 'How does provider prompt caching relate to a gateway cache?', a: '<p>A <b>gateway cache</b> skips the model call entirely, but only for repeated or similar prompts. <b>Provider prompt caching</b> reuses the computed prefix (a long system prompt or document) inside the provider, so every call still runs but the shared prefix is cheaper and faster.</p><p>They complement each other: keep stable prefixes identical so the provider cache hits.</p>', lvl: 'deep' },
+    { q: 'Your agents make 20–50 LLM calls per task. What changes at the gateway?', a: '<ul><li><b>Budget per run, not just per team</b>: the agent sends a run id (a header or tag), and the gateway tracks tokens per run and stops a looping agent with a clear error instead of letting it drain the team budget.</li><li><b>Fallbacks must keep tool calling working</b>: only fall back to models that support the same tool schema and context length, or translate the tool format in the gateway.</li><li><b>No silent retry mid-stream</b>, and none for calls whose tool side effects may already have run. Retries belong in the agent, with idempotency keys.</li><li><b>Prompt-cache friendliness</b>: keep the system prompt and tool list byte-identical between steps so provider prefix caching hits on every step.</li></ul>', lvl: 'deep' },
     { q: 'Which metrics would you put on the gateway dashboard?', a: '<ul><li>Time to first token and total latency per deployment.</li><li>429 and 5xx rates per provider, fallbacks per minute.</li><li>Tokens and dollars per team, budget burn rate.</li><li>Cache hit rate and audited wrong-hit rate.</li><li>Guardrail blocks and redactions.</li></ul>', lvl: 'core' }
   ],
 
@@ -464,6 +467,10 @@ return granted`,
       model: openai/<small-model>            # OpenAI-compatible vLLM server
       api_base: http://vllm.internal:8000/v1
       api_key: os.environ/VLLM_API_KEY
+  - model_name: embed                        # used by the semantic cache
+    litellm_params:
+      model: openai/<embedding-model>
+      api_key: os.environ/OPENAI_API_KEY
 
 router_settings:
   num_retries: 2
@@ -473,16 +480,16 @@ router_settings:
   fallbacks: [{"large-model": ["small-model"]}]
 
 litellm_settings:
-  cache: true
+  cache: true                                # Redis from REDIS_HOST / REDIS_PORT env
   cache_params:
     type: redis-semantic
-    similarity_threshold: 0.95
-    redis_semantic_cache_embedding_model: <embedding-model-alias>
+    similarity_threshold: 0.95               # min cosine similarity to serve a hit
+    redis_semantic_cache_embedding_model: embed   # a model_name from model_list
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY  # virtual keys + budgets need a DB
   database_url: os.environ/DATABASE_URL`,
-      note: 'Start with <code>litellm --config config.yaml</code>. Key names change between releases, so check them against the docs for your version.'
+      note: 'Start with <code>litellm --config config.yaml</code>. Key names match the LiteLLM reliability and semantic-cache docs; some examples put <code>num_retries</code> and <code>fallbacks</code> under <code>litellm_settings</code> instead, so check the docs for your version. LiteLLM\'s own docs warn that semantic caching suits single-shot prompts and can replay stale answers on multi-turn or agent traffic.'
     }
   ],
 

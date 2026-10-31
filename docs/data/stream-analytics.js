@@ -212,7 +212,7 @@ SD.register({
       steps: [
         { text: 'Every 60 s the JobManager triggers checkpoint <b>n</b>. Sources record their Kafka offsets and inject <b>barrier n</b> into the stream.', flow: ['jm>ingest'], badges: { ingest: 'offsets@n' } },
         { text: 'The barrier flows <b>with</b> the data. An operator with several inputs <b>aligns</b>: it buffers inputs whose barrier came early until barrier n has arrived on all of them.', flow: ['ingest>win'], badges: { win: 'align n' } },
-        { text: 'The operator snapshots its state <b>asynchronously</b> and keeps processing. With RocksDB, only new SST files are uploaded (<b>incremental</b>).', flow: ['win>state', 'state>ckpt'], badges: { ckpt: '+38 MB' } },
+        { text: 'The operator snapshots its state <b>asynchronously</b> and keeps processing. With RocksDB, only new SST files (its immutable sorted files) are uploaded: <b>incremental</b>.', flow: ['win>state', 'state>ckpt'], badges: { ckpt: '+38 MB' } },
         { text: 'All tasks acknowledge, so the JobManager marks checkpoint n <b>complete</b>. The transactional sink now commits the Kafka transaction holding the results since n−1.', flow: ['ckpt>jm', 'win>out'], badges: { out: ['commit', 'ok'] }, tone: 'ok' }
       ]
     },
@@ -250,7 +250,7 @@ SD.register({
         { v: 'heap', l: 'HashMap (JVM heap)' }, { v: 'rocks', l: 'RocksDB (local SSD)' }] }
     ],
     evaluate(s) {
-      const KEYS = 5e7, AGG = 64, HEAP_BUDGET = 64e9, CKPT = 30;
+      const KEYS = 5e7, AGG = 64, HEAP_BUDGET = 64e9, CKPT = 60; // 60 s checkpoint interval, as in the scenarios and code
       const pLate = (t) => 0.93 * Math.exp(-t / 1.5) + 0.07 * Math.exp(-t / 45);
       const onTime = 1 - pLate(s.wm);
       const dropped = pLate(s.wm + s.lateness);
@@ -265,7 +265,7 @@ SD.register({
       const clamp01 = (x) => Math.max(0, Math.min(1, x));
       const pct = (x) => (x * 100 < 0.01 ? '<0.01' : (x * 100).toFixed(x < 0.1 ? 2 : 1)) + '%';
       const metrics = [
-        { k: 'Result latency', v: (s.window === 'session' ? 'gap 5 min + ' : 'window end + ') + s.wm + ' s' + (s.guarantee === 'exactly' ? ' + ≤30 s commit' : ''), s: clamp01(1 - lat / 360), hint: '≈ ' + Math.round(lat) + ' s avg' },
+        { k: 'Result latency', v: (s.window === 'session' ? 'gap 5 min + ' : 'window end + ') + s.wm + ' s' + (s.guarantee === 'exactly' ? ' + ≤60 s commit' : ''), s: clamp01(1 - lat / 360), hint: '≈ ' + Math.round(lat) + ' s avg' },
         { k: 'On time at first fire', v: pct(onTime), s: clamp01((onTime - 0.6) / 0.4) },
         { k: 'Dropped as too late', v: pct(dropped), s: clamp01(1 - dropped * 20), hint: 'to side output' },
         { k: 'Window state', v: SD.fmt.bytes(s.backend === 'heap' ? heapNeed : stateB) + (s.backend === 'heap' ? ' heap' : ' on SSD'), s: heapBad ? 0.1 : clamp01(1 - stateB / 4e11), hint: heapBad ? 'exceeds heap' : copies.toFixed(1) + ' windows/key' },
@@ -280,7 +280,7 @@ SD.register({
       else notes.push('No allowed lateness: state is freed as soon as the window fires, and anything late goes to the side output.');
       if (s.window === 'slide') notes.push('Each event lands in <b>6 overlapping windows</b>, so state and output grow 6×. Flink stores sliding windows per pane, so prefer incremental aggregates.');
       if (s.window === 'session') notes.push('Session windows <b>merge</b> as events arrive. Results only appear after 5 min of inactivity, which suits user-journey metrics but not live dashboards.');
-      if (s.guarantee === 'exactly') notes.push('The Kafka transaction timeout must exceed checkpoint interval + restart time. Otherwise the broker aborts the transaction and data is lost.');
+      if (s.guarantee === 'exactly') notes.push('Two-phase commit (2PC): the sink pre-commits its Kafka transaction at each checkpoint barrier and commits only when the checkpoint completes, so results become visible once per checkpoint. The Kafka transaction timeout must exceed checkpoint interval + restart time. Otherwise the broker aborts the transaction and data is lost.');
       if (heapBad) notes.push('The HashMap backend keeps deserialized Java objects on the heap. At about 3× the raw size this misses the heap budget, causing GC pauses and then OOM.');
       let verdict;
       if (heapBad) verdict = '❌ <b>State does not fit the JVM heap.</b> Switch to RocksDB, which spills to local SSD and checkpoints incrementally, or shrink lateness and window overlap.';
@@ -288,6 +288,10 @@ SD.register({
       else if (dropped > 0.01) verdict = '⚠ <b>' + pct(dropped) + ' of events miss their window.</b> Raise allowed lateness or reconcile the side output in batch.';
       else if (s.guarantee === 'atleast') verdict = '👍 Fast and simple, but a crash replays and <b>re-emits</b> results. That is fine for dashboards if the sink is idempotent (upsert by key and window).';
       else if (s.window === 'tumble' && s.backend === 'rocks' && s.wm <= 15) verdict = '✅ <b>Solid production default:</b> tumbling event-time windows, a small watermark lag, a couple of minutes of lateness, RocksDB state and a transactional sink.';
+      else if (s.window === 'session') verdict = '👍 <b>Session windows</b> fit user-journey metrics, but every result waits for 5 min of inactivity, so they are wrong for live dashboards.';
+      else if (s.window === 'slide') verdict = '👍 <b>Sliding windows</b> give smooth moving numbers, but each event lives in 6 windows, so state and output are about 6× a tumbling window.';
+      else if (s.wm > 15) verdict = '👍 <b>More complete first answers</b>, but every result now waits ' + s.wm + ' s for a few stragglers. Allowed lateness usually catches them more cheaply.';
+      else if (s.backend === 'heap') verdict = '👍 <b>Heap state is fastest while it fits</b>, but each checkpoint uploads the full state and growth ends in GC pauses. Plan the move to RocksDB.';
       else verdict = '👍 Workable. Check the meters to see which side of the latency / completeness / state triangle you are paying for.';
       return {
         metrics, verdict, notes,
@@ -319,7 +323,7 @@ SD.register({
       { when: '2015', who: 'Apache Flink', title: 'Asynchronous Barrier Snapshotting', text: 'A variant of Chandy-Lamport. Barriers flow with the data, and on acyclic graphs <b>only operator state is persisted</b>, with no in-flight record logging. This is the basis of Flink checkpoints.', src: 3 },
       { when: '2017', who: 'Apache Flink 1.3', title: 'Incremental RocksDB checkpoints', text: 'For large state, each checkpoint uploads only the changes since the last completed checkpoint. It is available only with the RocksDB backend.', src: 4 },
       { when: '2017–18', who: 'Apache Flink 1.4', title: 'End-to-end exactly-once', text: '<code>TwoPhaseCommitSinkFunction</code> ties a sink transaction to checkpoints. Writes between two checkpoints form one transaction, committed only when the checkpoint completes. Kafka 0.11+ transactions were the first user.', src: 5 },
-      { when: '2018', who: 'Cloudflare', title: 'HTTP analytics on ClickHouse', text: 'Replaced a Citus/Postgres pipeline with ClickHouse to keep up with about <b>6M requests/s</b>. Uses aggregated <b>SummingMergeTree / AggregatingMergeTree</b> tables rather than storing every raw request.', src: 6 },
+      { when: '2018', who: 'Cloudflare', title: 'HTTP analytics on ClickHouse', text: 'Replaced a Postgres/Citus pipeline with ClickHouse to keep up with about <b>6M requests/s</b>. Per-minute rollups live in <b>SummingMergeTree</b> (counters) and <b>AggregatingMergeTree</b> (unique IPs) tables. A raw requests table exists too, but keeping raw data for long was judged too expensive at that volume.', src: 6 },
       { when: '2021', who: 'Uber', title: 'Log analytics moved from ELK to ClickHouse', text: 'A schema-agnostic layer on ClickHouse ingests <b>millions of logs/s</b> and stores several PB. It replaced 20+ Elasticsearch clusters per region.', src: 7 }
     ],
     lessons: [
@@ -374,6 +378,7 @@ SD.register({
     { q: 'Lambda vs Kappa architecture?', a: '<p><b>Lambda</b> runs a batch layer (accurate, slow) and a speed layer (approximate, fast), then merges them. You maintain two implementations of the same logic.</p><p><b>Kappa</b> keeps one streaming job. To recompute, replay the immutable log through a new version of the job and switch over. Event-time semantics make the replay give the same result.</p>', lvl: 'core' },
     { q: 'Why ClickHouse (or another columnar store) for serving?', a: '<p>Analytics queries read a few columns over many rows. Columnar storage with compression, a <b>sparse primary index</b> on the sort key, and vectorized execution scans billions of rows per second.</p><p>MergeTree writes each insert as an immutable sorted <b>part</b> and merges parts in the background. That makes writes cheap, but dedup and summing are only <i>eventual</i>: always aggregate at query time.</p>', fu: 'Why are many small inserts bad?', lvl: 'core' },
     { q: 'A hot key overloads one subtask. What do you do?', a: '<p><b>Two-phase aggregation</b>: pre-aggregate before the shuffle (local combine), or salt the key (<code>key#rand(16)</code>), aggregate per salted key, then merge the partials by the real key.</p><p>This works for associative aggregates (count, sum, HLL), not for order-dependent logic.</p>', lvl: 'deep' },
+    { q: 'How do you enrich events with reference data (e.g. page → category)?', a: '<p>Do not call a database once per event: at millions of events/s it becomes the bottleneck and its latency stalls the pipeline.</p><ul><li><b>Small, slowly changing table</b>: stream its changes (CDC topic) into the job as <b>broadcast state</b>, or use a Flink SQL <b>temporal join</b>, so each event joins the version valid at its event time.</li><li><b>Large table</b>: key both streams by the join key and keep the latest row in keyed state.</li><li><b>Must call a service</b>: Flink <b>Async I/O</b> with a local cache, so many lookups are in flight at once.</li></ul>', fu: 'Why does joining on event time matter during a replay?', lvl: 'deep' },
     { q: 'How do you deploy a new version of a stateful job?', a: '<p>Take a <b>savepoint</b> (a portable, user-triggered snapshot), stop the job, and start the new jar from the savepoint. Keep operator <code>uid</code>s stable so state maps to the right operators.</p><p>You can change parallelism up to the configured <b>max parallelism</b> (the number of key groups).</p>', lvl: 'deep' },
     { q: 'How would you count distinct users per minute at scale?', a: '<p>Exact distinct needs a set per window, so memory grows with users. Use a <b>HyperLogLog</b> sketch per key and window: a few KB, about 1% error, and <b>mergeable</b>. Hourly uniques are then a merge of minute sketches. In ClickHouse, store <code>uniqCombinedState(user_id)</code> in an AggregatingMergeTree and read it with <code>uniqCombinedMerge</code>.</p>', lvl: 'deep' }
   ],

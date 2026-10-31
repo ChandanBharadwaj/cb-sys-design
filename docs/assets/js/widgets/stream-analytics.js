@@ -1,8 +1,15 @@
 /* Event-time tumbling windows with a bounded-out-of-orderness watermark, allowed lateness and a late side output. */
 SD.widget('stream-analytics', function (root, ctx) {
   const { el, svg } = ctx;
-  const W = 500, H = 236, X0 = 22, X1 = 478, SPAN = 60, WIN = 10, NW = SPAN / WIN;
-  const TOP = 62, BASE = 204, MS_PER_S = 420; // 1 s of processing time = 420 ms real time
+  // desktop: 500-wide viewBox, six 10 s windows. Phone: 360-wide viewBox, four bigger windows, larger text.
+  const WIN = 10, TOP = 62, BASE = 204, MS_PER_S = 420; // 1 s of processing time = 420 ms real time
+  let W, H, X0, X1, SPAN, NW, F;
+  function geom(narrow) {
+    if (narrow) { W = 360; H = 240; X0 = 16; X1 = 344; SPAN = 40; F = { ax: 14, n: 17, st: 15, wm: 15, gh: 15, r: 5.4, step: 11 }; }
+    else { W = 500; H = 236; X0 = 22; X1 = 478; SPAN = 60; F = { ax: 14, n: 16, st: 13.5, wm: 14, gh: 13, r: 4.4, step: 9.5 }; }
+    NW = SPAN / WIN;
+  }
+  geom(ctx.narrow);
   const xOf = (e) => X0 + (X1 - X0) * (e / SPAN);
   const eOf = (x) => ((x - X0) / (X1 - X0)) * SPAN;
 
@@ -15,7 +22,7 @@ SD.widget('stream-analytics', function (root, ctx) {
   const stepBtn = el('button', { class: 'btn', text: '+2 s' });
   stepBtn.addEventListener('click', () => advance(2));
   const lateBtn = el('button', { class: 'btn', text: '⤺ Inject late event' });
-  lateBtn.addEventListener('click', () => inject(Math.max(0, wm - 2 - Math.random() * 14), true));
+  lateBtn.addEventListener('click', () => { inject(Math.max(0, wm - 2 - Math.random() * 14), true); paint(); });
   const resetBtn = el('button', { class: 'btn', text: '↺ Restart' });
   resetBtn.addEventListener('click', reset);
   const lagOut = el('b', { text: lag + ' s' });
@@ -28,7 +35,7 @@ SD.widget('stream-analytics', function (root, ctx) {
     el('label', null, 'Watermark lag ', lagOut, lagIn), el('label', null, 'Allowed lateness ', latOut, latIn)));
 
   // ---------- stage ----------
-  const S_ = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Event-time windows with watermark', style: 'touch-action:none;cursor:crosshair;max-width:720px;margin:0 auto' });
+  const S_ = svg('svg', { viewBox: `0 0 500 236`, role: 'img', 'aria-label': 'Event-time windows with watermark', style: 'touch-action:none;cursor:crosshair;max-width:720px;margin:0 auto' });
   const gBands = svg('g'), gAxis = svg('g'), gDots = svg('g'), gLines = svg('g'), gGhost = svg('g');
   S_.append(gBands, gAxis, gDots, gLines, gGhost);
   root.append(el('div', { class: 'w-stage' }, S_));
@@ -37,26 +44,32 @@ SD.widget('stream-analytics', function (root, ctx) {
   root.append(statsEl, log);
 
   const T = (x, y, txt, st, anchor) => svg('text', { x, y, 'text-anchor': anchor || 'middle', style: st || 'font:600 12px var(--sans)', fill: 'var(--text-3)', text: txt });
-  // axis
-  gAxis.append(svg('line', { x1: X0, x2: X1, y1: BASE + 4, y2: BASE + 4, stroke: 'var(--border)' }));
-  for (let s = 0; s <= SPAN; s += WIN) gAxis.append(T(xOf(s), BASE + 20, s === 60 ? '1:00' : ':' + String(s).padStart(2, '0'), 'font:600 14px var(--mono)'));
   const legend = [['var(--accent)', 'on time'], ['var(--warn)', 'late, accepted (re-fire)'], ['var(--err)', 'dropped → side output'], ['var(--text-3)', '┆ processing time now']];
   root.insertBefore(el('div', { class: 'w-stats', style: { marginTop: '0', marginBottom: '6px' } }, legend.map(([c, l]) => el('span', { class: 'w-stat', html: `<i style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${c};margin-right:5px"></i>${l}` }))), statsEl);
 
-  const bandEls = [];
-  for (let k = 0; k < NW; k++) {
-    const x = xOf(k * WIN) + 1, w = xOf(WIN) - X0 - 2;
-    const rect = svg('rect', { x, y: TOP - 30, width: w, height: BASE - TOP + 32, rx: 6, style: 'transition:fill .3s' });
-    const t1 = T(x + w / 2, TOP - 15, '', 'font:700 16px var(--mono)');
-    const t2 = T(x + w / 2, TOP + 3, '', 'font:600 13.5px var(--sans)');
-    gBands.append(rect, t1, t2);
-    bandEls.push({ rect, t1, t2 });
-  }
+  let bandEls = [];
   const wmLine = svg('line', { y1: TOP - 34, y2: BASE + 4, stroke: 'var(--accent)', 'stroke-width': 2.5 });
   const wmText = T(0, TOP - 38, 'watermark', 'font:700 14px var(--sans)');
   wmText.setAttribute('fill', 'var(--accent)');
   const nowLine = svg('line', { y1: TOP - 30, y2: BASE + 4, stroke: 'var(--text-3)', 'stroke-dasharray': '3 3' });
   gLines.append(nowLine, wmLine, wmText);
+  function build() {
+    S_.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    gAxis.innerHTML = ''; gBands.innerHTML = ''; bandEls = [];
+    gAxis.append(svg('line', { x1: X0, x2: X1, y1: BASE + 4, y2: BASE + 4, stroke: 'var(--border)' }));
+    for (let s = 0; s <= SPAN; s += WIN) gAxis.append(T(xOf(s), BASE + 20, s === 60 ? '1:00' : ':' + String(s).padStart(2, '0'), `font:600 ${F.ax}px var(--mono)`));
+    for (let k = 0; k < NW; k++) {
+      const x = xOf(k * WIN) + 1, w = xOf(WIN) - X0 - 2;
+      const rect = svg('rect', { x, y: TOP - 30, width: w, height: BASE - TOP + 32, rx: 6, style: 'transition:fill .3s' });
+      const t1 = T(x + w / 2, TOP - 15, '', `font:700 ${F.n}px var(--mono)`);
+      const t2 = T(x + w / 2, TOP + 3, '', `font:600 ${F.st}px var(--sans)`);
+      gBands.append(rect, t1, t2);
+      bandEls.push({ rect, t1, t2 });
+    }
+    wmText.setAttribute('style', `font:700 ${F.wm}px var(--sans)`);
+  }
+  build();
+  ctx.onResize((n) => { geom(n); build(); reset(); });
 
   function reset() {
     p = 0; maxSeen = 0; wm = -lag; events = []; bins = {}; nextEmit = 0; done = false;
@@ -85,9 +98,9 @@ SD.widget('stream-analytics', function (root, ctx) {
     }
     if (kind === 'drop') say(`Event @${e.toFixed(1)} s is behind watermark − lateness (${(wm - lateness).toFixed(1)} s). Window purged → <b>side output</b>.`);
     else if (manual && kind === 'ok') say(`Event @${e.toFixed(1)} s arrived before its window fired, so it counts as on time.`);
-    const y = Math.max(TOP + 10, BASE - 5 - (bins[b] - 1) * 9.5);
+    const y = Math.max(TOP + 10, BASE - 5 - (bins[b] - 1) * F.step);
     const fill = kind === 'ok' ? 'var(--accent)' : kind === 'late' ? 'var(--warn)' : 'var(--err)';
-    const dot = svg('circle', { cx: xOf(e), cy: y, r: manual ? 5.6 : 4.4, fill, stroke: manual ? 'var(--text)' : 'none', 'stroke-width': 1.2 });
+    const dot = svg('circle', { cx: xOf(e), cy: y, r: manual ? F.r + 1.2 : F.r, fill, stroke: manual ? 'var(--text)' : 'none', 'stroke-width': 1.2 });
     gDots.append(dot);
     events.push({ e, kind });
   }
@@ -143,7 +156,7 @@ SD.widget('stream-analytics', function (root, ctx) {
     gGhost.innerHTML = '';
     const x = xOf(Math.min(e, p));
     gGhost.append(svg('line', { x1: x, x2: x, y1: TOP - 30, y2: BASE + 4, stroke: 'var(--warn)', 'stroke-width': 1.5, 'stroke-dasharray': '4 3' }),
-      T(Math.max(X0 + 30, Math.min(X1 - 30, x)), BASE - (BASE - TOP) / 2, 'ts ' + Math.min(e, p).toFixed(1) + ' s', 'font:700 13px var(--mono);paint-order:stroke;stroke:var(--surface);stroke-width:3px'));
+      T(Math.max(X0 + 30, Math.min(X1 - 30, x)), BASE - (BASE - TOP) / 2, 'ts ' + Math.min(e, p).toFixed(1) + ' s', `font:700 ${F.gh}px var(--mono);` + 'paint-order:stroke;stroke:var(--surface);stroke-width:3px'));
   }
   S_.addEventListener('pointerdown', (ev) => { ghost = evtTime(ev); drawGhost(ghost); S_.setPointerCapture(ev.pointerId); });
   S_.addEventListener('pointermove', (ev) => { if (ghost != null) { ghost = evtTime(ev); drawGhost(ghost); } });

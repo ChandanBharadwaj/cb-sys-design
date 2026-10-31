@@ -1027,7 +1027,22 @@
       card.append(el('div', { class: 'widget-head' }, el('h3', { text: D.widget.title }), D.widget.caption ? el('p', { html: D.widget.caption }) : null), body);
       s.append(card);
       try {
-        SD.widgets[D.slug](body, { el, svg, esc, fmt: SD.fmt, reduced, loop: (cb) => makeLoop(body, cb), onVisible: (cb) => onVisible(body, cb), css: cssVar, Diagram });
+        const NARROW = 520;
+        const isNarrow = () => (body.clientWidth || window.innerWidth) < NARROW;
+        const wctx = {
+          el, svg, esc, fmt: SD.fmt, reduced, loop: (cb) => makeLoop(body, cb), onVisible: (cb) => onVisible(body, cb), css: cssVar, Diagram,
+          narrow: isNarrow(),
+          // cb(narrow) fires when the widget crosses the phone/desktop width threshold
+          onResize(cb) {
+            if (!('ResizeObserver' in window)) return;
+            let last = wctx.narrow; let t = 0;
+            new ResizeObserver(() => {
+              clearTimeout(t);
+              t = setTimeout(() => { const n = isNarrow(); if (n !== last) { last = n; wctx.narrow = n; cb(n); } }, 150);
+            }).observe(body);
+          }
+        };
+        SD.widgets[D.slug](body, wctx);
       } catch (e) { console.error(e); body.append(el('p', { class: 'muted', text: 'Widget failed to load.' })); }
     }
 

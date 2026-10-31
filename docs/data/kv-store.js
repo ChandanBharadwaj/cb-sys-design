@@ -151,7 +151,7 @@ SD.register({
     { name: 'ring / token metadata', store: 'Gossiped to every node', fields: [['node_id', 'uuid', 'pk'], ['tokens', 'vnodes (e.g. 16)'], ['dc, rack', 'placement'], ['status', 'UP | DOWN | JOINING | LEAVING'], ['heartbeat', '(generation, version)']], note: 'Every node knows the whole ring, so any node can coordinate in one hop.' },
     { name: 'commit log + memtable', store: 'Append-only file + sorted in-memory map', fields: [['key', 'partition + clustering', 'pk'], ['value', 'bytes'], ['timestamp', 'µs (LWW)'], ['tombstone', 'bool']], note: 'Write = sequential append + in-memory insert. No read-before-write.' },
     { name: 'SSTable', store: 'Immutable sorted file', fields: [['key range', 'sorted', 'pk'], ['index + summary', 'offsets', 'idx'], ['Bloom filter', 'skip files without the key'], ['min/max timestamp', 'for compaction and TTL']], note: 'Never modified. Compaction merges several into new ones and drops overwritten and expired data.' },
-    { name: 'hints', store: 'On coordinator / fallback node', fields: [['target_node', 'uuid', 'pk'], ['mutation', 'key + value + ts'], ['created_at', 'ts']], note: 'Replayed when the target comes back. Kept only for a window (Cassandra: 3 h by default), after which repair must fix it.' }
+    { name: 'hints', store: 'On coordinator / fallback node', fields: [['target_node', 'uuid', 'pk'], ['mutation', 'key + value + ts'], ['created_at', 'ts']], note: 'Replayed when the target comes back. Cassandra stops storing new hints for a node that has been down longer than <code>max_hint_window</code> (3 h by default); after that, repair must fix it.' }
   ],
 
   architecture: {
@@ -215,7 +215,7 @@ SD.register({
         { text: 'A write arrives. A and B ack, so W = 2 is met and the client is happy. The copy meant for C must not be lost.', flow: [['coord>ra', 'coord>rb']], ok: ['ra', 'rb'] },
         { text: '<b>Sloppy quorum</b> (Dynamo): the next healthy node clockwise, D, stores the write with a <b>hint</b> saying "this belongs to C". Cassandra keeps the hint on the coordinator instead.', flow: ['coord>rd'], warn: ['rd'], badges: { rd: ['hint → C', 'warn'] }, tone: 'warn' },
         { text: 'C restarts and gossip announces it. D <b>replays the hint</b> to C and deletes it. C is back in sync for those writes.', flow: ['rd>rc'], ok: ['rc'], badges: { rc: ['caught up', 'ok'] }, tone: 'ok' },
-        { text: 'Had C been down longer than the hint window, the hints would have been dropped. Then <b>Merkle-tree repair</b> compares range hashes and streams only the ranges that differ.', flow: ['rb>ae', 'ae>rc'], badges: { ae: '2 ranges differ' } }
+        { text: 'Had C been down longer than the hint window (3 h in Cassandra), no more hints would be kept for it. Then <b>Merkle-tree repair</b> compares range hashes and streams only the ranges that differ.', flow: ['rb>ae', 'ae>rc'], badges: { ae: '2 ranges differ' } }
       ]
     },
     {
@@ -288,7 +288,7 @@ SD.register({
       else if (!overlap) verdict = '⚠ <b>Eventually consistent:</b> fast and highly available, but reads can be stale. Fine for metrics or feeds, not for balances.';
       else if (W === N && !sloppy) verdict = '⚠ <b>Writes stop when any replica is down.</b> Lower W, or accept sloppy quorums.';
       else if (N === 3 && R === 2 && W === 2) verdict = sloppy ? '✅ <b>Dynamo\'s classic (3, 2, 2)</b> with sloppy quorums: always writable, conflicts resolved by the application.' : '✅ <b>The standard QUORUM / QUORUM setup:</b> reads see acknowledged writes, and one replica can be down.';
-      else verdict = '👍 Quorums overlap. Check the latency and availability meters for the price.';
+      else verdict = '👍 <b>Quorums overlap</b> (R + W = ' + (R + W) + ' > ' + N + '). The price: writes wait for the ' + ord(W) + ' fastest replica (≈ ' + lat[W - 1] + ' ms), reads for the ' + ord(R) + ' (≈ ' + lat[R - 1] + ' ms); writes survive ' + (N - W) + ' and reads ' + (N - R) + ' replicas down.';
       const rep = ['ra', 'rb', 'rc', 'rd'].slice(0, Math.min(N, 4));
       const hide = ['ra', 'rb', 'rc', 'rd'].filter((x) => !rep.includes(x) && !(sloppy && x === 'rd'));
       return {
@@ -338,6 +338,7 @@ SD.register({
       { title: 'Amazon\'s DynamoDB: 10 years later', url: 'https://www.amazon.science/latest-news/amazons-dynamodb-10-years-later', pub: 'Amazon Science, 2022' },
       { title: 'Amazon DynamoDB: A Scalable, Predictably Performant, and Fully Managed NoSQL Database Service', url: 'https://www.usenix.org/conference/atc22/presentation/vig', pub: 'USENIX ATC 2022' },
       { title: 'Apache Cassandra 5.0 Features: Unified Compaction Strategy', url: 'https://cassandra.apache.org/_/blog/Apache-Cassandra-5.0-Features-Unified-Compaction-Strategy.html', pub: 'Apache Cassandra blog' },
+      { title: 'Hints (max_hint_window, default 3 h)', url: 'https://cassandra.apache.org/doc/latest/operating/hints.html', pub: 'Apache Cassandra docs' },
       { title: 'Notes on the DynamoDB paper', url: 'https://brooker.co.za/blog/2022/07/12/dynamodb.html', pub: 'Marc Brooker, 2022' }
     ]
   },
@@ -360,6 +361,7 @@ SD.register({
     { f: 'Concurrent writes, one lost', detect: 'Customer reports; LWW timestamps out of order', fix: 'Vector clocks or CRDTs, finer-grained cells, or LWT for compare-and-set.' },
     { f: 'Clock skew breaks LWW', detect: 'NTP offset alarms, writes "in the future"', fix: 'Tight NTP, client-side timestamps from one source, or avoid LWW for that data.' },
     { f: 'Compaction falls behind', detect: 'Pending compactions, SSTables per read, disk filling', fix: 'Throttle ingest, add nodes, choose a better-suited strategy, keep disks ≤ 50% full.' },
+    { f: 'Queue-like table drowns in tombstones', detect: 'Tombstone warnings in logs, slow or failing range reads on a partition', fix: 'Do not use the store as a queue. Bucket partitions by time, expire with TTL and time-window compaction, so whole SSTables drop at once.' },
     { f: 'Hot partition', detect: 'Per-partition latency, one replica set saturated', fix: 'Cache, read at ONE across replicas, or split the key with a suffix.' }
   ],
 

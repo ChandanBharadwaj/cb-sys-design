@@ -173,3 +173,26 @@ intro: {
 - Short sentences, active voice. Bold only the 2–3 phrases that matter.
 - **No company-specific numbers in the intro.** Those live in "Real world" with sources. The intro is conceptual, so it needs little or no web search.
 - Be accurate. The analogy must not imply something technically false. If the analogy breaks down somewhere important, say so in one clause.
+
+---
+
+## Widget readability on phones (required)
+
+`node tools/check.js --fonts <slug>` measures the **on-screen** size of every SVG text in the deep-dive widget at 390px. It fails when:
+- any text is below **11px**, or
+- fewer than **75%** of texts are at least **12px**.
+
+On a phone the widget body is only about **340px wide**. On-screen size is `font units × (340 / viewBox width)`, so:
+- a 360-wide viewBox needs **≥ 13-unit** text (about 12.3px), and 14–15 units is better;
+- a 500-wide viewBox would need about 18-unit text, so do not use one on phones.
+
+Use the engine helpers:
+- `ctx.narrow` is true when the widget body is < 520px wide (phones and small tablets).
+- `ctx.onResize(cb)` calls `cb(narrow)` when the width crosses that threshold, so you can rebuild the layout.
+
+Patterns that work:
+- **Two layouts.** Build the SVG from a function `draw(narrow)`. Use a viewBox about 360 wide on phones with larger fonts, and the wider desktop layout otherwise. Call it again from `ctx.onResize`.
+- **Stack on phones.** Put side-by-side panels (e.g. "naive vs correct") one above the other.
+- **Move long text out of the SVG.** Put long labels, legends and explanations in HTML (`.w-stats`, `.w-log`, a caption). HTML text is never scaled down.
+- **Fewer, bigger cells.** Reduce how many items you draw on phones rather than shrinking them, e.g. 6 grid rows instead of 12, or 8 bars instead of 20.
+- Keep every control reachable with no horizontal scroll. The `.w-controls` row wraps.

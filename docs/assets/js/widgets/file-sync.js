@@ -1,8 +1,15 @@
 /* Fixed-size blocks vs content-defined chunking (Gear rolling hash) after an insertion. */
 SD.widget('file-sync', function (root, ctx) {
   const { el, svg } = ctx;
-  const W = 420, H = 236, X0 = 8, X1 = 412;
-  const FIX = 512, MIN = 128, MAX = 1536, MASK = 0xFF800000; // top 9 bits → average ≈ 512 B after MIN
+  // two layouts: desktop (420-wide viewBox) and phone (360-wide, bigger text, legend in HTML)
+  const LAYOUT = {
+    wide: { W: 420, H: 236, X0: 8, X1: 412, barH: 34, y1: 26, y2: 120, title: -8, msg: 52, fTitle: 12, fHash: 9.5, fMsg: 11.5, minHashW: 26,
+      t1: 'Fixed-size blocks (512 B each, like 4 MB in prod)', t2: 'Content-defined chunks (Gear hash, avg ≈ 600 B)' },
+    narrow: { W: 360, H: 214, X0: 6, X1: 354, barH: 40, y1: 30, y2: 136, title: -9, msg: 62, fTitle: 14.5, fHash: 13, fMsg: 14, minHashW: 40,
+      t1: 'Fixed 512 B blocks', t2: 'Content-defined (Gear, avg ≈ 600 B)' }
+  };
+  let L = ctx.narrow ? LAYOUT.narrow : LAYOUT.wide;
+  const FIX = 512, MIN = 128, MAX = 1536, MASK = 0xFF800000; // top 9 bits: P(cut) = 1/512 per byte after MIN, so average ≈ 128 + 512 ≈ 600 B
   const LEN0 = 6144;
 
   function mulberry32(a) { return () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
@@ -46,14 +53,15 @@ SD.widget('file-sync', function (root, ctx) {
   root.append(el('div', { class: 'w-controls' }, insBtn, delBtn, ovrBtn, rstBtn,
     el('label', null, 'At ', posOut, posIn), el('label', null, 'Size ', sizeOut, sizeIn)));
 
-  const S = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'File split into fixed blocks and content-defined chunks', style: 'max-width:680px;margin:0 auto' });
+  const S = svg('svg', { role: 'img', 'aria-label': 'File split into fixed blocks and content-defined chunks', style: 'max-width:680px;margin:0 auto' });
   const g = svg('g'); S.append(g);
-  root.append(el('div', { class: 'w-stage' }, S));
+  const legend = el('p', { class: 'muted', style: { margin: '6px 0 0', fontSize: '13px' } });
+  root.append(el('div', { class: 'w-stage' }, S, legend));
   const stats = el('div', { class: 'w-stats' });
   const log = el('div', { class: 'w-log', 'aria-live': 'polite' });
   root.append(stats, log);
   const say = (t) => { log.prepend(el('div', { html: t })); while (log.children.length > 30) log.lastChild.remove(); };
-  const T = (x, y, text, o) => svg('text', Object.assign({ x, y, text, fill: 'var(--text)', style: 'font:600 12px var(--sans)' }, o || {}));
+  const T = (x, y, text, o) => svg('text', Object.assign({ x, y, text, fill: 'var(--text)', style: `font:600 ${L.fTitle}px var(--sans)` }, o || {}));
 
   function summary(kind) {
     const known = prev ? new Set(prev[kind].map((c) => c.h)) : null;
@@ -64,27 +72,31 @@ SD.widget('file-sync', function (root, ctx) {
   }
   function drawBar(kind, y, title) {
     const sm = summary(kind);
+    const { X0, X1, barH } = L;
     const span = Math.max(data.length, LEN0 + 600), sx = (X1 - X0) / span;
-    g.append(T(X0, y - 8, title));
+    g.append(T(X0, y + L.title, title));
     sm.blocks.forEach((c) => {
       const x = X0 + c.a * sx, w = Math.max(1, (c.b - c.a) * sx - 1.5);
       const col = c.isNew ? 'var(--err)' : prev ? 'var(--ok)' : 'var(--accent)';
-      g.append(svg('rect', { x, y, width: w, height: 34, rx: 3, fill: `color-mix(in srgb, ${col} ${c.isNew ? 55 : 22}%, var(--surface))`, stroke: col, 'stroke-width': 1 }));
-      if (w >= 26) g.append(T(x + w / 2, y + 21, c.h.slice(0, 4), { 'text-anchor': 'middle', style: 'font:500 9.5px var(--mono)', fill: 'var(--text-2)' }));
+      g.append(svg('rect', { x, y, width: w, height: barH, rx: 3, fill: `color-mix(in srgb, ${col} ${c.isNew ? 55 : 22}%, var(--surface))`, stroke: col, 'stroke-width': 1 }));
+      if (w >= L.minHashW) g.append(T(x + w / 2, y + barH / 2 + L.fHash * 0.36, c.h.slice(0, 4), { 'text-anchor': 'middle', style: `font:500 ${L.fHash}px var(--mono)`, fill: 'var(--text-2)' }));
     });
     if (mark != null) {
       const mx = X0 + mark * sx;
-      g.append(svg('line', { x1: mx, x2: mx, y1: y - 3, y2: y + 37, stroke: 'var(--warn)', 'stroke-width': 2 }));
+      g.append(svg('line', { x1: mx, x2: mx, y1: y - 3, y2: y + barH + 3, stroke: 'var(--warn)', 'stroke-width': 2 }));
     }
     const msg = prev ? `${sm.nNew} of ${sm.blocks.length} chunks new → upload ${SD.fmt.bytes(sm.bytes)}` : `${sm.blocks.length} chunks · ${SD.fmt.bytes(data.length)} file`;
-    g.append(T(X0, y + 52, msg, { style: 'font:600 11.5px var(--mono)', fill: prev && sm.nNew ? 'var(--err)' : 'var(--text-2)' }));
+    g.append(T(X0, y + L.msg, msg, { style: `font:600 ${L.fMsg}px var(--mono)`, fill: prev && sm.nNew ? 'var(--err)' : 'var(--text-2)' }));
     return sm;
   }
   function draw() {
     g.innerHTML = '';
-    const f = drawBar('fixed', 26, 'Fixed-size blocks (512 B each, like 4 MB in prod)');
-    const c = drawBar('cdc', 120, 'Content-defined chunks (Gear hash, avg ≈ 512 B)');
-    g.append(T(X0, H - 8, prev ? 'green = hash already on server · red = must upload · line = edit' : 'blue = current chunks · line = edit position', { fill: 'var(--text-3)', style: 'font:500 10.5px var(--sans)' }));
+    S.setAttribute('viewBox', `0 0 ${L.W} ${L.H}`);
+    const f = drawBar('fixed', L.y1, L.t1);
+    const c = drawBar('cdc', L.y2, L.t2);
+    const key = prev ? 'green = hash already on server · red = must upload · line = edit' : 'blue = current chunks · line = edit position';
+    if (L === LAYOUT.narrow) { legend.textContent = key + ' · 4-hex-digit labels are each chunk\'s hash (FNV stand-in for SHA-256)'; legend.style.display = ''; }
+    else { legend.style.display = 'none'; g.append(T(L.X0, L.H - 8, key, { fill: 'var(--text-3)', style: 'font:500 10.5px var(--sans)' })); }
     stats.innerHTML = '';
     [['edits', edits], ['file', SD.fmt.bytes(data.length)], ['fixed upload', prev ? SD.fmt.bytes(f.bytes) : '–'], ['CDC upload', prev ? SD.fmt.bytes(c.bytes) : '–']]
       .forEach(([k, v]) => stats.append(el('span', { class: 'w-stat', html: `${k}: <b>${v}</b>` })));
@@ -110,6 +122,7 @@ SD.widget('file-sync', function (root, ctx) {
   ovrBtn.addEventListener('click', () => edit('ovr'));
   rstBtn.addEventListener('click', () => { resetFile(); log.innerHTML = ''; draw(); say('Reset to the original 6 KB file.'); });
 
+  ctx.onResize((n) => { L = n ? LAYOUT.narrow : LAYOUT.wide; draw(); });
   draw();
   say('Pick a position near the start and press <b>Insert bytes</b>. Then try <b>Overwrite in place</b>.');
 });

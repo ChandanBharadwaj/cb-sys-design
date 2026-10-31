@@ -2,7 +2,7 @@
    exact / semantic cache with real cosine similarity on 16-d prompt vectors, and fixed / cascade / classifier routing. */
 SD.widget('llm-gateway', function (root, ctx) {
   const { el, svg } = ctx;
-  const W = 440, H = 300, DIM = 16;
+  const H = 300, DIM = 16;
   let seed = 7;
   const rand = () => { seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t ^= t + Math.imul(t ^ (t >>> 7), 61 | t); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
   const gauss = () => Math.sqrt(-2 * Math.log(rand() + 1e-9)) * Math.cos(2 * Math.PI * rand());
@@ -35,7 +35,7 @@ SD.widget('llm-gateway', function (root, ctx) {
   thIn.addEventListener('change', reset);
   root.append(el('div', { class: 'w-controls' }, rBtn, cBtn, uBtn, bBtn), el('div', { class: 'w-controls' }, el('label', null, 'Semantic threshold ', thOut, thIn)));
 
-  const S_ = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Gateway workload simulation' });
+  const S_ = svg('svg', { role: 'img', 'aria-label': 'Gateway workload simulation' });
   const gBase = svg('g'), gDots = svg('g');
   S_.append(gBase, gDots);
   root.append(el('div', { class: 'w-stage' }, S_));
@@ -46,18 +46,29 @@ SD.widget('llm-gateway', function (root, ctx) {
   function say(t) { log.prepend(el('div', { html: t })); while (log.children.length > 30) log.lastChild.remove(); }
 
   const LANES = [['cache hit', 'var(--ok)'], ['small model', 'var(--accent)'], ['large model', '#a855f7'], ['gateway 429', 'var(--warn)'], ['provider 429', 'var(--err)']];
-  const LY = (i) => 46 + i * 56, GX = 118, LX0 = 150, LX1 = 432;
-  gBase.append(T(30, 16, 'apps', 'font:700 13px var(--sans)', 'middle', 'var(--text-3)'),
-    svg('rect', { x: GX - 22, y: 24, width: 44, height: 266, rx: 10, fill: 'var(--surface-2)', stroke: 'var(--border)' }),
-    T(GX, 16, 'gateway', 'font:700 13px var(--sans)', 'middle', 'var(--text-3)'),
-    T(30, 110, 'support', 'font:700 13px var(--sans)', 'middle', 'var(--accent)'),
-    T(30, 210, 'batch', 'font:700 13px var(--sans)', 'middle', 'var(--warn)'));
-  const laneTxt = LANES.map(([name, c], i) => {
-    gBase.append(svg('line', { x1: LX0, x2: LX1, y1: LY(i) + 8, y2: LY(i) + 8, stroke: c, 'stroke-width': 2, opacity: 0.35 }));
-    const t = T(LX0, LY(i) - 2, name, 'font:700 14px var(--sans)', 'start', c); gBase.append(t); return t;
-  });
+  // phones: 360-wide viewBox with 14–15-unit text; desktop keeps the 440-wide layout
+  const LY = (i) => 46 + i * 56;
+  let W, AX, GX, LX0, LX1, laneTxt;
+  function buildBase(n) {
+    W = n ? 360 : 440; AX = n ? 34 : 30; GX = n ? 100 : 118; LX0 = n ? 128 : 150; LX1 = W - 8;
+    const aF = n ? 14 : 13, lF = n ? 15 : 14;
+    S_.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    gBase.innerHTML = ''; gDots.innerHTML = ''; if (dots) dots = [];
+    gBase.append(T(AX, 16, 'apps', `font:700 ${aF}px var(--sans)`, 'middle', 'var(--text-3)'),
+      svg('rect', { x: GX - 22, y: 24, width: 44, height: 266, rx: 10, fill: 'var(--surface-2)', stroke: 'var(--border)' }),
+      T(GX, 16, 'gateway', `font:700 ${aF}px var(--sans)`, 'middle', 'var(--text-3)'),
+      T(AX, 110, 'support', `font:700 ${aF}px var(--sans)`, 'middle', 'var(--accent)'),
+      T(AX, 210, 'batch', `font:700 ${aF}px var(--sans)`, 'middle', 'var(--warn)'));
+    laneTxt = LANES.map(([name, c], i) => {
+      gBase.append(svg('line', { x1: LX0, x2: LX1, y1: LY(i) + 8, y2: LY(i) + 8, stroke: c, 'stroke-width': 2, opacity: 0.35 }));
+      const t = T(LX0, LY(i) - 2, name, `font:700 ${lF}px var(--sans)`, 'start', c); gBase.append(t); return t;
+    });
+  }
+  let dots;
+  buildBase(ctx.narrow);
+  ctx.onResize((n) => { buildBase(n); paintStats(); });
 
-  let st, cache, buckets, provider, simT, nextA, nextB, inflight, dots;
+  let st, cache, buckets, provider, simT, nextA, nextB, inflight;
   function bucket(rate, burst) { return { rate, burst, tokens: burst }; }
   function reset() {
     st = { n: 0, cost: 0, latSum: 0, served: 0, hits: 0, wrong: 0, lanes: [0, 0, 0, 0, 0], supp429: 0, batch429: 0, weak: 0 };
@@ -143,7 +154,7 @@ SD.widget('llm-gateway', function (root, ctx) {
     dots = dots.filter((d) => {
       d.t += dt / 1.3;
       if (d.t >= 1) { d.c.remove(); return false; }
-      const x = d.t < 0.3 ? 30 + (GX - 30) * (d.t / 0.3) : GX + (LX1 - GX) * ((d.t - 0.3) / 0.7);
+      const x = d.t < 0.3 ? AX + (GX - AX) * (d.t / 0.3) : GX + (LX1 - GX) * ((d.t - 0.3) / 0.7);
       const y = d.t < 0.3 ? d.y0 : d.y0 + (d.y1 - d.y0) * Math.min(1, (d.t - 0.3) / 0.15);
       d.c.setAttribute('cx', x.toFixed(1)); d.c.setAttribute('cy', y.toFixed(1));
       return true;

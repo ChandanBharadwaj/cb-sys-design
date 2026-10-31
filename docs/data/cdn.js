@@ -343,6 +343,7 @@ SD.register({
     { f: 'PoP outage', detect: 'Health checks and BGP monitoring', fix: 'Withdraw the anycast route; neighbours absorb traffic.' },
     { f: 'Bad config pushed globally', detect: 'Error rate right after a config version', fix: 'Stage rollouts by PoP with automatic rollback; validate before publishing.' },
     { f: 'Private data cached and shown to others', detect: 'Responses with Set-Cookie or user data served as HIT', fix: '<code>Cache-Control: private</code> or <code>no-store</code> for personal responses; never cache with Set-Cookie.' },
+    { f: 'Cache poisoning via an unkeyed header', detect: 'A cached page differs by a header that is not in the key (e.g. <code>X-Forwarded-Host</code>)', fix: 'Key on every input that changes the response, or strip it at the edge; cache error responses only briefly.' },
     { f: 'DDoS on the origin directly', detect: 'Origin traffic not coming from CDN ranges', fix: 'Allow only CDN IPs or authenticated origin pulls; keep the origin IP secret.' }
   ],
 
@@ -357,6 +358,7 @@ SD.register({
     { q: 'Push CDN vs pull CDN?', a: '<p><b>Pull</b>: the CDN fetches from your origin on a miss. Zero setup, but the first request in each PoP is slow. <b>Push</b>: you upload content to the CDN\'s storage ahead of time. Good for large, predictable catalogs; you must manage what is where. Netflix Open Connect fills appliances off-peak with predicted demand.</p>', lvl: 'core' },
     { q: 'How does a CDN absorb a large DDoS?', a: '<p>Anycast spreads the attack across every PoP, so each one sees a fraction. Servers drop packets early (XDP / NIC filters) based on fingerprints, SYN cookies handle SYN floods, and rate limits and WAF rules stop L7 floods. The origin only accepts CDN traffic, so attackers cannot go around it.</p>', lvl: 'deep' },
     { q: 'How do you choose TTLs?', a: '<p>Immutable, versioned assets: a year. Content that changes but can be purged: hours to days, plus purge on change. Truly live data: seconds, or bypass. Add <code>stale-while-revalidate</code> and <code>stale-if-error</code> so expiry and origin outages do not hurt users.</p>', lvl: 'core' },
+    { q: 'How does the edge serve HTTPS for millions of customer domains?', a: '<p>The client sends the hostname in the TLS <b>SNI</b> field, and the edge picks the matching certificate from a distributed certificate store, loading it lazily and caching it. Session resumption and TLS 1.3 cut handshake round trips, and OCSP stapling saves the client a lookup.</p><p>Customers who will not hand over private keys can keep them in their own key server; the edge asks it to perform only the signing step of the handshake (Cloudflare calls this Keyless SSL).</p>', lvl: 'deep' },
     { q: 'How is cache storage organised on one edge server?', a: '<p>Hot objects in <b>RAM</b>, the long tail on <b>SSD</b>, with an LRU-like policy that resists one-hit wonders (for example, admit to SSD only on the second request). Inside a PoP, consistent hashing on the cache key makes each object live on one or two servers instead of all of them, which multiplies the effective cache size.</p>', lvl: 'deep' }
   ],
 
@@ -418,6 +420,9 @@ class SingleFlight:
         self._inflight[key] = fut
         try:
             fut.set_result(await fetch())
+        except asyncio.CancelledError:
+            fut.cancel()                              # never leave waiters hanging
+            raise
         except Exception as e:
             fut.set_exception(e)
         finally:
@@ -426,7 +431,7 @@ class SingleFlight:
 
 # cache_key("https://CDN.x.com/i.png?utm_source=ad&h=200&w=100")
 # -> "cdn.x.com/i.png?h=200&w=100"`,
-      note: 'If the fetch fails and no other caller awaited the future, the stored exception is still retrieved by the final <code>await fut</code>, so asyncio does not warn about it.'
+      note: 'Errors reach every waiter, and the final <code>await fut</code> retrieves them so asyncio does not warn. If the leading request is cancelled, the future is cancelled too; otherwise the waiters would hang forever.'
     },
     {
       title: 'bash: inspect cache status and purge by tag', lang: 'bash',

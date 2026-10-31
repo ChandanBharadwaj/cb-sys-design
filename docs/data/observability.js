@@ -138,11 +138,11 @@ SD.register({
       { label: 'Metric samples per second', f: (v) => v.hosts * v.series / v.scrape },
       { label: 'TSDB bytes per day at 1.37 B/sample', fmt: 'bytes', f: (v) => (v.hosts * v.series / v.scrape) * 86400 * 1.37 }
     ],
-    note: '1.37 bytes per sample is Gorilla\'s reported average for Facebook\'s data. Noisy floats compress far worse. 10× log compression is an <em>estimate</em> for repetitive text. Notice that metrics are cheap per sample, but <b>each series costs memory</b> in the TSDB head block, so series count, not samples, is what breaks clusters.'
+    note: '1.37 bytes per sample is Gorilla\'s reported average for Facebook\'s data. Noisy floats compress far worse. 10× log compression is an <em>estimate</em> for repetitive text. Notice that metrics are cheap per sample, but <b>each series costs memory</b> in the TSDB head block (the in-memory window of recent samples), so series count, not samples, is what breaks clusters.'
   },
 
   api: [
-    { m: 'POST', p: '/v1/traces · /v1/metrics · /v1/logs', d: 'OTLP/HTTP (port 4318; gRPC on 4317) into the collector. Batched and protobuf-encoded, with retry and back-off on 429/503.' },
+    { m: 'POST', p: '/v1/traces · /v1/metrics · /v1/logs', d: 'OTLP (OpenTelemetry Protocol) over HTTP on port 4318, or gRPC on 4317, into the collector. Batched and protobuf-encoded, with retry and back-off on 429/503.' },
     { m: 'GET', p: '/api/v1/query_range?query=…', d: 'Prometheus-style query API, e.g. <code>sum by (svc) (rate(errors_total[5m]))</code>.' },
     { m: 'GET', p: '/loki/api/v1/query_range?query=…', d: 'LogQL: a label selector picks the streams, then a filter scans the chunks: <code>{app="checkout"} |= "trace_id=4bf9…"</code>.' },
     { m: 'GET', p: '/api/traces/{traceId}', d: 'Fetch every span of one trace for the waterfall view.' },
@@ -218,7 +218,7 @@ SD.register({
         { text: 'Spans flow through agents to the collector tier. A <b>load-balancing exporter</b> routes by <code>trace_id</code>, so one collector sees the whole trace.', flow: ['app>agent', 'agent>coll'], badges: { coll: 'hash(trace_id)' } },
         { text: '<b>Tail sampling</b> waits ~30 s for the trace to finish, then keeps it if any span errored or it was slow, plus 1% of the rest.', nodes: ['coll'], badges: { coll: ['keep: error', 'ok'] } },
         { text: 'Kept spans land in the trace store, which is keyed by trace id. Storage is about 3% of the unsampled volume.', flow: ['coll>kfk', 'kfk>proc', 'proc>traces'], tone: 'ok' },
-        { text: 'On-call clicks a latency spike. An <b>exemplar</b> on the histogram links to this trace, and its <code>trace_id</code> pulls the matching log lines.', flow: ['ui>query', ['traces>query', 'logs>query'], 'query>ui'], tone: 'ok' }
+        { text: 'On-call clicks a latency spike. An <b>exemplar</b> (a sample trace id stored with a histogram bucket) links to this trace, and its <code>trace_id</code> pulls the matching log lines.', flow: ['ui>query', ['traces>query', 'logs>query'], 'query>ui'], tone: 'ok' }
       ]
     },
     {
@@ -233,7 +233,7 @@ SD.register({
     {
       id: 'cardinality', title: 'Cardinality explosion', tone: 'err',
       steps: [
-        { text: 'A developer adds <code>user_id</code> as a metric tag on a latency histogram: 14 buckets/sum/count × 50 endpoints × 1M users.', nodes: ['app'], warn: ['app'], badges: { app: ['+user_id tag', 'warn'] }, tone: 'warn' },
+        { text: 'A developer adds <code>user_id</code> as a tag on a latency histogram: 14 series (12 buckets + sum + count) × 50 endpoints × 1M users.', nodes: ['app'], warn: ['app'], badges: { app: ['+user_id tag', 'warn'] }, tone: 'warn' },
         { text: 'The TSDB creates a series per unique label set: <b>700M new series</b>. Each one needs index entries and an in-memory head chunk.', flow: ['proc>tsdb'], err: ['tsdb'], badges: { tsdb: ['700M series', 'err'] }, tone: 'err' },
         { text: 'Ingesters run out of memory and crash-loop. Queries time out and <b>alerting goes blind</b> at the worst moment.', flow: ['tsdb>query', 'query>alert'], err: ['tsdb', 'alert'], badges: { alert: ['no data', 'err'] }, tone: 'err' },
         { text: 'Fix: a <b>per-tenant series limit</b> rejects new series, the collector drops the label (relabel rule), and per-user detail goes to <b>traces/logs</b>, which handle high cardinality.', nodes: ['coll', 'tsdb'], ok: ['coll', 'tsdb'], badges: { coll: ['drop user_id', 'ok'] }, tone: 'ok' }
@@ -291,6 +291,10 @@ SD.register({
       else if (s.sampling === 'none') verdict = '⚠ <b>Storing every trace</b> is the biggest line on the bill and rarely helps. Use tail sampling.';
       else if (s.sampling === 'head1') verdict = '⚠ <b>Cheap, but blind to rare errors:</b> 99% of failing traces are dropped before anyone knows they failed.';
       else if (s.sampling === 'tail' && s.card <= 3 && s.logidx !== 'full' && s.tier !== 'hot30') verdict = '✅ <b>Modern default:</b> tail-sampled traces, bounded label cardinality, cheap log indexing and a short hot tier on top of object storage.';
+      else if (s.card === 4) verdict = '⚠ <b>Series budget at risk:</b> ' + SD.fmt.num(series) + ' series already need ~' + SD.fmt.bytes(tsdbMem) + ' of TSDB memory, and any extra label multiplies that again. Cap the label at the collector.';
+      else if (s.sampling === 'head10') verdict = '👍 <b>Head 10%:</b> traces are 10× cheaper than keeping all, but 90% of error traces are dropped at random. Tail sampling keeps them all for less.';
+      else if (s.logidx === 'full') verdict = '👍 <b>Full-text index:</b> needle searches take about a second, but you pay for an index about as big as the logs. Worth it for search-heavy or security use.';
+      else if (s.tier === 'hot30') verdict = '👍 <b>All hot:</b> every query is equally fast, but you pay hot-disk prices for weeks of data that are rarely read.';
       else verdict = '👍 Workable. Check the meters to see which bill (storage, memory or query time) you are paying.';
       return {
         metrics, verdict, notes,
@@ -323,7 +327,7 @@ SD.register({
       { when: '2021', who: 'Uber', title: 'Logs: ELK → ClickHouse', text: 'Semi-structured logs with evolving schemas caused Elasticsearch type conflicts and dropped logs. A schema-agnostic ClickHouse layer now ingests <b>millions of logs/s</b> into several PB.', src: 4 },
       { when: '2022', who: 'Datadog', title: 'Husky event store', text: 'A third-generation store: <b>schemaless, columnar, on object storage</b>, with separate writers, readers and compactors fed from Kafka, so ingest, storage and query scale independently.', src: 5 },
       { when: '2022', who: 'OpenTelemetry', title: 'Tail sampling in the Collector', text: 'Sampling decisions after the trace completes (errors, latency, attributes). It needs all spans of a trace on the same collector instance, which the load-balancing exporter provides.', src: 6 },
-      { when: 'Today', who: 'Grafana Loki', title: 'Index labels, not content', text: 'Only a small set of stream labels is indexed. Log lines are compressed into chunks on object storage, and content filters run at query time. Label choice decides both cost and speed.', src: 7 }
+      { when: 'Today', who: 'Grafana Loki', title: 'Index labels, not content', text: 'Only a small set of stream labels is indexed. Log lines are compressed into chunks on object storage, and content filters run at query time. Label choice decides both cost and speed. Since Loki 3.0, high-cardinality values such as trace ids can go in <b>structured metadata</b> instead of labels.', src: 7 }
     ],
     lessons: [
       '<span><b>Sample</b> traces by outcome (tail), not at random up front, and keep every error.</span>',
@@ -339,7 +343,7 @@ SD.register({
       { title: 'Fast and Reliable Schema-Agnostic Log Analytics Platform', url: 'https://www.uber.com/blog/logging/', pub: 'Uber Engineering, 2021' },
       { title: 'Introducing Husky, Datadog\'s Third-Generation Event Store', url: 'https://www.datadoghq.com/blog/engineering/introducing-husky/', pub: 'Datadog Engineering, 2022' },
       { title: 'Tail Sampling with OpenTelemetry: Why it\'s useful, how to do it, and what to consider', url: 'https://opentelemetry.io/blog/2022/tail-sampling/', pub: 'OpenTelemetry blog, 2022' },
-      { title: 'Grafana Loki overview', url: 'https://grafana.com/docs/loki/next/get-started/overview/', pub: 'Grafana docs' }
+      { title: 'Grafana Loki documentation (overview: index labels, not log content)', url: 'https://grafana.com/docs/loki/latest/', pub: 'Grafana Labs docs (stable release)' }
     ]
   },
 
@@ -361,6 +365,7 @@ SD.register({
     { f: 'Agent hurts the host', detect: 'Agent CPU/memory vs app, noisy-neighbour latency', fix: 'Cgroup limits for the agent, cheaper parsing at the edge, move heavy parsing to processors.' },
     { f: 'Monitoring down with production', detect: 'Meta-monitoring from another region / provider', fix: 'Run observability on separate infrastructure; dead-man\'s-switch alert that must always fire.' },
     { f: 'Broken traces', detect: 'Orphan spans, missing parents', fix: 'Propagate W3C traceparent through every hop, including queues (message headers) and async executors.' },
+    { f: 'Out-of-order or late samples rejected', detect: 'Ingest error counters (out-of-order / too-old samples), gaps on graphs from batch or edge producers', fix: 'Fix clock skew (NTP), give each producer its own series labels, or enable an out-of-order window (Prometheus 2.39+ <code>out_of_order_time_window</code>, off by default).' },
     { f: 'Alert storm / fatigue', detect: 'Pages per shift, % pages with no action', fix: 'Group and inhibit, alert on SLO burn rate (symptoms) instead of every cause.' }
   ],
 
@@ -369,6 +374,7 @@ SD.register({
     { q: 'What is high cardinality, and why does it hurt a TSDB?', a: '<p>Each unique combination of label values is a separate <b>series</b> with its own index entries and in-memory chunk. Labels multiply: 50 endpoints × 10 statuses × 1M user ids = 500M series.</p><p>Memory and index size scale with series, not samples. Keep ids out of metric labels; put them in traces and logs, which store per-event detail.</p>', fu: 'How would you enforce this across 300 teams?', lvl: 'core' },
     { q: 'Head-based vs tail-based sampling?', a: '<p><b>Head</b>: decide at the root span (e.g. keep 1%) and propagate the decision. Cheap and stateless, but blind: most error traces are dropped.</p><p><b>Tail</b>: buffer all spans until the trace completes (~30 s), then keep errors, slow traces and a baseline. It needs memory and <b>trace-id-affine routing</b> to collectors.</p>', lvl: 'core' },
     { q: 'How does Gorilla compress time series so well?', a: '<p><b>Timestamps</b>: store the delta-of-delta. Regular intervals give 0, encoded in <b>1 bit</b>.</p><p><b>Values</b>: XOR with the previous value. Identical values give 0 (1 bit). Similar values share sign, exponent and high mantissa bits, so only the "meaningful" middle bits are stored.</p><p>On Facebook\'s data the average was <b>1.37 bytes/point</b> vs 16 raw.</p>', lvl: 'deep' },
+    { q: 'How does a Prometheus-style TSDB lay data out on disk?', a: '<p>New samples go to an in-memory <b>head block</b> and a <b>write-ahead log</b> (WAL) for crash recovery. Every ~2 hours the head is cut into an immutable <b>block</b>: compressed chunks plus an inverted index from label → series ids. Background <b>compaction</b> merges small blocks into larger ones and applies retention by deleting whole blocks.</p><p>Writes are cheap appends; memory scales with active series; long-range queries touch few, large blocks.</p>', fu: 'How would you keep a year of data cheaply? (downsample and ship blocks to object storage, as Thanos/Mimir/M3 do)', lvl: 'deep' },
     { q: 'How do you keep the agent from hurting the application?', a: '<p>Asynchronous, non-blocking loggers with bounded queues (drop rather than block). Run the agent in its own cgroup with CPU/memory limits. Batch and compress. Parse at the processor tier instead of the edge. Spill to a bounded disk buffer when downstream is slow.</p>', lvl: 'core' },
     { q: 'Index every log line or only labels?', a: '<p>A <b>full-text inverted index</b> gives instant needle searches, but the index can be as large as the data, and indexing costs CPU on every line.</p><p><b>Labels-only</b> (Loki) indexes a few stream labels and greps compressed chunks at query time: very cheap to ingest, slower for broad searches. <b>Columnar</b> (ClickHouse) sits in between and is excellent for aggregations.</p>', lvl: 'core' },
     { q: 'How do you cut retention cost?', a: '<p>Tier by age: hot SSD for days, then object storage (an order of magnitude cheaper). Downsample old metrics (5 m / 1 h rollups). Sample or drop DEBUG logs, and keep audit logs on a separate, longer policy. Charge teams for their volume.</p>', lvl: 'core' },
@@ -382,7 +388,9 @@ SD.register({
   code: [
     {
       title: 'Spring Boot: Micrometer + OTel', lang: 'yaml',
-      code: `# deps: spring-boot-starter-actuator, micrometer-tracing-bridge-otel,
+      code: `# Spring Boot 3.4/3.5 keys. Boot 4 renamed management.otlp.tracing.*
+#   to management.opentelemetry.tracing.export.otlp.*
+# deps: spring-boot-starter-actuator, micrometer-tracing-bridge-otel,
 #       opentelemetry-exporter-otlp, micrometer-registry-otlp
 management:
   tracing:

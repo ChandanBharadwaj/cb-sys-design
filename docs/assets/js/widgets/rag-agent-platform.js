@@ -49,7 +49,13 @@ SD.widget('rag-agent-platform', function (root, ctx) {
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') go.click(); });
   root.append(el('div', { class: 'w-controls' }, ...qBtns), el('div', { class: 'w-controls' }, input, go));
 
-  const S_ = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Hybrid retrieval pipeline' });
+  // two layouts: phones get a 360-wide viewBox, bigger text and stacked columns
+  const LAY = {
+    wide: { W: 440, pF: 13, hF: 14, rF: 13, sF: 12, rows: 5, rowH: 30, colW: 210, cols: [[4, 56], [226, 56]], fy: 238, fRowH: 32, rrfX: 330 },
+    narrow: { W: 360, pF: 13, hF: 15, rF: 14, sF: 13, rows: 4, rowH: 30, colW: 352, cols: [[4, 56], [4, 206]], fy: 356, fRowH: 34, rrfX: 262 }
+  };
+  let L = ctx.narrow ? LAY.narrow : LAY.wide;
+  const S_ = svg('svg', { role: 'img', 'aria-label': 'Hybrid retrieval pipeline' });
   const gPipe = svg('g'), gCols = svg('g'), gFused = svg('g');
   S_.append(gPipe, gCols, gFused);
   root.append(el('div', { class: 'w-stage' }, S_));
@@ -61,44 +67,55 @@ SD.widget('rag-agent-platform', function (root, ctx) {
   function setStats(o) { stats.innerHTML = ''; Object.entries(o).forEach(([k, v]) => stats.append(el('span', { class: 'w-stat', html: `${k}: <b>${v}</b>` }))); }
 
   const STEPS = ['plan', 'search ∥', 'fuse', 'rerank', 'answer'];
-  const pills = STEPS.map((s, i) => {
-    const w = 82, x = 4 + i * 87;
-    const r = svg('rect', { x, y: 4, width: w, height: 28, rx: 14, fill: 'var(--surface-2)', stroke: 'var(--border)' });
-    const t = T(x + w / 2, 23, s, 'font:700 13px var(--sans)', 'middle', 'var(--text-3)');
-    gPipe.append(r, t); return { r, t };
-  });
-  function pill(k) { pills.forEach((p, i) => { const on = i === k, done = i < k; p.r.setAttribute('fill', on ? 'var(--accent)' : done ? 'color-mix(in srgb, var(--accent) 18%, var(--surface))' : 'var(--surface-2)'); p.t.setAttribute('fill', on ? '#fff' : done ? 'var(--accent)' : 'var(--text-3)'); }); }
+  let pills = [], pillAt = -1;
+  function drawFrame() {
+    S_.setAttribute('viewBox', `0 0 ${L.W} ${L.fy + 12 + 5 * L.fRowH}`);
+    gPipe.innerHTML = '';
+    const gap = 5, w = (L.W - 8 - gap * 4) / 5;
+    pills = STEPS.map((s, i) => {
+      const x = 4 + i * (w + gap);
+      const r = svg('rect', { x, y: 4, width: w, height: 28, rx: 14, fill: 'var(--surface-2)', stroke: 'var(--border)' });
+      const t = T(x + w / 2, 23, s, `font:700 ${L.pF}px var(--sans)`, 'middle', 'var(--text-3)');
+      gPipe.append(r, t); return { r, t };
+    });
+    pill(pillAt);
+  }
+  function pill(k) { pillAt = k; pills.forEach((p, i) => { const on = i === k, done = i < k; p.r.setAttribute('fill', on ? 'var(--accent)' : done ? 'color-mix(in srgb, var(--accent) 18%, var(--surface))' : 'var(--surface-2)'); p.t.setAttribute('fill', on ? '#fff' : done ? 'var(--accent)' : 'var(--text-3)'); }); }
+  drawFrame();
 
-  function column(x, title, list, gold, fmtScore) {
-    gCols.append(T(x, 56, title, 'font:700 14px var(--sans)', 'start', 'var(--text-2)'));
-    for (let i = 0; i < 5; i++) {
-      const y = 64 + i * 30, it = list[i];
+  function column(ci, title, list, gold, fmtScore) {
+    const [x, y0] = L.cols[ci], w = L.colW;
+    gCols.append(T(x, y0, title, `font:700 ${L.hF}px var(--sans)`, 'start', 'var(--text-2)'));
+    for (let i = 0; i < L.rows; i++) {
+      const y = y0 + 8 + i * L.rowH, it = list[i];
       const isGold = it && it.d.i === gold;
-      gCols.append(svg('rect', { x, y, width: 210, height: 26, rx: 6, fill: it ? (isGold ? 'color-mix(in srgb, var(--ok) 18%, var(--surface))' : 'var(--surface-2)') : 'transparent', stroke: isGold ? 'var(--ok)' : 'var(--border)', 'stroke-dasharray': it ? '' : '3 3' }));
-      if (it) gCols.append(T(x + 7, y + 18, (i + 1) + '. ' + it.d.t, 'font:600 13px var(--sans)'), T(x + 203, y + 18, fmtScore(it.s), 'font:600 12px var(--mono)', 'end', 'var(--text-3)'));
-      else if (i === 0) gCols.append(T(x + 105, y + 18, 'no match', 'font:600 13px var(--sans)', 'middle', 'var(--text-3)'));
+      gCols.append(svg('rect', { x, y, width: w, height: L.rowH - 4, rx: 6, fill: it ? (isGold ? 'color-mix(in srgb, var(--ok) 18%, var(--surface))' : 'var(--surface-2)') : 'transparent', stroke: isGold ? 'var(--ok)' : 'var(--border)', 'stroke-dasharray': it ? '' : '3 3' }));
+      if (it) gCols.append(T(x + 7, y + 18, (i + 1) + '. ' + it.d.t, `font:600 ${L.rF}px var(--sans)`), T(x + w - 7, y + 18, fmtScore(it.s), `font:600 ${L.sF}px var(--mono)`, 'end', 'var(--text-3)'));
+      else if (i === 0) gCols.append(T(x + w / 2, y + 18, 'no match', `font:600 ${L.rF}px var(--sans)`, 'middle', 'var(--text-3)'));
     }
   }
   const sleep = (ms) => new Promise((r) => setTimeout(r, ctx.reduced ? 0 : ms));
+  const rowY = (i) => L.fy + 10 + i * L.fRowH;
   const rankOf = (list, i) => { const k = list.findIndex((x) => x.d.i === i); return k < 0 ? '—' : k + 1; };
 
+  let last = null, pending = false;
   async function run(q, gold) {
-    if (busy) return; busy = true;
+    if (busy) return; busy = true; last = [q, gold];
     const qt = tok(q), qv = vec(qt);
     gCols.innerHTML = ''; gFused.innerHTML = ''; pill(0);
     say(`<b>Q:</b> ${q.replace(/</g, '&lt;')} → tokens [${qt.join(', ')}], concepts [${CONCEPTS.filter((c, i) => qv[i]).join(', ') || 'none'}]`);
     await sleep(500); pill(1);
     const bl = D.map((d) => ({ d, s: bm25(qt, d) })).filter((x) => x.s > 0).sort((a, b) => b.s - a.s);
     const dl = D.map((d) => ({ d, s: cos(qv, d.v) })).filter((x) => x.s > 0).sort((a, b) => b.s - a.s);
-    column(4, 'BM25 (real)', bl, gold, (s) => s.toFixed(2));
-    column(226, 'Dense (toy vectors)', dl, gold, (s) => s.toFixed(2));
+    column(0, 'BM25 (real)', bl, gold, (s) => s.toFixed(2));
+    column(1, 'Dense (toy vectors)', dl, gold, (s) => s.toFixed(2));
     await sleep(900); pill(2);
     const fused = D.map((d) => {
       const rb = bl.findIndex((x) => x.d === d), rd = dl.findIndex((x) => x.d === d);
       return { d, rrf: (rb >= 0 ? 1 / (RRF_K + rb + 1) : 0) + (rd >= 0 ? 1 / (RRF_K + rd + 1) : 0) };
     }).filter((x) => x.rrf > 0).sort((a, b) => b.rrf - a.rrf).slice(0, 5);
-    gFused.append(T(4, 238, 'Fused (RRF, k = 60)', 'font:700 14px var(--sans)', 'start', 'var(--text-2)'));
-    const rerankHdr = T(436, 238, '', 'font:700 14px var(--sans)', 'end', 'var(--accent)');
+    gFused.append(T(4, L.fy, 'Fused (RRF, k = 60)', `font:700 ${L.hF}px var(--sans)`, 'start', 'var(--text-2)'));
+    const rerankHdr = T(L.W - 4, L.fy, '', `font:700 ${L.hF}px var(--sans)`, 'end', 'var(--accent)');
     gFused.append(rerankHdr);
     const maxB = bl.length ? bl[0].s : 1;
     const codes = qt.filter((w) => /\d/.test(w));
@@ -106,11 +123,11 @@ SD.widget('rag-agent-platform', function (root, ctx) {
       const covered = CONCEPTS.filter((c, k) => qv[k] && f.d.v[k]).length, need = qv.filter(Boolean).length || 1;
       f.ce = 0.6 * covered / need + 0.3 * cos(qv, f.d.v) + 0.1 * bm25(qt, f.d) / maxB + (codes.some((c) => f.d.tk.includes(c)) ? 0.5 : 0);
       const isGold = f.d.i === gold;
-      f.g = svg('g', { style: `transform: translate(0px, ${248 + i * 32}px); transition: transform .7s ease` });
-      f.g.append(svg('rect', { x: 4, y: 0, width: 432, height: 28, rx: 6, fill: isGold ? 'color-mix(in srgb, var(--ok) 18%, var(--surface))' : 'var(--surface-2)', stroke: isGold ? 'var(--ok)' : 'var(--border)' }),
-        T(12, 19, f.d.t + (isGold ? '  ★' : ''), 'font:700 13px var(--sans)', 'start', isGold ? 'var(--ok)' : 'var(--text)'),
-        T(330, 19, 'rrf ' + f.rrf.toFixed(4), 'font:600 12px var(--mono)', 'end', 'var(--text-3)'));
-      f.ceT = T(428, 19, '', 'font:700 12px var(--mono)', 'end', 'var(--accent)');
+      f.g = svg('g', { style: `transform: translate(0px, ${rowY(i)}px); transition: transform .7s ease` });
+      f.g.append(svg('rect', { x: 4, y: 0, width: L.W - 8, height: L.fRowH - 4, rx: 6, fill: isGold ? 'color-mix(in srgb, var(--ok) 18%, var(--surface))' : 'var(--surface-2)', stroke: isGold ? 'var(--ok)' : 'var(--border)' }),
+        T(12, 19, f.d.t + (isGold ? '  ★' : ''), `font:700 ${L.rF}px var(--sans)`, 'start', isGold ? 'var(--ok)' : 'var(--text)'),
+        T(L.rrfX, 19, 'rrf ' + f.rrf.toFixed(4), `font:600 ${L.sF}px var(--mono)`, 'end', 'var(--text-3)'));
+      f.ceT = T(L.W - 12, 19, '', `font:700 ${L.sF}px var(--mono)`, 'end', 'var(--accent)');
       f.g.append(f.ceT); gFused.append(f.g);
     });
     if (!fused.length) say('Neither retriever matched anything. A real system would answer "not found" instead of guessing.');
@@ -119,7 +136,7 @@ SD.widget('rag-agent-platform', function (root, ctx) {
     fused.forEach((f) => { f.ceT.textContent = f.ce.toFixed(2); });
     await sleep(500);
     const rr = fused.slice().sort((a, b) => b.ce - a.ce);
-    rr.forEach((f, i) => { f.g.style.transform = `translate(0px, ${248 + i * 32}px)`; });
+    rr.forEach((f, i) => { f.g.style.transform = `translate(0px, ${rowY(i)}px)`; });
     await sleep(900); pill(4);
     if (rr.length) say(`<b>Answer</b> drafted from the top chunks, citing [${rr.slice(0, 2).map((f) => f.d.t).join('], [')}].`);
     if (gold >= 0) {
@@ -128,7 +145,12 @@ SD.widget('rag-agent-platform', function (root, ctx) {
       setStats({ 'BM25 rank': rankOf(bl, gold), 'dense rank': rankOf(dl, gold), 'fused rank': fr < 0 ? '—' : fr + 1, 'after rerank': rk < 0 ? '—' : rk + 1 });
     } else setStats({ 'BM25 hits': bl.length, 'dense hits': dl.length, 'fused': fused.length, 'avg doc length': avgdl.toFixed(1) + ' tokens' });
     busy = false;
+    if (pending) { pending = false; run(last[0], last[1]); }
   }
+  ctx.onResize((n) => {
+    L = n ? LAY.narrow : LAY.wide; drawFrame();
+    if (busy) pending = true; else if (last) run(last[0], last[1]);
+  });
   pill(-1);
   setStats({ chunks: D.length, 'avg length': avgdl.toFixed(1) + ' tokens', k1: K1, b: B, 'RRF k': RRF_K });
   say('Pick a question. The ★ chunk is the one that actually answers it.');

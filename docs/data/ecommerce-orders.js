@@ -10,7 +10,7 @@ SD.register({
     insight: 'Inventory has two numbers: <b>on hand</b> and <b>reserved</b>. Oversell is prevented by one line of SQL (<code>WHERE on_hand - reserved &gt;= qty</code>), not by locks in application code. <i>When</i> you reserve decides who suffers: the buyer (oversell) or the shop (stock stuck in idle carts).',
     numbers: [
       { v: 'AP', l: 'Amazon\'s cart: "always writeable" (Dynamo, SOSP 2007)' },
-      { v: '100+', l: 'isolated pods at Shopify (Shopify Engineering)' },
+      { v: '1 pod', l: 'blast radius of a flash sale at Shopify: shops grouped into isolated MySQL + Redis + Memcached pods' },
       { v: '10–15 min', l: 'typical checkout hold TTL (estimate)' }
     ]
   },
@@ -284,7 +284,11 @@ SD.register({
       else if (pay) verdict = '⚠ <b>Oversell by design.</b> Fine for long-tail items with deep stock; for anything scarce, reserve at checkout.';
       else if (s.surge === 'none') verdict = '⚠ <b>Correct, but the hot row will melt.</b> Add a checkout queue or throttle in front of inventory.';
       else if (cartM && s.ttl > 10) verdict = '⚠ <b>Carts hoard stock.</b> Real units are hidden from paying buyers. Hold at checkout instead, or use a very short cart TTL.';
-      else if (s.deduct === 'checkout' && s.saga === 'orch' && s.cart === 'kv' && expP <= 0.05) verdict = '✅ <b>Solid default:</b> durable cart, checkout hold with a sane TTL, orchestrated saga with an outbox, and a queue on sale day.';
+      else if (expP > 0.05) verdict = '⚠ <b>Hold TTL too short:</b> about ' + Math.round(expP * 100) + '% of buyers are still paying when their hold expires, so they can lose the unit mid-payment. Keep the TTL above payment p99, or extend it while the charge is in flight.';
+      else if (s.deduct === 'checkout' && s.ttl > 20) verdict = '⚠ <b>Holds last too long:</b> ≈ ' + Math.round(idle * 100) + '% of stock sits in holds that will never pay, so the product looks sold out early. Shorten the TTL to just above payment p99.';
+      else if (s.deduct === 'checkout' && s.saga === 'orch' && s.cart === 'kv') verdict = '✅ <b>Solid default:</b> durable cart, checkout hold with a sane TTL, orchestrated saga with an outbox, and a queue on sale day.';
+      else if (s.cart !== 'kv') verdict = '👍 <b>Stock is safe, carts are not:</b> a ' + (s.cart === 'session' ? 'browser-only cart vanishes when the shopper switches device' : 'Redis cart can vanish on eviction or failover') + '. Cheap and fast, but lost carts are lost sales.';
+      else if (s.saga === 'chor') verdict = '👍 <b>Correct and loosely coupled</b>, but no single place knows where an order is stuck, and timeouts live in every service. Orchestrate the checkout path; choreograph fan-out.';
       else verdict = '👍 Workable. Check the meters to see which side (buyer or shop) is paying for the trade-off.';
       const labels = {
         inv: { label: 'Inventory', sub: pay ? 'decrement on capture' : cartM ? 'hold on add · ' + s.ttl + ' min' : 'hold on checkout · ' + s.ttl + ' min' },
@@ -315,7 +319,7 @@ SD.register({
     timeline: [
       { when: '2007', who: 'Amazon', title: 'Dynamo: the cart must always accept writes', text: 'The SOSP paper uses the <b>shopping cart</b> as its motivating example: customers must be able to add items even when disks, networks or whole datacenters fail. Dynamo trades consistency for availability with <b>sloppy quorums, hinted handoff and vector clocks</b>, and the cart merges conflicting versions, so an add is never lost but a deleted item can resurface.', src: 0 },
       { when: 'Oct 2014', who: 'Flipkart', title: 'The first Big Billion Day buckles', text: 'Flipkart\'s first Big Billion Day drew traffic far beyond plan. The founders sent customers a public apology for the site struggling, items going out of stock and cancelled orders. It became the industry\'s reference case for preparing inventory and checkout for a sale spike.', src: 1 },
-      { when: '2010s', who: 'Shopify', title: 'Pods: isolate shops from each other', text: 'Shopify groups shops into <b>pods</b>: each pod is an isolated MySQL shard plus its own Redis and Memcached. A routing layer ("Sorting Hat") sends each request to its shop\'s pod, so a flash sale on one pod cannot take down the platform. Shopify reports more than a hundred pods.', src: 3 },
+      { when: '2010s', who: 'Shopify', title: 'Pods: isolate shops from each other', text: 'Shopify groups shops into <b>pods</b>: each pod is an isolated MySQL shard plus its own Redis and Memcached. A routing layer ("Sorting Hat") sends each request to its shop\'s pod, so a flash sale on one pod cannot take down the platform.', src: 3 },
       { when: '2010s', who: 'Shopify', title: 'Checkout throttle in the load balancer', text: 'For flash sales Shopify throttles checkout in <b>scriptable Nginx + Lua load balancers</b>. The first version let waiting buyers poll at random, which felt like a lottery. A later version added <b>fairness</b>, preferring buyers by when they first tried to check out.', src: 4 },
       { when: '2019', who: 'microservices.io', title: 'Sagas: orchestration vs choreography, plus the outbox', text: 'Chris Richardson\'s saga series describes the two coordination styles and the <b>transactional outbox</b>: insert the message into an OUTBOX table in the same database transaction, and let a separate relay or CDC process publish it.', src: 6 }
     ],
@@ -353,6 +357,7 @@ SD.register({
     { f: 'Duplicate events downstream', detect: 'Same order packed or emailed twice', fix: 'Consumers store processed event ids (or use idempotent upserts).' },
     { f: 'Payment webhook lost', detect: 'Ageing PENDING orders with a captured charge at the PSP', fix: 'Poll the PSP by idempotency key before expiring; nightly reconciliation against PSP reports.' },
     { f: 'Lock queue on one inventory row', detect: 'Lock-wait p99 and checkout timeouts spike at sale start', fix: 'Checkout queue, stock buckets per SKU, or a Redis pre-gate.' },
+    { f: 'Hold expires while the payment commits', detect: 'Commit changes 0 reservation rows for a captured payment', fix: 'Gate on the reservation row (HELD → COMMITTED) before touching inventory; on 0 rows, try to re-reserve, else refund.' },
     { f: 'Stock leaked in holds', detect: '"Sold out" while paid units are far below stock', fix: 'Shorter TTL, hold at checkout not cart, release on explicit abandon.' }
   ],
 
@@ -450,6 +455,15 @@ public UUID checkout(String idemKey, long userId, List<Line> lines) {
   reserved  int  NOT NULL DEFAULT 0,
   CHECK (reserved >= 0 AND reserved <= on_hand)    -- oversell is impossible
 );
+CREATE TABLE reservations (
+  reservation_id bigserial PRIMARY KEY,
+  order_id   uuid NOT NULL,
+  sku        text NOT NULL REFERENCES inventory,
+  qty        int  NOT NULL CHECK (qty > 0),
+  status     text NOT NULL,                -- HELD | COMMITTED | RELEASED
+  expires_at timestamptz NOT NULL,
+  UNIQUE (order_id, sku)
+);
 CREATE INDEX holds_due ON reservations (expires_at) WHERE status = 'HELD';
 
 -- reaper, every few seconds: release expired holds in one statement
@@ -463,16 +477,20 @@ WITH expired AS (
 UPDATE inventory i SET reserved = i.reserved - p.qty
   FROM per_sku p WHERE i.sku = p.sku;
 
--- payment captured: commit the hold (stock leaves the building)
-UPDATE inventory i SET on_hand = on_hand - r.qty, reserved = reserved - r.qty
-  FROM reservations r
- WHERE r.order_id = :order AND r.status = 'HELD' AND i.sku = r.sku;
-UPDATE reservations SET status = 'COMMITTED' WHERE order_id = :order AND status = 'HELD';
+-- payment captured: commit the hold. Flipping the reservation row first is the
+-- gate, so the reaper and the commit can never both act on the same hold.
+WITH committed AS (
+  UPDATE reservations SET status = 'COMMITTED'
+   WHERE order_id = :order AND status = 'HELD' AND expires_at > now()
+  RETURNING sku, qty
+)
+UPDATE inventory i SET on_hand = i.on_hand - c.qty, reserved = i.reserved - c.qty
+  FROM committed c WHERE i.sku = c.sku;
 
 -- outbox relay: claim a batch without blocking other relays
 SELECT id, type, payload FROM outbox
  WHERE published_at IS NULL ORDER BY id LIMIT 100 FOR UPDATE SKIP LOCKED;`,
-      note: 'The reaper groups by SKU because an <code>UPDATE … FROM</code> applies at most one joined row to each target row. Run the commit as one transaction, and only after checking that the hold has not expired.'
+      note: 'The reaper groups by SKU because an <code>UPDATE … FROM</code> applies at most one joined row to each target row. Both the reaper and the commit change the <b>reservation row first</b>, so they serialise on it: whichever runs second re-checks <code>status = \'HELD\'</code> and matches nothing. If the commit touches 0 rows, the hold expired: re-reserve or refund.'
     }
   ],
 

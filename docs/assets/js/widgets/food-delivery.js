@@ -1,7 +1,13 @@
 /* Batched order→rider assignment: greedy nearest vs Hungarian on cost = max(first mile, prep left) + last mile (+ rider-wait penalty). */
 SD.widget('food-delivery', function (root, ctx) {
   const { el, svg } = ctx;
-  const COLS = 9, ROWS = 7, C = 47, OX = 8, OY = 8, W = OX * 2 + COLS * C, H = OY * 2 + ROWS * C;
+  // Two layouts: desktop 9×7 grid (439 wide) and phone 7×7 grid (366 wide, bigger labels).
+  const GEO = {
+    wide: { COLS: 9, ROWS: 7, C: 47, f: { rest: 13, pin: 14, rider: 13, wait: 12.5 }, rw: 30, rr: 12 },
+    narrow: { COLS: 7, ROWS: 7, C: 50, f: { rest: 15, pin: 15, rider: 15, wait: 14 }, rw: 34, rr: 14 }
+  };
+  const OX = 8, OY = 8;
+  let G, COLS, ROWS, C, W, H;
   const MIN_PER_CELL = 2, N_ORD = 5, N_RID = 7, LET = 'ABCDE';
   const HUE = ['var(--accent)', 'var(--ok)', 'var(--warn)', 'var(--err)', '#a855f7'];
   let mode = 'hung', waitW = 0, rests, riders, orders, plan = { greedy: null, hung: null }, phase = 0;
@@ -18,18 +24,25 @@ SD.widget('food-delivery', function (root, ctx) {
   newBtn.addEventListener('click', () => { generate(); solve(); render(); });
   root.append(el('div', { class: 'w-controls' }, ...modeBtns), el('div', { class: 'w-controls' }, waitBtn, newBtn));
 
-  const S_ = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'City grid with restaurants, riders and orders' });
+  const S_ = svg('svg', { role: 'img', 'aria-label': 'City grid with restaurants, riders and orders' });
   const gGrid = svg('g'), gPath = svg('g'), gPts = svg('g'), gMov = svg('g');
   S_.append(gGrid, gPath, gPts, gMov);
-  root.append(el('div', { class: 'w-stage' }, S_));
+  root.append(el('div', { class: 'w-stage', style: { maxWidth: '620px' } }, S_));
   const table = el('div', { style: { overflowX: 'auto', marginTop: '10px' } });
   const stats = el('div', { class: 'w-stats' });
   const log = el('div', { class: 'w-log', 'aria-live': 'polite' });
   root.append(table, stats, log);
   const say = (m) => { log.prepend(el('div', { html: m })); while (log.children.length > 20) log.lastChild.remove(); };
 
-  for (let c = 0; c <= COLS; c++) gGrid.append(svg('line', { x1: OX + c * C, y1: OY, x2: OX + c * C, y2: OY + ROWS * C, stroke: 'var(--border)', 'stroke-width': 0.8 }));
-  for (let r = 0; r <= ROWS; r++) gGrid.append(svg('line', { x1: OX, y1: OY + r * C, x2: OX + COLS * C, y2: OY + r * C, stroke: 'var(--border)', 'stroke-width': 0.8 }));
+  function setGeo(narrow) {
+    G = narrow ? GEO.narrow : GEO.wide; ({ COLS, ROWS, C } = G);
+    W = OX * 2 + COLS * C; H = OY * 2 + ROWS * C;
+    S_.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    gGrid.innerHTML = '';
+    for (let c = 0; c <= COLS; c++) gGrid.append(svg('line', { x1: OX + c * C, y1: OY, x2: OX + c * C, y2: OY + ROWS * C, stroke: 'var(--border)', 'stroke-width': 0.8 }));
+    for (let r = 0; r <= ROWS; r++) gGrid.append(svg('line', { x1: OX, y1: OY + r * C, x2: OX + COLS * C, y2: OY + r * C, stroke: 'var(--border)', 'stroke-width': 0.8 }));
+  }
+  setGeo(ctx.narrow);
   const px = (p) => [OX + p.c * C + C / 2, OY + p.r * C + C / 2];
 
   // ---------- model ----------
@@ -101,14 +114,14 @@ SD.widget('food-delivery', function (root, ctx) {
       const [x0, y0] = px(rd), [x1, y1] = px(o.rest), [x2, y2] = px(o.drop);
       gPath.append(svg('path', { d: `M${x0},${y0} L${x1},${y0} L${x1},${y1}`, fill: 'none', stroke: HUE[i], 'stroke-width': 2.2, 'stroke-dasharray': '5 4', opacity: 0.85 }),
         svg('path', { d: `M${x1},${y1} L${x2},${y1} L${x2},${y2}`, fill: 'none', stroke: HUE[i], 'stroke-width': 3, opacity: 0.9 }));
-      if (L.wait > 0) gPath.append(svg('text', { x: x1, y: y1 - 15, 'text-anchor': 'middle', style: 'font:700 12.5px var(--mono);paint-order:stroke;stroke:var(--bg);stroke-width:3px', fill: HUE[i], text: 'wait ' + L.wait + '′' }));
+      if (L.wait > 0) gPath.append(svg('text', { x: x1, y: y1 - 15, 'text-anchor': 'middle', style: `font:700 ${G.f.wait}px var(--mono);paint-order:stroke;stroke:var(--bg);stroke-width:3px`, fill: HUE[i], text: 'wait ' + L.wait + '′' }));
     });
-    rests.forEach((r) => { const [x, y] = px(r); gPts.append(svg('rect', { x: x - 15, y: y - 13, width: 30, height: 26, rx: 5, fill: 'var(--text)', stroke: 'var(--surface)' }), svg('text', { x, y: y + 5, 'text-anchor': 'middle', style: 'font:700 13px var(--sans)', fill: 'var(--surface)', text: r.n })); });
-    orders.forEach((o, i) => { const [x, y] = px(o.drop); gPts.append(svg('path', { d: `M${x},${y + 17} l-11,-15 a13,13 0 1,1 22,0 z`, fill: HUE[i], stroke: 'var(--surface)', 'stroke-width': 1.5 }), svg('text', { x, y: y + 1, 'text-anchor': 'middle', style: 'font:700 14px var(--sans)', fill: '#fff', text: o.n })); });
+    rests.forEach((r) => { const [x, y] = px(r); gPts.append(svg('rect', { x: x - G.rw / 2, y: y - 14, width: G.rw, height: 28, rx: 5, fill: 'var(--text)', stroke: 'var(--surface)' }), svg('text', { x, y: y + 5, 'text-anchor': 'middle', style: `font:700 ${G.f.rest}px var(--sans)`, fill: 'var(--surface)', text: r.n })); });
+    orders.forEach((o, i) => { const [x, y] = px(o.drop); gPts.append(svg('path', { d: `M${x},${y + 17} l-11,-15 a13,13 0 1,1 22,0 z`, fill: HUE[i], stroke: 'var(--surface)', 'stroke-width': 1.5 }), svg('text', { x, y: y + 2, 'text-anchor': 'middle', style: `font:700 ${G.f.pin}px var(--sans)`, fill: '#fff', text: o.n })); });
     riders.forEach((rd, j) => {
       const [x, y] = px(rd); const used = asg.includes(j);
-      gPts.append(svg('circle', { cx: x, cy: y, r: 12, fill: used ? 'var(--surface)' : 'var(--surface-2)', stroke: used ? 'var(--text)' : 'var(--text-3)', 'stroke-width': 2 }),
-        svg('text', { x, y: y + 5, 'text-anchor': 'middle', style: 'font:700 13px var(--mono)', fill: used ? 'var(--text)' : 'var(--text-3)', text: rd.n }));
+      gPts.append(svg('circle', { cx: x, cy: y, r: G.rr, fill: used ? 'var(--surface)' : 'var(--surface-2)', stroke: used ? 'var(--text)' : 'var(--text-3)', 'stroke-width': 2 }),
+        svg('text', { x, y: y + 5, 'text-anchor': 'middle', style: `font:700 ${G.f.rider}px var(--mono)`, fill: used ? 'var(--text)' : 'var(--text-3)', text: rd.n }));
     });
     // cost matrix
     const head = '<tr><th style="text-align:left;padding:3px 6px">order</th>' + riders.map((rd) => `<th style="padding:3px 6px">🛵${rd.n}</th>`).join('') + '</tr>';
@@ -143,5 +156,7 @@ SD.widget('food-delivery', function (root, ctx) {
   }
 
   generate(); solve(); render();
+  // a different grid size means a new batch; the matching algorithm is unchanged
+  ctx.onResize((n) => { setGeo(n); generate(); solve(); render(); });
   if (!ctx.reduced) ctx.loop((dt) => { phase += dt; animate(phase); });
 });

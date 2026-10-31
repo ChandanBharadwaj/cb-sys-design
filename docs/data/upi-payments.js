@@ -10,7 +10,7 @@ SD.register({
     insight: 'A timeout is not a failure. Never "retry" by sending a new payment: <b>check status on the same id</b>. If a debit has no matching credit, it is reversed (RBI: by T+1), and daily <b>reconciliation</b> against the switch\'s files catches anything left.',
     numbers: [
       { v: '24.07 B', l: 'UPI transactions in Sep 2026 (NPCI data, via DD News)' },
-      { v: '15 s', l: 'pay API response limit since Jun 2025 (NPCI)' },
+      { v: '15 s', l: 'pay API response limit since Jun 2025 (NPCI circular, as reported)' },
       { v: 'T+1', l: 'auto-reversal deadline if payee is not credited (RBI, 2019)' }
     ]
   },
@@ -133,7 +133,7 @@ SD.register({
       { label: 'Average transactions / second', f: (v) => v.monthly * 1e9 / (30 * 86400) },
       { label: 'Peak transactions / second', f: (v) => v.monthly * 1e9 / (30 * 86400) * v.peak },
       { label: 'Switch messages / second at peak', f: (v) => v.monthly * 1e9 / (30 * 86400) * v.peak * v.hops },
-      { label: 'Status-check calls / second at peak (≤ 3 each)', f: (v) => v.monthly * 1e9 / (30 * 86400) * v.peak * v.chk / 100 * 3 },
+      { label: 'Status-check calls / second at peak (worst case: 3 each)', f: (v) => v.monthly * 1e9 / (30 * 86400) * v.peak * v.chk / 100 * 3 },
       { label: 'Switch traffic at peak', fmt: 'bytesps', f: (v) => v.monthly * 1e9 / (30 * 86400) * v.peak * v.hops * v.bytes },
       { label: 'Transaction storage per year (whole network)', fmt: 'bytes', f: (v) => v.monthly * 1e9 * 12 * v.row }
     ],
@@ -229,7 +229,7 @@ SD.register({
       steps: [
         { text: 'Festival evening: traffic runs at several times the daily average across every bank and app.', flow: [['payer>ppsp', 'payer>ppsp', 'payer>ppsp'], 'ppsp>npci'], warn: ['npci'], badges: { npci: ['peak', 'warn'] }, tone: 'warn' },
         { text: 'PSPs pre-scale stateless tiers and keep the transaction table partitioned by day, so inserts stay on hot, small indexes.', nodes: ['ppsp', 'pdb'], ok: ['pdb'], badges: { pdb: 'partition today' } },
-        { text: 'A slow bank causes pending transactions. If every PSP polls status aggressively, <b>status checks themselves</b> overload the switch. Press reports said NPCI traced 2025 disruptions to excessive check-status calls and tightened limits.', flow: [['ppsp>npci', 'ppsp>npci', 'ppsp>npci']], err: ['npci'], badges: { npci: ['ChkTxn flood', 'err'] } },
+        { text: 'A slow bank leaves payments pending. If every PSP polls hard, <b>status checks themselves</b> overload the switch. Press reports tied 2025 UPI outages to excess check-status calls.', flow: [['ppsp>npci', 'ppsp>npci', 'ppsp>npci']], err: ['npci'], badges: { npci: ['ChkTxn flood', 'err'] } },
         { text: 'Fix: poll with <b>back-off and jitter</b>, respect the per-transaction limits, and leave the long tail to reconciliation. Faster deadlines (pay 30 → 15 s since June 2025) also free capacity sooner.', nodes: ['ppsp', 'npci', 'recon'], ok: ['npci'], tone: 'ok' }
       ]
     }
@@ -306,7 +306,8 @@ SD.register({
     timeline: [
       { when: 'Since 2016', who: 'NPCI', title: 'Pay and collect over a central switch', text: 'UPI connects many bank accounts behind one interface. A <b>pay request</b> pushes money to a payee; a <b>collect request</b> lets a payee pull money after the payer approves, using a virtual payment address instead of account details.', src: 6 },
       { when: 'Sep 2019', who: 'RBI', title: 'Turnaround times for failed transactions', text: 'RBI harmonised TATs across payment systems. For a UPI transfer where the account is debited but the beneficiary is not credited, the beneficiary bank must <b>auto-reverse by T+1</b>, or pay <b>₹100 per day</b> of delay, without waiting for a complaint. Merchant cases get T+5.', src: 0 },
-      { when: 'Jun 2025', who: 'NPCI', title: 'Faster API deadlines', text: 'From 16 June 2025 NPCI cut the response time for pay requests from <b>30 s to 15 s</b>, and for check-status and reversal from 30 s to 10 s, so stuck transactions resolve sooner.', src: 1 },
+      { when: 'Jun 2025', who: 'NPCI', title: 'Faster API deadlines', text: 'As reported, from 16 June 2025 NPCI cut the response time for pay requests from <b>30 s to 15 s</b>, and for check-status and reversal from 30 s to 10 s, so stuck transactions resolve sooner.', src: 1 },
+      { when: 'Aug 2025', who: 'NPCI', title: 'Caps on status checks and balance enquiries', text: 'After repeated outages, an NPCI circular (May 2025, effective <b>1 August 2025</b>) reportedly requires PSPs to wait at least <b>90 seconds</b> after a payment before the first status check, and to make <b>at most 3 checks within 2 hours</b>. It also caps balance enquiries at 50 per app per user per day. These details come from press and law-firm summaries; the circular itself did not surface in search.', src: 8 },
       { when: 'Oct 2025', who: 'NPCI', title: 'Person-to-person collect switched off', text: 'An NPCI circular dated 29 July 2025 said P2P collect would no longer be processed from <b>1 October 2025</b>, closing a channel long abused for fraud. Merchant collect requests continue.', src: 2 },
       { when: 'H1 FY26', who: 'PhonePe', title: 'Peak of ~22K TPS for one app', text: 'Press coverage of PhonePe\'s IPO filing reported a platform peak of <b>22,369 transactions per second</b> in the first half of FY26, on an in-house stack.', src: 3 },
       { when: 'Aug 2026', who: 'NPCI', title: 'Record month: 24.51 billion', text: 'UPI processed a record <b>24.51 billion</b> transactions in August 2026.', src: 5 },
@@ -326,7 +327,8 @@ SD.register({
       { title: 'UPI transactions surge 23% to 24.07 billion in September: NPCI', url: 'https://ddindia.co.in/2026/10/upi-transactions-surge-23-to-24-07-billion-in-september-npci/', pub: 'DD News, Oct 2026' },
       { title: 'UPI hits highest-ever monthly volume: 24.51 billion transactions in August 2026', url: 'https://startuptalky.com/india-upi-transactions-august-2026-record-volume/', pub: 'StartupTalky, Sep 2026' },
       { title: 'UPI product overview', url: 'https://www.npci.org.in/what-we-do/upi/product-overview', pub: 'NPCI' },
-      { title: 'UPI processes 24.07 billion transactions worth ₹29.37 lakh crore in September', url: 'https://www.outlookmoney.com/banking/upi-processes-2407-billion-transactions-worth-rs-2937-lakh-crore-in-september', pub: 'Outlook Money, Oct 2026' }
+      { title: 'UPI processes 24.07 billion transactions worth ₹29.37 lakh crore in September', url: 'https://www.outlookmoney.com/banking/upi-processes-2407-billion-transactions-worth-rs-2937-lakh-crore-in-september', pub: 'Outlook Money, Oct 2026' },
+      { title: 'NPCI tightens UPI API rules from August 1 after repeated outages', url: 'https://www.outlookmoney.com/banking/npci-tightens-upi-api-rules-from-august-1-after-repeated-outages', pub: 'Outlook Money, 2025' }
     ]
   },
 
@@ -363,7 +365,7 @@ SD.register({
     { q: 'Push vs collect: why did NPCI switch off P2P collect?', a: '<p>In a collect flow the <b>payee</b> starts the request and the payer only has to enter a PIN. Scammers sent requests ("enter PIN to receive money") that victims approved. From 1 Oct 2025 NPCI stopped processing person-to-person collect; merchant collect, with verified names, remains.</p>', lvl: 'core' },
     { q: 'Where is the UPI PIN checked, and why can the app not see it?', a: '<p>The PIN is captured and encrypted on the device by NPCI\'s common library, travels as an encrypted block through the PSP and switch, and is verified by the <b>payer\'s bank</b>, which owns the credential. The PSP never handles the clear PIN, which limits the damage if an app is compromised.</p>', lvl: 'deep' },
     { q: 'If credits are instant, how do banks actually pay each other?', a: '<p>The customer\'s account is credited in real time, but banks settle <b>net positions</b> with each other in periodic cycles through their accounts at the central bank. Between cycles, banks carry exposure to each other, which is why settlement cycles, limits and reconciliation matter.</p>', lvl: 'deep' },
-    { q: 'Why are check-status calls rate-limited?', a: '<p>Each check is a request to the switch and often to a bank. During an incident, thousands of PSPs polling every few seconds multiply load on the very systems that are struggling. Press reports linked 2025 UPI disruptions to excessive status checks, after which NPCI tightened limits. Poll with back-off, cap attempts, and let reconciliation handle the tail.</p>', lvl: 'core' }
+    { q: 'Why are check-status calls rate-limited?', a: '<p>Each check is a request to the switch and often to a bank. During an incident, thousands of PSPs polling every few seconds multiply load on the very systems that are struggling. Press reports linked 2025 UPI disruptions to excessive status checks, after which NPCI tightened limits: reportedly a first check no sooner than <b>90 s</b> after the payment and <b>at most 3 within 2 hours</b> (from Aug 2025). Poll with back-off, cap attempts, and let reconciliation handle the tail.</p>', fu: 'What does the app show while it waits 90 s? (A "pending, do not pay again" screen backed by the PSP\'s own row, not a live switch call.)', lvl: 'core' }
   ],
 
   code: [
@@ -424,7 +426,7 @@ public void resolvePending() {
   List<String> due = jdbc.queryForList("""
       UPDATE upi_txn
          SET checks = checks + 1,
-             next_check_at = now() + make_interval(secs => 60 * power(2, checks))
+             next_check_at = now() + make_interval(secs => 90 * power(2, checks))
        WHERE txn_id IN (SELECT txn_id FROM upi_txn
                          WHERE status = 'PENDING' AND checks < 3 AND next_check_at <= now()
                          ORDER BY next_check_at LIMIT 100
@@ -442,7 +444,7 @@ public void resolvePending() {
     }
   }
 }`,
-      note: 'Set <code>next_check_at</code> on insert to the first-check delay required by the current NPCI circular (reports describe a delay of roughly a minute or more and a cap of a few checks). After the cap, the transaction is settled by reconciliation and the T+1 reversal rule.'
+      note: '<code>next_check_at</code> defaults to 90 s after insert (see the table below), and later checks back off 90 s → 180 s, so all 3 land well inside 2 hours. That matches the reported Aug 2025 limits (first check ≥ 90 s, ≤ 3 checks in 2 hours); confirm against the current NPCI circular. After the cap, reconciliation and the T+1 reversal rule take over.'
     },
     {
       title: 'Postgres: transaction table and reconciliation', lang: 'sql',

@@ -273,6 +273,10 @@ SD.register({
       else if (s.region === 'one') verdict = '❌ <b>Too far from players.</b> Put servers in each region before tuning anything else.';
       else if (s.mm === 'loose') verdict = '⚠ <b>Fast queues, unfair matches.</b> Widen the rating window gradually instead.';
       else if (s.tick === '128' && s.region === 'edge' && s.mm === 'balanced') verdict = '✅ <b>Valorant-style:</b> authoritative 128-tick servers, regional placement with a private backbone, and a window that widens with wait.';
+      else if (s.mm === 'strict') verdict = '👍 <b>Fairest matches, slowest queues:</b> off-peak and at the rating extremes players wait minutes. Widen the window with wait time.';
+      else if (s.tick === '20') verdict = '👍 <b>Cheapest servers:</b> about 1/6 the CPU and bandwidth of 128 Hz, but a ~100 ms interpolation buffer adds to peeker\'s advantage. Fine for big battle royales, mushy for duels.';
+      else if (s.tick === '64') verdict = '👍 <b>The common middle ground:</b> half the CPU and bandwidth of 128 Hz, for a ~31 ms buffer instead of ~16 ms.';
+      else if (s.region === 'regional') verdict = '👍 <b>Good placement:</b> ~45 ms typical ping. A private backbone trims the public-internet hops further (Riot aimed for 35 ms for 70% of players).';
       else verdict = '👍 <b>Solid.</b> Check the meters for what this tick rate and placement cost you.';
       return {
         metrics, verdict, notes,
@@ -354,6 +358,7 @@ SD.register({
     { q: 'What is peeker\'s advantage?', a: '<p>The player moving around a corner sees the defender before the defender sees them, because the peeker\'s movement must travel to the server and then to the defender, plus buffering on both ends. Riot estimated it at roughly 40–70 ms in Valorant and reduced it with 128-tick servers, less buffering and low-ping routing.</p>', lvl: 'deep' },
     { q: 'How do you reduce bandwidth per player?', a: '<p><b>Delta-compress</b> each snapshot against the last one the client acknowledged, quantize positions and angles, send only entities relevant to that player (interest management, also limits wallhacks), and send far-away entities less often.</p>', lvl: 'deep' },
     { q: 'How do you handle a player who disconnects?', a: '<p>Keep their slot and character for a grace period. The client reconnects with its join token; the server sends a full snapshot, then deltas. If the server itself died, the match usually cannot be recovered: record no contest and requeue players.</p>', lvl: 'core' },
+    { q: 'How do you ship a new server build without killing live matches?', a: '<p>Never restart a server that is running a match. Roll the fleet so only <b>Ready</b> (idle) servers are replaced with the new build; <b>Allocated</b> ones keep running and exit when their match ends. Agones fleets do this by default with a rolling update. The matchmaker allocates by a <code>build</code> label, and clients must be on a matching version, so a release usually means a short window in which both builds run side by side.</p>', fu: 'What if the new build has a crash bug? (Allocate only a small share to it first, like a canary, and watch crash and frame-time metrics.)', lvl: 'deep' },
     { q: 'When would you choose rollback netcode?', a: '<p>For 1v1 or small games where every frame matters (fighting games). Each peer predicts the opponent\'s input, and when the real input arrives late it <b>rolls back</b> and re-simulates the missed frames. That needs a deterministic, cheap-to-resimulate game state.</p>', lvl: 'deep' }
   ],
 
@@ -423,7 +428,10 @@ def try_match(size: int = 10) -> list[str] | None:
     if len(group) < size:
         return None
     group = sorted(group, key=lambda x: abs(r.zscore(KEY, x) - rating))[:size]
-    r.zrem(KEY, *group)                              # safe: single owner per shard
+    pipe = r.pipeline()
+    pipe.zrem(KEY, *group)                           # safe: single owner per shard
+    pipe.delete(*(f"ticket:{g}" for g in group))
+    pipe.execute()
     return group                                     # -> balance teams, allocate server`,
       note: 'Fine for a sketch; at scale you would keep enqueue time in a second sorted set instead of scanning every ticket.'
     },

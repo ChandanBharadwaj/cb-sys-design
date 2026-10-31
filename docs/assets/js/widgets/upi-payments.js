@@ -1,7 +1,12 @@
 /* UPI sequence diagram: ReqPay → resolve → debit → credit → RespPay, with failure injection, retry policy and a per-bank circuit breaker. */
 SD.widget('upi-payments', function (root, ctx) {
   const { el, svg } = ctx;
-  const W = 440, LANE = [46, 133, 220, 307, 394], ROW = 27, TOP = 62;
+  // Two layouts: desktop (440 wide) and phone (360 wide, 14-unit text, taller rows).
+  const GEO = {
+    wide: { W: 440, LANE: [46, 133, 220, 307, 394], ROW: 27, TOP: 62, HW: 82, fh: 13.5, fs: 13, fm: 12.5, fn: 13 },
+    narrow: { W: 360, LANE: [37, 108.5, 180, 251.5, 323], ROW: 31, TOP: 66, HW: 68, fh: 15, fs: 14, fm: 14, fn: 14 }
+  };
+  let G = ctx.narrow ? GEO.narrow : GEO.wide;
   const HEADS = [['Payer', 'PSP'], ['Payer', 'bank'], ['NPCI', 'switch'], ['Payee', 'bank'], ['Payee', 'PSP']];
   let fail = 'none', retry = 'status', breaker = true, script = [], shown = 0, anim = 0, timer = null;
 
@@ -23,10 +28,10 @@ SD.widget('upi-payments', function (root, ctx) {
   paintRetry(); paintCb();
   root.append(el('div', { class: 'w-controls' }, ...failBtns), el('div', { class: 'w-controls' }, payBtn, retryBtn, cbBtn));
 
-  const S_ = svg('svg', { viewBox: `0 0 ${W} 300`, role: 'img', 'aria-label': 'UPI message sequence diagram' });
+  const S_ = svg('svg', { viewBox: `0 0 ${G.W} 300`, role: 'img', 'aria-label': 'UPI message sequence diagram' });
   const gHead = svg('g'), gMsg = svg('g'), gDot = svg('g');
   S_.append(gHead, gMsg, gDot);
-  root.append(el('div', { class: 'w-stage' }, S_));
+  root.append(el('div', { class: 'w-stage', style: { maxWidth: '640px' } }, S_));
   const stats = el('div', { class: 'w-stats' });
   const log = el('div', { class: 'w-log', 'aria-live': 'polite' });
   root.append(stats, log);
@@ -58,23 +63,25 @@ SD.widget('upi-payments', function (root, ctx) {
   // ---------- drawing ----------
   let H = 300;
   function frame() {
+    const { W, LANE, ROW, TOP, HW } = G;
     H = TOP + Math.max(script.length, 6) * ROW + 10;
     S_.setAttribute('viewBox', `0 0 ${W} ${H}`);
     gHead.innerHTML = '';
     HEADS.forEach(([a, b], i) => {
       const x = LANE[i], hot = (i === 1 && fail === 'bank') || (i === 3 && fail === 'credit');
       gHead.append(svg('line', { x1: x, y1: 50, x2: x, y2: H - 6, stroke: 'var(--border)', 'stroke-dasharray': '4 4' }),
-        svg('rect', { x: x - 41, y: 4, width: 82, height: 44, rx: 8, fill: hot ? 'color-mix(in srgb, var(--err) 18%, var(--surface))' : i === 2 ? 'color-mix(in srgb, var(--accent) 16%, var(--surface))' : 'var(--surface-2)', stroke: hot ? 'var(--err)' : 'var(--border)' }),
-        svg('text', { x, y: 23, 'text-anchor': 'middle', style: 'font:700 13.5px var(--sans)', fill: 'var(--text)', text: a }),
-        svg('text', { x, y: 40, 'text-anchor': 'middle', style: 'font:13px var(--sans)', fill: 'var(--text-2)', text: b }));
+        svg('rect', { x: x - HW / 2, y: 4, width: HW, height: 44, rx: 8, fill: hot ? 'color-mix(in srgb, var(--err) 18%, var(--surface))' : i === 2 ? 'color-mix(in srgb, var(--accent) 16%, var(--surface))' : 'var(--surface-2)', stroke: hot ? 'var(--err)' : 'var(--border)' }),
+        svg('text', { x, y: 23, 'text-anchor': 'middle', style: `font:700 ${G.fh}px var(--sans)`, fill: 'var(--text)', text: a }),
+        svg('text', { x, y: 41, 'text-anchor': 'middle', style: `font:${G.fs}px var(--sans)`, fill: 'var(--text-2)', text: b }));
     });
   }
   const toneColor = (t) => ({ ok: 'var(--ok)', err: 'var(--err)', warn: 'var(--warn)' }[t] || 'var(--accent)');
   function drawMsg(m, i) {
+    const { W, LANE, ROW, TOP } = G;
     const y = TOP + i * ROW + 12, c = toneColor(m.tone), g = svg('g');
     if (m.f === m.t) {   // local note (breaker)
       g.append(svg('rect', { x: 6, y: y - 15, width: W - 12, height: 24, rx: 6, fill: 'color-mix(in srgb, var(--warn) 18%, var(--surface))', stroke: c }),
-        svg('text', { x: W / 2, y: y + 2, 'text-anchor': 'middle', style: 'font:700 13px var(--sans)', fill: 'var(--text)', text: '⚡ ' + m.l }));
+        svg('text', { x: W / 2, y: y + 2, 'text-anchor': 'middle', style: `font:700 ${G.fn}px var(--sans)`, fill: 'var(--text)', text: '⚡ ' + m.l }));
       gMsg.append(g); return;
     }
     const lostTo = m.t < 0, xs = LANE[m.f], xd = LANE[lostTo ? m.dest : m.t];
@@ -84,7 +91,7 @@ SD.widget('upi-payments', function (root, ctx) {
     if (lostTo) g.append(svg('text', { x: xe, y: y + 5, 'text-anchor': 'middle', style: 'font:700 15px var(--sans)', fill: 'var(--err)', text: '✕' }));
     else g.append(svg('path', { d: `M${xe},${y} l${-dir * 8},-5 l0,10 z`, fill: c }));
     const lx = (xs + xe) / 2;
-    g.append(svg('text', { x: lx, y: y - 5, 'text-anchor': 'middle', style: 'font:600 12.5px var(--sans);paint-order:stroke;stroke:var(--surface);stroke-width:3px', fill: m.tone ? c : 'var(--text)', text: m.l }));
+    g.append(svg('text', { x: lx, y: y - 5, 'text-anchor': 'middle', style: `font:600 ${G.fm}px var(--sans);paint-order:stroke;stroke:var(--surface);stroke-width:3px`, fill: m.tone ? c : 'var(--text)', text: m.l }));
     m.geom = { xs, xe, y };
     gMsg.append(g);
   }
@@ -113,6 +120,8 @@ SD.widget('upi-payments', function (root, ctx) {
   }
 
   start();
+  // re-layout on a width change: redraw the messages already shown at the new geometry
+  ctx.onResize((n) => { G = n ? GEO.narrow : GEO.wide; frame(); gMsg.innerHTML = ''; gDot.innerHTML = ''; script.slice(0, shown).forEach(drawMsg); anim = 1; });
   if (!ctx.reduced) ctx.loop((dt) => {
     gDot.innerHTML = '';
     const m = script[shown - 1];

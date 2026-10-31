@@ -315,11 +315,13 @@ SD.register({
   },
 
   realWorld: {
-    intro: 'Three companies, three published angles: connections per box (WhatsApp), message storage (Discord), and edge caching plus channel routing (Slack).',
+    intro: 'Three companies, three published angles: connections per box (WhatsApp, on Erlang), message storage and gateway fan-out (Discord, on Elixir), and edge caching plus channel routing (Slack).',
     timeline: [
       { when: 'Oct 2011', who: 'WhatsApp', title: 'One billion messages in a day', text: 'WhatsApp\'s blog put the milestone in perspective: about <b>11,574 messages per second</b> averaged over the day.', src: 0 },
       { when: '2012', who: 'WhatsApp', title: '"1 million is so 2011"', text: 'A few months after reporting 1M TCP connections on one server, WhatsApp showed a box holding <b>over 2 million</b>. A 2015 FreeBSD Foundation testimonial says they ran <b>2–3 million</b> concurrent connections per FreeBSD server.', src: 1 },
+      { when: 'Mar 2012', who: 'WhatsApp', title: 'Erlang on FreeBSD, tuned for connections', text: 'Rick Reed\'s Erlang Factory talk described WhatsApp\'s <b>Erlang</b> chat servers on FreeBSD: bottlenecks appeared around <b>425K</b> connections per box, and patches to the BEAM VM and kernel plus sysctl tuning got them to <b>1M</b>.', src: 8 },
       { when: '2017', who: 'Discord', title: 'MongoDB → Cassandra, (channel, bucket) keys', text: 'Discord moved messages to Cassandra on <b>12 nodes</b>. Primary key <code>((channel_id, bucket), message_id)</code>; buckets of about <b>10 days</b> keep the largest channels\' partitions under ~100 MB. Snowflake ids sort by time.', src: 2 },
+      { when: '2017', who: 'Discord', title: 'Elixir gateways at ~5M concurrent users', text: 'Discord\'s real-time layer runs on <b>Elixir</b> (the Erlang VM). Each guild\'s events fan out to every connected session; at nearly <b>5M concurrent users</b> that fan-out and reconnect bursts became the bottlenecks, so Discord built and open-sourced <b>Manifold</b> to batch sends across nodes.', src: 9 },
       { when: '2017', who: 'Slack', title: 'Flannel edge cache', text: 'Slack put an application-level cache in its edge PoPs that serves boot data (users, channels) lazily and absorbs <b>reconnect storms</b>. At launch: <b>4M simultaneous connections</b> and <b>600K client queries/s</b> at peak.', src: 3 },
       { when: '2022–23', who: 'Discord', title: 'Trillions of messages → ScyllaDB', text: 'By early 2022 the Cassandra cluster had <b>177 nodes</b> and hot partitions. Discord added <b>Rust data services</b> that coalesce identical requests, then migrated to ScyllaDB; the largest cluster dropped to <b>72 nodes</b>.', src: 4 },
       { when: '2023', who: 'Slack', title: 'Channel servers and gateway servers', text: 'Stateful <b>channel servers</b> own channels by consistent hashing (about <b>16M channels per host</b> at peak). Stateful <b>gateway servers</b> hold user sockets and subscribe to the channel servers for that user\'s channels.', src: 6 }
@@ -338,7 +340,9 @@ SD.register({
       { title: 'How Discord Stores Trillions of Messages', url: 'https://discord.com/blog/how-discord-stores-trillions-of-messages', pub: 'Discord, 2023' },
       { title: 'Discord migrates from Cassandra to ScyllaDB', url: 'https://www.infoq.com/news/2023/06/discord-cassandra-scylladb/', pub: 'InfoQ, 2023' },
       { title: 'Real-time Messaging', url: 'https://slack.engineering/real-time-messaging/', pub: 'Slack Engineering, 2023' },
-      { title: 'WhatsApp testimonial', url: 'https://freebsdfoundation.org/testimonial/whatsapp/', pub: 'FreeBSD Foundation, 2015' }
+      { title: 'WhatsApp testimonial', url: 'https://freebsdfoundation.org/testimonial/whatsapp/', pub: 'FreeBSD Foundation, 2015' },
+      { title: 'Scaling to Millions of Simultaneous Connections (slides)', url: 'https://www.erlang-factory.com/upload/presentations/558/efsf2012-whatsapp-scaling.pdf', pub: 'Rick Reed, Erlang Factory SF, 2012' },
+      { title: 'How Discord Scaled Elixir to 5,000,000 Concurrent Users', url: 'https://discord.com/blog/how-discord-scaled-elixir-to-5-000-000-concurrent-users', pub: 'Discord, 2017' }
     ]
   },
 
@@ -372,7 +376,8 @@ SD.register({
     { q: 'How does multi-device sync work?', a: '<p>Each <b>device</b> has its own session and its own cursor. All devices of a user receive the message (fan-out per device). Read state is per user: reading on the laptop moves <code>last_read</code>, which is pushed to the phone to clear its badge.</p>', lvl: 'core' },
     { q: 'How would you implement presence at scale?', a: '<p>Presence = "has a live session". Gateways refresh a TTL key per user on heartbeat (say every 30 s, TTL 60 s). Do <b>not</b> broadcast every change to every contact: publish presence only to users who are currently looking (open chat, visible contact list), and batch updates. For huge groups show approximate counts.</p>', lvl: 'deep' },
     { q: 'How do ✓ and ✓✓ work, especially in groups?', a: '<p>✓ = the server persisted it. ✓✓ = the recipient\'s device acked it. Receipts are <b>cumulative</b>: "delivered up to seq N" covers all earlier messages, so one small update replaces thousands. In a group, ✓✓ means every member\'s delivered cursor ≥ N.</p>', lvl: 'core' },
-    { q: 'How many connections can one gateway hold, and what limits it?', a: '<p>Memory per socket (kernel buffers + app state), file descriptors, and CPU for TLS and heartbeats. WhatsApp reported over 2M on one tuned FreeBSD/Erlang box in 2012; a few hundred thousand is a safer plan. Keep gateways free of business logic so they can be dense and restart cheaply.</p>', lvl: 'deep' },
+    { q: 'How many connections can one gateway hold, and what limits it?', a: '<p>Memory per socket (kernel buffers + app state), file descriptors, and CPU for TLS and heartbeats. WhatsApp reported over 2M on one tuned FreeBSD box running Erlang in 2012, after patching the VM and kernel; a few hundred thousand is a safer plan. Keep gateways free of business logic so they can be dense and restart cheaply.</p>', lvl: 'deep' },
+    { q: 'Gateways are stateful. How do you deploy or scale them down without a reconnect storm?', a: '<p><b>Drain</b> a gateway instead of killing it: take it out of the load balancer so it gets no new sockets, then tell its clients to reconnect elsewhere <b>in small, jittered batches</b> over minutes. Each client resumes from its <b>sync cursor</b>, so nothing is lost and no message logic lives on the gateway.</p><p>Roll the fleet a few percent at a time and watch connect rate and boot-API load. Keeping business logic out of gateways is what makes them cheap to restart.</p>', fu: 'What if a gateway dies instead of draining? (Same path, all at once: client backoff with jitter and cached boot data absorb the storm.)', lvl: 'deep' },
     { q: 'What does end-to-end encryption change in the design?', a: '<p>The server becomes a router of ciphertext. It can no longer search, moderate, generate link previews or show message text in pushes. Each message is encrypted per recipient device (or with a group sender key), so device lists and key distribution become part of the system. Ordering, dedup and receipts work the same, since they use metadata.</p>', lvl: 'deep' }
   ],
 
@@ -435,7 +440,9 @@ public class ChatSocketHandler extends TextWebSocketHandler implements MessageLi
   @Override protected void handleTextMessage(WebSocketSession s, TextMessage m) throws Exception {
     Envelope in = json.readValue(m.getPayload(), Envelope.class);
     Stored saved = store.persist(in);          // idempotent: retry returns same seq
-    s.sendMessage(new TextMessage(json.writeValueAsString(Ack.of(saved))));
+    // send via the thread-safe decorator: Redis listener threads write to it too
+    local.getOrDefault((String) s.getAttributes().get("userId"), s)
+         .sendMessage(new TextMessage(json.writeValueAsString(Ack.of(saved))));
     for (String member : store.members(in.convId())) {
       String node = redis.opsForValue().get("session:" + member);
       if (node == null) { store.enqueuePush(member, saved); continue; }

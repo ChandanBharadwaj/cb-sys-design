@@ -46,8 +46,11 @@ SD.widget('typeahead', function (root, ctx) {
   const quick = ['s', 'sy', 'spring', 'k', 're'].map((p) => { const b = el('button', { class: 'btn', text: '"' + p + '"' }); b.addEventListener('click', () => { input.value = p; prefix = p; render(true); }); return b; });
   root.append(el('div', { class: 'w-controls' }, input, kBtn, ...quick));
 
-  const W = 400, H = 312;
-  const S = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Trie path and top-5 completions' });
+  // desktop 400-wide; phone 360-wide with 14–15-unit text and taller rows
+  let G;
+  const geom = (n) => { G = n ? { W: 360, sp: 44, ksp: 44, r: 17, kr: 15, f: 14, fs: 14, RH: 30, LY: 172, H: 334, n: true } : { W: 400, sp: 50, ksp: 47, r: 16, kr: 14, f: 13, fs: 12, RH: 26, LY: 166, H: 312, n: false }; };
+  geom(ctx.narrow);
+  const S = svg('svg', { role: 'img', 'aria-label': 'Trie path and top-5 completions' });
   const gLines = svg('g'), gPath = svg('g'), gKids = svg('g'), gList = svg('g');
   S.append(gLines, gPath, gKids, gList);
   root.append(el('div', { class: 'w-stage', style: { maxWidth: '560px', margin: '0 auto' } }, S));
@@ -60,6 +63,8 @@ SD.widget('typeahead', function (root, ctx) {
 
   function render(animate) {
     const my = ++anim;
+    const { W, sp, ksp, r, kr, f, fs, RH, LY } = G;
+    S.setAttribute('viewBox', `0 0 ${W} ${G.H}`);
     gLines.innerHTML = ''; gPath.innerHTML = ''; gKids.innerHTML = ''; gList.innerHTML = '';
     const path = pathOf(prefix);
     const ok = path.length === prefix.length + 1;
@@ -67,41 +72,43 @@ SD.widget('typeahead', function (root, ctx) {
     // path row (root + last 7 characters)
     const vis = path.length > 8 ? [path[0]].concat(path.slice(-7)) : path;
     const circles = vis.map((n, i) => {
-      const x = 24 + i * 50, y = 40;
-      if (i) gPath.append(svg('line', { x1: x - 35, y1: y, x2: x - 15, y2: y, stroke: 'var(--border)', 'stroke-width': 2 }));
-      if (i === 1 && path.length > 8) gPath.append(txt(x - 25, y - 20, '…', 'font:700 14px var(--mono)', 'var(--text-3)'));
-      const c = svg('circle', { cx: x, cy: y, r: 16, fill: 'var(--surface-2)', stroke: 'var(--border)', 'stroke-width': 2 });
+      const x = 24 + i * sp, y = 40;
+      if (i) gPath.append(svg('line', { x1: x - sp + r + 1, y1: y, x2: x - r - 1, y2: y, stroke: 'var(--border)', 'stroke-width': 2 }));
+      if (i === 1 && path.length > 8) gPath.append(txt(x - sp / 2, y - 20, '…', 'font:700 14px var(--mono)', 'var(--text-3)'));
+      const c = svg('circle', { cx: x, cy: y, r, fill: 'var(--surface-2)', stroke: 'var(--border)', 'stroke-width': 2 });
       gPath.append(c, txt(x, y + 5, i ? shown(n.ch) : '∅', 'font:700 15px var(--mono)', 'var(--text)'));
       return c;
     });
-    if (!ok) gPath.append(txt(4, 96, 'no node for "' + prefix + '"', 'font:600 13px var(--mono)', 'var(--err)', 'start'));
+    if (!ok) gPath.append(txt(4, 96, 'no node for "' + prefix + '"', `font:600 ${f + 1}px var(--mono)`, 'var(--err)', 'start'));
     const lit = (i) => { const c = circles[i]; if (!c || my !== anim) return; c.setAttribute('fill', 'color-mix(in srgb, var(--accent) 28%, var(--surface))'); c.setAttribute('stroke', 'var(--accent)'); };
     if (animate && !ctx.reduced) circles.forEach((_, i) => setTimeout(() => lit(i), i * 70)); else circles.forEach((_, i) => lit(i));
     if (!ok) { stats({ prefix: '"' + prefix + '"', result: 'no match' }); return; }
     // children of the last node
-    const lx = 24 + (vis.length - 1) * 50;
+    const lx = 24 + (vis.length - 1) * sp;
     const kids = [...last.kids.values()].slice(0, 8);
     const sc = scan(last, prefix);
     kids.forEach((k, i) => {
-      const x = 24 + i * 47, y = 116;
-      gLines.append(svg('line', { x1: lx, y1: 56, x2: x, y2: y - 14, stroke: topk ? 'var(--border)' : 'var(--warn)', 'stroke-width': 1.2, 'stroke-dasharray': topk ? '3 3' : '' }));
-      gKids.append(svg('circle', { cx: x, cy: y, r: 14, fill: topk ? 'var(--surface-2)' : 'color-mix(in srgb, var(--warn) 30%, var(--surface))', stroke: 'var(--border)' }));
-      gKids.append(txt(x, y + 5, shown(k.ch), 'font:700 13px var(--mono)', 'var(--text-2)'));
-      gKids.append(txt(x, y + 30, scan(k, '').found.length + 'q', 'font:600 12px var(--mono)', 'var(--text-3)'));
+      const x = 24 + i * ksp, y = 116;
+      gLines.append(svg('line', { x1: lx, y1: 40 + r, x2: x, y2: y - kr, stroke: topk ? 'var(--border)' : 'var(--warn)', 'stroke-width': 1.2, 'stroke-dasharray': topk ? '3 3' : '' }));
+      gKids.append(svg('circle', { cx: x, cy: y, r: kr, fill: topk ? 'var(--surface-2)' : 'color-mix(in srgb, var(--warn) 30%, var(--surface))', stroke: 'var(--border)' }));
+      gKids.append(txt(x, y + 5, shown(k.ch), `font:700 ${f + 1}px var(--mono)`, 'var(--text-2)'));
+      gKids.append(txt(x, y + kr + 18, scan(k, '').found.length + 'q', `font:600 ${fs}px var(--mono)`, 'var(--text-3)'));
     });
-    if (last.kids.size > 8) gKids.append(txt(390, 121, '+' + (last.kids.size - 8), 'font:600 12px var(--mono)', 'var(--text-3)', 'end'));
+    if (last.kids.size > 8) gKids.append(txt(W - 6, 121, '+' + (last.kids.size - 8), `font:600 ${fs}px var(--mono)`, 'var(--text-3)', 'end'));
     // top-k list
     const list = topk ? last.top : sc.found.slice(0, K);
     const max = counts[list[0]] || 1;
-    gList.append(txt(4, 166, topk ? 'walk ' + prefix.length + ' edges → read top-' + K + ' stored at "' + prefix + '"' : 'walk, then scan ' + sc.visited + ' nodes and sort ' + sc.found.length, 'font:600 13px var(--mono)', topk ? 'var(--ok)' : 'var(--warn)', 'start'));
+    const head = G.n ? (topk ? 'read top-' + K + ' stored at node' : 'scan ' + sc.visited + ' nodes, sort ' + sc.found.length) : (topk ? 'walk ' + prefix.length + ' edges → read top-' + K + ' stored at "' + prefix + '"' : 'walk, then scan ' + sc.visited + ' nodes and sort ' + sc.found.length);
+    gList.append(txt(4, LY, head, `font:600 ${f}px var(--mono)`, topk ? 'var(--ok)' : 'var(--warn)', 'start'));
     list.forEach((q, i) => {
-      const y = 178 + i * 26;
+      const y = LY + 12 + i * RH;
       const row = svg('g', { style: 'cursor:pointer' });
-      row.append(svg('rect', { x: 4, y, width: 392, height: 22, rx: 5, fill: 'var(--surface-2)', stroke: 'var(--border)' }));
-      row.append(svg('rect', { x: 4, y, width: Math.max(4, 392 * counts[q] / max), height: 22, rx: 5, fill: 'color-mix(in srgb, var(--accent) 16%, transparent)' }));
-      const t = svg('text', { x: 12, y: y + 16, style: 'font:500 13px var(--mono)', fill: 'var(--text-2)' });
+      const rw = W - 8, rh = RH - 4, by = y + rh / 2 + f * 0.36;
+      row.append(svg('rect', { x: 4, y, width: rw, height: rh, rx: 5, fill: 'var(--surface-2)', stroke: 'var(--border)' }));
+      row.append(svg('rect', { x: 4, y, width: Math.max(4, rw * counts[q] / max), height: rh, rx: 5, fill: 'color-mix(in srgb, var(--accent) 16%, transparent)' }));
+      const t = svg('text', { x: 12, y: by, style: `font:500 ${f}px var(--mono)`, fill: 'var(--text-2)' });
       t.append(svg('tspan', { style: 'font-weight:800', fill: 'var(--text)', text: q.slice(0, prefix.length) }), svg('tspan', { text: q.slice(prefix.length) }));
-      row.append(t, txt(390, y + 16, SD.fmt.num(counts[q]), 'font:600 12px var(--mono)', 'var(--text-3)', 'end'));
+      row.append(t, txt(W - 10, by, SD.fmt.num(counts[q]), `font:600 ${fs}px var(--mono)`, 'var(--text-3)', 'end'));
       row.addEventListener('click', () => boost(q));
       gList.append(row);
     });
@@ -123,6 +130,7 @@ SD.widget('typeahead', function (root, ctx) {
     say(`Searched "<b>${q}</b>" 3,000× → ${SD.fmt.num(counts[q])}. Updated top-k on ${p.length} nodes of its path` + (entered ? `; it <b>entered</b> the top-${K} at ${entered} node(s).` : '.'));
     render(false);
   }
+  ctx.onResize((n) => { geom(n); render(false); });
   render(true);
   say('Try "s" with the top-k cache off: a one-letter prefix scans most of the trie.');
 });

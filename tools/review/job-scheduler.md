@@ -1,0 +1,10 @@
+# job-scheduler review
+
+- **Widget, phone:** added a 360-wide layout chosen by `ctx.narrow` and rebuilt via `ctx.onResize`. The jobs column is 148 wide and the workers column 178, with all text at 14 units (about 13.2 px). Waiter counts shrink to `+3`, and "lock error, retry" becomes "lock error". The desktop geometry is unchanged. Fonts went from min 8.8 / p25 9.5 px to min 13.2 / p25 13.2 px. The locking semantics (FOR UPDATE, SKIP LOCKED, NOWAIT, kill and rollback) are untouched.
+- **Interaction:** drove plain FOR UPDATE on a phone. All three waiters are visibly blocked on row #3 and the log shows the "0 rows, retry" re-check.
+- **Code bug fixed (Java):** Spring's default `@Scheduled` pool has one thread, so `heartbeat()` could never run while `poll()` was processing jobs. Leases would expire, and long jobs would be duplicated. Added `spring.task.scheduling.pool.size >= 2` to the header comment and explained it in the note.
+- **Calculator:** "Rows retained" and "Job-store size" multiplied by the retry rate, but the data model keeps one row per job and retries only bump `attempts`. Dropped the retry factor from those two outputs and labelled the size as an estimate.
+- **Interview:** added one deep question on cron time zones and daylight-saving gaps or overlaps. It is a classic follow-up, and the `schedules` table already stores `tz`.
+- **Clarity:** replaced "SPOF" in a knob verdict with "single point of failure".
+- **Code tests:** ran the Postgres SQL (table, partial index, reaper, DAG readiness) on a temporary PG 16. The DAG query returns `clean_a`, `clean_b`. Also ran the Java claim and backoff statements verbatim. Imported the Celery snippet with celery in a temp venv; config and task options resolve. Spring Java was not compiled because it needs Spring on the classpath.
+- **Checked, left alone:** PG 9.5 SKIP LOCKED (Jan 2016), Airflow 2.0 active-active schedulers, Cadence (2017) → Temporal (2019), Dropbox ATF guarantees and the InfoQ 9,000 tasks/s figure, FOQS. Every knob option changes the meters or the verdict.

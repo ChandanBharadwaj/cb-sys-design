@@ -28,34 +28,59 @@ SD.widget('notifications', function (root, ctx) {
   labels();
   root.append(el('div', { class: 'w-controls' }, laneBtn, limBtn, resetBtn, el('label', null, 'Promo rate ', pOut, ' ', pIn)));
 
-  // drawing
-  const W = 400, H = 276;
-  const S = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Queue lanes and provider token bucket' });
+  // drawing: desktop 400-wide (lanes left, bucket right); phone 360-wide, stacked, 14–15-unit text
+  const S = svg('svg', { role: 'img', 'aria-label': 'Queue lanes and provider token bucket' });
   const T = (x, y, t, st, fill) => { const n = svg('text', { x, y, style: st || 'font:700 13px var(--mono)', fill: fill || 'var(--text-2)', text: t }); S.append(n); return n; };
-  const laneY = [30, 84, 138];
-  const laneName = [T(4, laneY[0] + 41, 'TXN'), T(4, laneY[1] + 41, 'PROMO'), T(4, laneY[2] + 41, 'RETRY')];
-  const laneCnt = laneY.map((y) => T(60, y + 41, '', 'font:500 12px var(--mono)', 'var(--text-3)'));
-  const rects = laneY.map((y) => {
-    S.append(svg('rect', { x: 4, y, width: SLOTS * SW + 6, height: 26, rx: 5, fill: 'var(--surface-2)', stroke: 'var(--border)' }));
-    return Array.from({ length: SLOTS }, (_, i) => { const r = svg('rect', { x: 7 + (SLOTS - 1 - i) * SW, y: y + 4, width: SW - 3, height: 18, rx: 2 }); S.append(r); return r; });
-  });
-  // arrows into the provider
-  laneY.slice(0, 2).forEach((y) => S.append(svg('line', { x1: 210, y1: y + 13, x2: 262, y2: 90, stroke: 'var(--border)', 'stroke-width': 1.5 })));
-  // provider token bucket
-  S.append(svg('rect', { x: 266, y: 22, width: 130, height: 168, rx: 10, fill: 'var(--surface-2)', stroke: 'var(--border)' }));
-  T(276, 42, 'PROVIDER', 'font:700 13px var(--mono)', 'var(--text)');
-  T(276, 58, RATE + '/s limit', 'font:500 12px var(--mono)', 'var(--text-3)');
-  S.append(svg('rect', { x: 278, y: 70, width: 32, height: 90, rx: 4, fill: 'var(--surface)', stroke: 'var(--border)' }));
-  const fill = svg('rect', { x: 280, y: 72, width: 28, height: 86, rx: 3, fill: 'var(--ok)' });
-  S.append(fill);
-  const tokTxt = T(318, 120, '', 'font:600 12px var(--mono)', 'var(--text-2)');
-  const flash = T(318, 150, '', 'font:700 14px var(--mono)', 'var(--err)');
-  // sparkline of OTP latency
-  T(4, 210, 'OTP p95 latency, last 60 s', 'font:600 12px var(--mono)', 'var(--text-3)');
-  S.append(svg('rect', { x: 4, y: 216, width: 392, height: 56, rx: 6, fill: 'var(--surface-2)', stroke: 'var(--border)' }));
-  const spark = svg('polyline', { fill: 'none', stroke: 'var(--accent)', 'stroke-width': 2, points: '' });
-  const maxTxt = T(392, 210, '', 'font:500 12px var(--mono);text-anchor:end', 'var(--text-3)');
-  S.append(spark);
+  let G, laneName, laneCnt, rects, fill, tokTxt, flash, spark, maxTxt;
+  function build(narrow) {
+    S.innerHTML = '';
+    if (!narrow) {
+      const W = 400, H = 276, laneY = [30, 84, 138];
+      S.setAttribute('viewBox', `0 0 ${W} ${H}`);
+      laneName = [T(4, laneY[0] + 41, 'TXN'), T(4, laneY[1] + 41, 'PROMO'), T(4, laneY[2] + 41, 'RETRY')];
+      laneCnt = laneY.map((y) => T(60, y + 41, '', 'font:500 12px var(--mono)', 'var(--text-3)'));
+      rects = laneY.map((y) => {
+        S.append(svg('rect', { x: 4, y, width: SLOTS * SW + 6, height: 26, rx: 5, fill: 'var(--surface-2)', stroke: 'var(--border)' }));
+        return Array.from({ length: SLOTS }, (_, i) => { const r = svg('rect', { x: 7 + (SLOTS - 1 - i) * SW, y: y + 4, width: SW - 3, height: 18, rx: 2 }); S.append(r); return r; });
+      });
+      laneY.slice(0, 2).forEach((y) => S.append(svg('line', { x1: 210, y1: y + 13, x2: 262, y2: 90, stroke: 'var(--border)', 'stroke-width': 1.5 })));
+      S.append(svg('rect', { x: 266, y: 22, width: 130, height: 168, rx: 10, fill: 'var(--surface-2)', stroke: 'var(--border)' }));
+      T(276, 42, 'PROVIDER', 'font:700 13px var(--mono)', 'var(--text)');
+      T(276, 58, RATE + '/s limit', 'font:500 12px var(--mono)', 'var(--text-3)');
+      S.append(svg('rect', { x: 278, y: 70, width: 32, height: 90, rx: 4, fill: 'var(--surface)', stroke: 'var(--border)' }));
+      fill = svg('rect', { x: 280, y: 72, width: 28, height: 86, rx: 3, fill: 'var(--ok)' });
+      S.append(fill);
+      tokTxt = T(318, 120, '', 'font:600 12px var(--mono)', 'var(--text-2)');
+      flash = T(318, 150, '', 'font:700 14px var(--mono)', 'var(--err)');
+      T(4, 210, 'OTP p95 latency, last 60 s', 'font:600 12px var(--mono)', 'var(--text-3)');
+      S.append(svg('rect', { x: 4, y: 216, width: 392, height: 56, rx: 6, fill: 'var(--surface-2)', stroke: 'var(--border)' }));
+      maxTxt = T(392, 210, '', 'font:500 12px var(--mono);text-anchor:end', 'var(--text-3)');
+      G = { vert: true, b: { x: 280, y: 72, w: 28, h: 86 }, sx: 8, sdx: 384 / 59, sy: 268, sh: 46 };
+    } else {
+      const W = 360, H = 346, laneY = [26, 84, 142], sw = 19;
+      S.setAttribute('viewBox', `0 0 ${W} ${H}`);
+      laneName = laneY.map((y, i) => T(4, y - 7, ['TXN', 'PROMO', 'RETRY'][i], 'font:700 15px var(--mono)'));
+      laneCnt = laneY.map((y) => T(356, y - 7, '', 'font:500 14px var(--mono);text-anchor:end', 'var(--text-3)'));
+      rects = laneY.map((y) => {
+        S.append(svg('rect', { x: 4, y, width: 352, height: 28, rx: 5, fill: 'var(--surface-2)', stroke: 'var(--border)' }));
+        return Array.from({ length: SLOTS }, (_, i) => { const r = svg('rect', { x: 8 + (SLOTS - 1 - i) * sw, y: y + 4, width: sw - 4, height: 20, rx: 2 }); S.append(r); return r; });
+      });
+      S.append(svg('rect', { x: 4, y: 186, width: 352, height: 66, rx: 10, fill: 'var(--surface-2)', stroke: 'var(--border)' }));
+      T(14, 208, 'PROVIDER · ' + RATE + '/s', 'font:700 15px var(--mono)', 'var(--text)');
+      flash = T(346, 208, '', 'font:700 15px var(--mono);text-anchor:end', 'var(--err)');
+      S.append(svg('rect', { x: 14, y: 220, width: 236, height: 22, rx: 4, fill: 'var(--surface)', stroke: 'var(--border)' }));
+      fill = svg('rect', { x: 16, y: 222, width: 232, height: 18, rx: 3, fill: 'var(--ok)' });
+      S.append(fill);
+      tokTxt = T(262, 236, '', 'font:600 14px var(--mono)', 'var(--text-2)');
+      T(4, 278, 'OTP p95, last 60 s', 'font:600 14px var(--mono)', 'var(--text-3)');
+      maxTxt = T(356, 278, '', 'font:500 14px var(--mono);text-anchor:end', 'var(--text-3)');
+      S.append(svg('rect', { x: 4, y: 286, width: 352, height: 56, rx: 6, fill: 'var(--surface-2)', stroke: 'var(--border)' }));
+      G = { vert: false, b: { x: 16, y: 222, w: 232, h: 18 }, sx: 8, sdx: 344 / 59, sy: 338, sh: 46 };
+    }
+    spark = svg('polyline', { fill: 'none', stroke: 'var(--accent)', 'stroke-width': 2, points: '' });
+    S.append(spark);
+  }
+  build(ctx.narrow);
   root.append(el('div', { class: 'w-stage', style: { maxWidth: '620px', margin: '0 auto' } }, S));
   const st = el('div', { class: 'w-stats' });
   const log = el('div', { class: 'w-log', 'aria-live': 'polite' });
@@ -110,12 +135,13 @@ SD.widget('notifications', function (root, ctx) {
     drawLane(0, lanes ? txn : promo, 'var(--accent)');
     drawLane(1, lanes ? promo : [], 'var(--accent)');
     drawLane(2, retry.map((r) => r.m), 'var(--warn)');
-    const h = 86 * (tokens / BURST);
-    fill.setAttribute('y', 72 + 86 - h); fill.setAttribute('height', Math.max(0, h));
+    const f = tokens / BURST, b = G.b;
+    if (G.vert) { const h = b.h * f; fill.setAttribute('y', b.y + b.h - h); fill.setAttribute('height', Math.max(0, h)); }
+    else fill.setAttribute('width', Math.max(0, b.w * f));
     fill.setAttribute('fill', tokens < 1 ? 'var(--err)' : tokens < 10 ? 'var(--warn)' : 'var(--ok)');
     tokTxt.textContent = Math.floor(tokens) + ' tok';
     const mx = Math.max(3, ...hist);
-    spark.setAttribute('points', hist.map((v, i) => `${(8 + i * (384 / 59)).toFixed(1)},${(268 - (v / mx) * 46).toFixed(1)}`).join(' '));
+    spark.setAttribute('points', hist.map((v, i) => `${(G.sx + i * G.sdx).toFixed(1)},${(G.sy - (v / mx) * G.sh).toFixed(1)}`).join(' '));
     maxTxt.textContent = 'max ' + mx.toFixed(1) + ' s';
     const p = p95();
     st.innerHTML = '';
@@ -129,6 +155,7 @@ SD.widget('notifications', function (root, ctx) {
     drawT += dt;
     if (drawT > (ctx.reduced ? 500 : 100)) { drawT = 0; draw(); }
   });
+  ctx.onResize((n) => { build(n); draw(); });
   draw();
   say('Promos above ~39/s outrun the provider. Watch OTP p95 with lanes on, then switch to FIFO.');
 });

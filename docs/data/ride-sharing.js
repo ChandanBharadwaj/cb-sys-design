@@ -148,7 +148,7 @@ SD.register({
   dataModel: [
     { name: 'driver_location', store: 'In-memory geo index', fields: [['driver_id', 'int64', 'pk'], ['cell_id', 'H3 res 9', 'idx'], ['lat, lng', 'float32'], ['status', 'enum'], ['updated_at', 'ts']], note: 'Never on disk on the hot path. Rebuilt from the next round of pings.' },
     { name: 'trips', store: 'Sharded SQL / Schemaless', fields: [['trip_id', 'uuid', 'pk'], ['rider_id', 'int64', 'idx'], ['driver_id', 'int64', 'idx'], ['status', 'enum'], ['pickup, dropoff', 'geo'], ['version', 'int']], note: 'Append-only cells, like Uber\'s Schemaless.' },
-    { name: 'location_pings', store: 'Kafka topic', fields: [['key', 'driver_id', 'pk'], ['value', 'ping'], ['partition', 'hash(cell)']], note: 'Feeds surge, ETA training and analytics.' }
+    { name: 'location_pings', store: 'Kafka topic', fields: [['key', 'driver_id', 'pk'], ['value', 'ping'], ['partition', 'hash(driver_id)']], note: 'Keyed by driver, so one driver\'s pings stay in order. Feeds surge, ETA training and analytics.' }
   ],
 
   architecture: {
@@ -228,7 +228,7 @@ SD.register({
         { text: 'A geo-index node crashes. Every driver location it held is gone.', nodes: ['geo'], err: ['geo'], badges: { geo: ['down', 'err'] }, tone: 'err' },
         { text: '<b>Gossip (SWIM)</b> marks the node as dead within seconds. Consistent hashing gives its cells to neighbouring nodes.', nodes: ['geo', 'disp', 'loc'], warn: ['geo'], badges: { geo: ['rehash', 'warn'] }, tone: 'warn' },
         { text: 'Nothing is restored from disk. Within ~4 s every driver pings again and the new owners rebuild the state.', flow: ['drv>gw', 'gw>loc', 'loc>geo'], ok: ['geo'], badges: { geo: ['rebuilt', 'ok'] }, tone: 'ok' },
-        { text: 'Trips that were in flight are safe because they live in the durable trip store. Uber also used <b>driver phones as a backup</b>: the server sends them an encrypted state digest, which they replay to a new datacenter after a failover.', nodes: ['trip', 'tdb', 'drv'], ok: ['tdb'], tone: 'ok' }
+        { text: 'In-flight trips are safe in the durable trip store. Uber also used <b>driver phones as a backup</b>: the server sends them an encrypted state digest, which they replay to a new datacenter after failover.', nodes: ['trip', 'tdb', 'drv'], ok: ['tdb'], tone: 'ok' }
       ]
     }
   ],
@@ -260,7 +260,7 @@ SD.register({
         { k: 'Location writes/s', v: SD.fmt.num(wps) + '/s', s: wps <= 3e5 ? 0.9 : wps <= 6e5 ? 0.6 : 0.3, hint: s.interval + ' s ping' },
         { k: 'Position staleness', v: '≤ ' + s.interval + ' s ≈ ' + Math.round(s.interval * 11) + ' m @40 km/h', s: s.interval <= 4 ? 0.85 : s.interval <= 8 ? 0.55 : 0.25 },
         { k: 'Neighbour search', v: idx.v, s: s.store === 'redis' ? 0.55 : idx.s },
-        { k: 'Write headroom', v: headroom >= 1 ? headroom.toFixed(1) + '× capacity' : 'overloaded (' + headroom.toFixed(2) + '×)', s: clamp01(headroom / 3) },
+        { k: 'Write headroom', v: headroom >= 1 ? headroom.toFixed(1) + '× capacity' : 'overloaded (' + headroom.toFixed(2) + '×)', s: clamp01(headroom / 3), hint: 'illustrative cluster ceilings' },
         { k: 'Avg pickup ETA', v: s.match === 'batch' ? 'lower in aggregate' : 'baseline', s: s.match === 'batch' ? 0.85 : 0.55 },
         { k: 'Decision delay', v: s.match === 'batch' ? '+ batch window (seconds)' : '≈ immediate', s: s.match === 'batch' ? 0.6 : 0.9 },
         { k: 'Ops complexity', v: { mem: 'custom sharding + gossip', redis: 'managed, familiar', db: 'simple, but disk on hot path' }[s.store], s: { mem: 0.45, redis: 0.75, db: 0.8 }[s.store] }
@@ -354,6 +354,7 @@ SD.register({
     { q: 'How would you compute surge pricing?', a: '<p>Consume the location and request streams from Kafka. Per cell (or cluster of cells) and short window, compute demand (open requests) vs supply (free drivers). Map the ratio to a multiplier with smoothing, publish it to a fast store, and let dispatch and pricing read it.</p><p>It must never block matching.</p>', lvl: 'deep' },
     { q: 'How do clients show smooth car movement with 4 s pings?', a: '<p><b>Dead reckoning</b>: interpolate between pings using heading and speed, and snap to the road. This is far cheaper than doubling the ping rate.</p>', lvl: 'core' },
     { q: 'How do you make the request endpoint safe to retry?', a: '<p>The client sends an <b>idempotency key</b>. The server stores <code>key → ride_id</code> and returns the same ride on retry. Combine this with a unique constraint on <code>(rider_id, active)</code> so a rider has only one active request.</p>', lvl: 'core' },
+    { q: 'How do you get road ETAs for 20 candidates in a few milliseconds?', a: '<p>Don\'t run a plain Dijkstra per candidate. Use a routing engine with a <b>precomputed road graph</b> (e.g. contraction hierarchies or a partitioned graph) and ask for a <b>one-to-many</b> query: one pickup, many drivers, in a single call.</p><p>Add live traffic as edge weights, and correct the route time with a model trained on past trips. Use straight-line or cell distance only as the cheap <b>pre-filter</b> that picks which candidates get a real ETA.</p>', lvl: 'deep' },
     { q: 'How does this survive a whole datacenter failing?', a: '<p>Trips are in a replicated store. Uber also periodically sends drivers an <b>encrypted state digest</b>, so after a failover the phone can replay it to the new DC. Location state simply rebuilds from the next pings.</p>', lvl: 'deep' }
   ],
 
@@ -394,7 +395,7 @@ public class LocationService {
     return List.of();
   }
 }`,
-      note: 'Hashing on <code>{cell}</code> keeps a cell\'s set on one Redis Cluster slot. Rank the result with the ETA service before offering.'
+      note: 'Each <code>cell:&lt;id&gt;</code> set is a single key, so it lives on one Redis Cluster slot; a k-ring read touches several slots. The 30 s TTL only clears cells nobody pings, so also remove a driver on logout or after missed heartbeats. Rank the result with the ETA service before offering.'
     },
     {
       title: 'Postgres: idempotent, race-free accept', lang: 'sql',

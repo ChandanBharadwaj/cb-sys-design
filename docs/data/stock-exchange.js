@@ -10,7 +10,7 @@ SD.register({
     insight: 'One thread + one input order = <b>no locks and deterministic replay</b>. A hot standby fed the same sequence ends up with the identical book. Concurrency lives at the edges (gateways, journaling, market data), joined by lock-free ring buffers.',
     numbers: [
       { v: '6M/s', l: 'orders/s on one Java thread (LMAX, via Martin Fowler, 2011)' },
-      { v: '1', l: 'thread per order book: no locks, exact replay' },
+      { v: '<40 µs', l: 'order round trip through Nasdaq INET, port to port in co-location (Nasdaq\'s own figure)' },
       { v: 'ns', l: 'timestamp resolution in Nasdaq TotalView-ITCH' }
     ]
   },
@@ -234,7 +234,7 @@ SD.register({
   ],
 
   knobs: {
-    intro: 'The classic matching-engine decisions. Latency figures are order-of-magnitude <em>estimates</em> to show direction, not benchmarks.',
+    intro: 'The classic matching-engine decisions. Latency figures are order-of-magnitude <em>estimates</em> to show direction, not benchmarks. For scale: Nasdaq states INET round trips under 40 µs in co-location; LMAX reported 6M orders/s on one thread.',
     controls: [
       { id: 'thread', label: 'Concurrency model', type: 'seg', value: 'single', options: [
         { v: 'locks', l: 'Thread pool + locks on the book' }, { v: 'single', l: 'One thread per book + ring buffer' }] },
@@ -277,7 +277,7 @@ SD.register({
       if (s.md === 'tcp') notes.push('With TCP per subscriber, the exchange sends the same update N times, and whoever is last in the loop always sees prices later. Multicast plus sequence numbers and retransmission is the standard answer.');
       let verdict;
       if (s.persist === 'none') verdict = '❌ <b>A crash loses the order book.</b> Journal and replicate every input before acknowledging it.';
-      else if (util >= 1) verdict = '❌ <b>The busiest book is overloaded.</b> Latency grows without bound. Remove the DB from the hot path or move symbols off this thread.';
+      else if (util >= 1) verdict = '❌ <b>The busiest book is overloaded.</b> Latency grows without bound. ' + (s.persist === 'db' ? 'A DB commit per order caps the book at thousands per second: journal the input instead.' : !single ? 'Lock contention caps one book well below a single lock-free thread: use one thread per book.' : 'Even one thread has a ceiling: move other symbols off this thread and throttle sessions at the gateway.');
       else if (s.persist === 'db') verdict = '⚠ <b>Durable but slow.</b> Per-order commits cap you at thousands of orders per second. Use a sequential journal and replay instead.';
       else if (!single) verdict = '⚠ <b>Fast-ish, but not fair or replayable.</b> Thread interleaving decides who is first. Use one thread per book.';
       else if (s.md === 'tcp') verdict = '⚠ <b>Matching is right, distribution is unfair.</b> Use multicast so everyone sees updates at the same time.';
@@ -314,6 +314,7 @@ SD.register({
       { when: 'Jul 2011', who: 'LMAX', title: 'The LMAX Architecture', text: 'Martin Fowler describes LMAX\'s <b>Business Logic Processor</b>: all trading logic for all markets on <b>one thread</b>, in memory and event-sourced, at <b>6 million orders per second</b> on a 3 GHz dual-socket quad-core Nehalem server. Input and output <b>Disruptors</b> handle journaling, replication and marshalling around it.', src: 0 },
       { when: '2011', who: 'LMAX', title: '"6M is the matching engine"', text: 'In the Hacker News discussion (Oct 2011), a commenter from LMAX clarified that the 6M figure is the matching engine\'s business-logic event processor, and that order matching and broker risk each run on their own <b>single business-logic thread</b>, on separate servers, connected by messaging.', src: 1 },
       { when: '2011 →', who: 'LMAX', title: 'Disruptor open-sourced', text: 'The Disruptor is a ring buffer for inter-thread messaging built around the <b>single-writer principle</b>. Consumers wait on <b>sequence barriers</b>, and a pluggable <b>wait strategy</b> trades CPU for latency.', src: 2 },
+      { when: 'INET today', who: 'Nasdaq', title: 'Sub-40 µs, measured port to port', text: 'Nasdaq says INET handles <b>more than 1 million messages per second</b> at <b>sub-40 µs</b>. It measures latency as the full round trip of an order or cancel from the customer\'s port in co-location, through firewalls to the matching engine and back, during a full trading day.', src: 6 },
       { when: 'Today', who: 'Nasdaq', title: 'TotalView-ITCH order-level feed', text: 'Nasdaq publishes every order event (Add Order, executions, cancels) with a day-unique order reference number and <b>nanosecond timestamps</b>, over <b>MoldUDP64</b> multicast or SoupBinTCP. Subscribers rebuild the full book themselves.', src: 5 }
     ],
     lessons: [
@@ -328,7 +329,8 @@ SD.register({
       { title: 'LMAX Disruptor User Guide', url: 'https://lmax-exchange.github.io/disruptor/user-guide', pub: 'LMAX Exchange' },
       { title: 'Instinet buys Island ECN in $500M deal', url: 'https://www.computerworld.com/article/1328588/instinet-buys-island-ecn-in-500m-deal.html', pub: 'Computerworld, 2002' },
       { title: 'Instinet in $1.88 Billion Merger with NASDAQ', url: 'https://www.clearygottlieb.com/news-and-insights/news-listing/instinet-in-%24188-billion-merger-with-nasdaq3', pub: 'Cleary Gottlieb, 2005' },
-      { title: 'Nasdaq TotalView-ITCH specification', url: 'https://nasdaqtrader.com/content/technicalsupport/specifications/dataproducts/NQTVITCHspecification.pdf', pub: 'Nasdaq Trader' }
+      { title: 'Nasdaq TotalView-ITCH specification', url: 'https://nasdaqtrader.com/content/technicalsupport/specifications/dataproducts/NQTVITCHspecification.pdf', pub: 'Nasdaq Trader' },
+      { title: 'OUCH measurements of order latency, ITCH measurements of market data latency', url: 'https://www.nasdaqtrader.com/snippets/inet2.html', pub: 'Nasdaq Trader' }
     ]
   },
 
@@ -349,6 +351,7 @@ SD.register({
     { f: 'Hot symbol saturates its thread', detect: 'Ring-buffer occupancy and per-book latency', fix: 'Move other symbols off that thread; per-session throttles at gateways.' },
     { f: 'Runaway algorithm floods orders', detect: 'Per-session message rate', fix: 'Gateway rate limits, kill switch per member, price bands in risk.' },
     { f: 'Market-data packet loss', detect: 'Sequence gaps at subscribers', fix: 'Retransmission service and snapshots; A/B redundant feeds.' },
+    { f: 'Split brain: two engines both act as primary', detect: 'Two outputs carry the same sequence number with different epochs', fix: 'Promote only through an arbiter or consensus group; stamp every output with an epoch, and have gateways and the feed ignore older epochs (fencing).' },
     { f: 'Journal disk or replica slow', detect: 'Journal latency and replication lag', fix: 'Ack only after replication; fast sequential storage; alert before the ring fills.' }
   ],
 
@@ -363,6 +366,7 @@ SD.register({
     { q: 'Market order, limit order, IOC: how does the engine treat them?', a: '<ul><li><b>Limit</b>: match while the opposite best price crosses, rest the remainder.</li><li><b>Market</b>: match at any price; the remainder is cancelled (exchanges usually add price protection).</li><li><b>IOC</b>: like limit but never rests; the remainder is cancelled.</li></ul>', lvl: 'core' },
     { q: 'Why store prices as integers?', a: '<p>Floating point cannot represent most decimal prices exactly, so 0.1 + 0.2 ≠ 0.3 and two "equal" prices can land on different levels. Use <code>long</code> ticks (e.g. price × 10,000) for prices and quantities. It is also faster to compare and hash.</p>', lvl: 'core' },
     { q: 'How do you test a matching engine?', a: '<p>Deterministic replay: record production input, replay it against a new build, and diff every output message. Add property tests (book never crossed after matching, quantities conserved, FIFO within a level) and latency tests with realistic bursts.</p>', lvl: 'deep' },
+    { q: 'How does failover avoid two primaries?', a: '<p>The standby must not promote itself just because heartbeats stopped: the primary may only be cut off from it. Use an <b>arbiter</b> (or a small consensus group) to decide, and give each promotion a higher <b>epoch</b>. Every output and journal write carries the epoch, so gateways, the market-data publisher and the journal reject messages from a stale primary. That is <b>fencing</b>.</p><p>Because both engines applied the same sequenced input, the new primary only has to resume at the next sequence number.</p>', fu: 'What happens to orders the old primary acknowledged but the standby never received? (None exist if you ack only after replication.)', lvl: 'deep' },
     { q: 'What does kernel bypass buy you?', a: '<p>Packets go from the NIC to user-space memory without system calls, interrupts or kernel copies. That removes microseconds and, more importantly, jitter from each hop. It only matters once the rest of the path is already microsecond-scale.</p>', lvl: 'deep' }
   ],
 
@@ -451,6 +455,7 @@ public final class EnginePipeline {
       code: `import socket, struct
 
 HDR = struct.Struct(">10sQH")        # session (10 bytes), sequence number, message count
+END_OF_SESSION = 0xFFFF
 
 def listen(group: str, port: int, on_message, request_retransmit):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
@@ -462,10 +467,12 @@ def listen(group: str, port: int, on_message, request_retransmit):
     while True:
         pkt = sock.recv(65535)
         session, seq, count = HDR.unpack_from(pkt)
+        if count == END_OF_SESSION:
+            return                                                # feed is over for the day
         if expected is not None and seq > expected:
             request_retransmit(session, expected, seq - expected)   # missing range
         if expected is not None and seq + count <= expected:
-            continue                                              # duplicate (A/B feed)
+            continue                                              # duplicate (A/B feed) or heartbeat
         off = HDR.size
         for i in range(count):
             (length,) = struct.unpack_from(">H", pkt, off)
@@ -473,7 +480,7 @@ def listen(group: str, port: int, on_message, request_retransmit):
                 on_message(seq + i, pkt[off + 2: off + 2 + length])
             off += 2 + length
         expected = seq + count`,
-      note: 'Each message in a MoldUDP64 packet is prefixed by a 2-byte length, and the header sequence number is that of the first message. A real client buffers out-of-order packets until the retransmission arrives.'
+      note: 'Each message in a MoldUDP64 packet is prefixed by a 2-byte length, and the header sequence number is that of the first message. A count of 0 is a heartbeat and <code>0xFFFF</code> marks end of session; without that check the loop would try to parse 65,535 messages. A real client buffers out-of-order packets until the retransmission arrives.'
     }
   ],
 

@@ -60,11 +60,9 @@ SD.widget('rate-limiter', function (root, ctx) {
       gauge(t) { const e = this.est(t); return [e / L, e.toFixed(1) + ' / ' + L]; } }
   ];
 
-  // ---- drawing
-  const VW = (root.clientWidth || window.innerWidth) < 560 ? 360 : 820;   // narrower viewBox on phones keeps text legible
-  const LH = 74, X0 = 10, X1 = VW - 98, GX = VW - 74;
-  const H = algos.length * LH + 22;
-  const S = svg('svg', { viewBox: `0 0 ${VW} ${H}`, role: 'img', 'aria-label': 'Four rate limiter lanes' });
+  // ---- drawing (phone: 360-wide viewBox, 13–14-unit text; desktop: 820 wide)
+  let VW, LH, X0, X1, GX, H, F;
+  const S = svg('svg', { role: 'img', 'aria-label': 'Four rate limiter lanes' });
   const gGrid = svg('g'), gTicks = svg('g'), gTop = svg('g');
   S.append(gGrid, gTicks, gTop);
   root.append(el('div', { class: 'w-stage' }, S));
@@ -72,23 +70,35 @@ SD.widget('rate-limiter', function (root, ctx) {
   const log = el('div', { class: 'w-log', 'aria-live': 'polite' });
   root.append(stats, log);
   const font = (w, px) => `font:${w} ${px}px var(--sans)`;
+  const NARROW_NAME = { 'Sliding-window counter': 'Window counter' };
 
-  const lanes = algos.map((a, i) => {
-    const y = 6 + i * LH;
-    gGrid.append(
-      svg('rect', { x: 2, y: y, width: VW - 4, height: LH - 6, rx: 8, fill: 'var(--surface-2)', stroke: 'var(--border)' }),
-      svg('text', { x: X0, y: y + 17, fill: 'var(--text)', style: font(700, 13), text: a.name }),
-      svg('line', { x1: X0, x2: X1, y1: y + 44, y2: y + 44, stroke: 'var(--border)' }),
-      svg('rect', { x: GX, y: y + 10, width: 66, height: LH - 26, rx: 5, fill: 'var(--surface)', stroke: 'var(--border)' })
-    );
-    const peak = svg('text', { x: X1, y: y + 17, 'text-anchor': 'end', style: font(600, 11), fill: 'var(--text-3)' });
-    const fill = svg('rect', { x: GX + 2, width: 62, rx: 4 });
-    const gtxt = svg('text', { x: GX + 33, y: y + LH - 21, 'text-anchor': 'middle', style: font(700, 12), fill: 'var(--text)' });
-    gTop.append(peak, fill, gtxt);
-    return { a, y, peak, fill, gtxt, events: [] };
-  });
-  gGrid.append(svg('text', { x: X1, y: H - 4, 'text-anchor': 'end', style: font(500, 11), fill: 'var(--text-3)', text: 'now →' }),
-    svg('text', { x: X0, y: H - 4, style: font(500, 11), fill: 'var(--text-3)', text: '← ' + SPAN + ' s ago · ▲ pass · ▼ 429' }));
+  let lanes = [];
+  function build(narrow) {
+    VW = narrow ? 360 : 820; LH = narrow ? 78 : 74; X0 = 10; X1 = VW - 98; GX = VW - 74;
+    F = narrow ? { name: 14, peak: 13, gauge: 13, foot: 13 } : { name: 13, peak: 11, gauge: 12, foot: 11 };
+    H = algos.length * LH + (narrow ? 26 : 22);
+    S.setAttribute('viewBox', `0 0 ${VW} ${H}`);
+    gGrid.innerHTML = ''; gTop.innerHTML = '';
+    const old = lanes;
+    lanes = algos.map((a, i) => {
+      const y = 6 + i * LH, mid = y + Math.round(LH * 0.6);
+      gGrid.append(
+        svg('rect', { x: 2, y: y, width: VW - 4, height: LH - 6, rx: 8, fill: 'var(--surface-2)', stroke: 'var(--border)' }),
+        svg('text', { x: X0, y: y + 18, fill: 'var(--text)', style: font(700, F.name), text: narrow ? (NARROW_NAME[a.name] || a.name) : a.name }),
+        svg('line', { x1: X0, x2: X1, y1: mid, y2: mid, stroke: 'var(--border)' }),
+        svg('rect', { x: GX, y: y + 10, width: 66, height: LH - 26, rx: 5, fill: 'var(--surface)', stroke: 'var(--border)' })
+      );
+      const peak = svg('text', { x: X1, y: y + 18, 'text-anchor': 'end', style: font(600, F.peak), fill: 'var(--text-3)' });
+      const fill = svg('rect', { x: GX + 2, width: 62, rx: 4 });
+      const gtxt = svg('text', { x: GX + 33, y: y + LH - 21, 'text-anchor': 'middle', style: font(700, F.gauge), fill: 'var(--text)' });
+      gTop.append(peak, fill, gtxt);
+      return { a, y, mid, peak, fill, gtxt, events: old[i] ? old[i].events : [] };
+    });
+    gGrid.append(svg('text', { x: X1, y: H - 5, 'text-anchor': 'end', style: font(500, F.foot), fill: 'var(--text-3)', text: 'now →' }),
+      svg('text', { x: X0, y: H - 5, style: font(500, F.foot), fill: 'var(--text-3)', text: '← ' + SPAN + ' s ago · ▲ pass · ▼ 429' }));
+  }
+  build(ctx.narrow);
+  ctx.onResize((n) => { build(n); draw(); });
 
   const xOf = (t) => X1 - ((now - t) / SPAN) * (X1 - X0);
   function peakIn(events) {           // most passed requests in any 2 s span (true sliding count)
@@ -110,7 +120,7 @@ SD.widget('rate-limiter', function (root, ctx) {
       ln.events = ln.events.filter((e) => now - e.t <= SPAN);
       ln.events.forEach((e) => {
         const x = xOf(e.t);
-        gTicks.append(svg('line', { x1: x, x2: x, y1: ln.y + 44, y2: ln.y + (e.ok ? 24 : 62), stroke: e.ok ? 'var(--ok)' : 'var(--err)', 'stroke-width': 2.2, 'stroke-linecap': 'round' }));
+        gTicks.append(svg('line', { x1: x, x2: x, y1: ln.mid, y2: ln.mid + (e.ok ? -20 : 18), stroke: e.ok ? 'var(--ok)' : 'var(--err)', 'stroke-width': 2.2, 'stroke-linecap': 'round' }));
       });
       const p = peakIn(ln.events);
       ln.peak.textContent = 'peak ' + p + '/2s';

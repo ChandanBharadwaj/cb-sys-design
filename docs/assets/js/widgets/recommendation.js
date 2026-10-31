@@ -2,7 +2,7 @@
    watched filter → ranking (relevance + popularity + freshness) → MMR diversity re-rank. Latencies are illustrative. */
 SD.widget('recommendation', function (root, ctx) {
   const { el, svg } = ctx;
-  const W = 440, H = 350, N = 5000, D = 8, BUDGET = 150;
+  const N = 5000, D = 8, BUDGET = 150;
   let seed = 11;
   const rand = () => { seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t ^= t + Math.imul(t ^ (t >>> 7), 61 | t); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
   const gauss = () => Math.sqrt(-2 * Math.log(rand() + 1e-9)) * Math.cos(2 * Math.PI * rand());
@@ -41,7 +41,7 @@ SD.widget('recommendation', function (root, ctx) {
   root.append(el('div', { class: 'w-controls' }, cookBtn, resetBtn),
     el('div', { class: 'w-controls' }, el('label', null, 'Candidates ', kOut, kIn), el('label', null, 'Diversity ', dOut, dIn)));
 
-  const S_ = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Recommendation funnel' });
+  const S_ = svg('svg', { role: 'img', 'aria-label': 'Recommendation funnel' });
   root.append(el('div', { class: 'w-stage' }, S_));
   const stats = el('div', { class: 'w-stats' });
   const log = el('div', { class: 'w-log', 'aria-live': 'polite' });
@@ -50,26 +50,41 @@ SD.widget('recommendation', function (root, ctx) {
   function say(t) { log.prepend(el('div', { html: t })); while (log.children.length > 30) log.lastChild.remove(); }
 
   const STAGES = ['catalog', 'retrieved', 'eligible', 'ranked', 'shown'];
-  const bars = STAGES.map((name, i) => {
-    const y = 6 + i * 32;
-    const r = svg('rect', { x: W / 2, y, width: 0, height: 26, rx: 6, fill: `color-mix(in srgb, var(--accent) ${70 - i * 10}%, var(--surface))` });
-    const t = T(W / 2, y + 18, '', 'font:700 14px var(--sans);paint-order:stroke;stroke:var(--surface);stroke-width:3px');
-    S_.append(r, t); return { r, t, w: 0, target: 0 };
-  });
   const LAT_COL = ['#0ea5e9', '#94a3b8', '#f59e0b', '#8b5cf6', '#22c55e'];
-  S_.append(T(6, 186, 'latency vs ' + BUDGET + ' ms budget', 'font:700 13px var(--sans)', 'start', 'var(--text-3)'));
-  S_.append(svg('rect', { x: 6, y: 192, width: 428, height: 22, rx: 5, fill: 'var(--surface-2)', stroke: 'var(--border)' }));
-  const latSegs = LAT_COL.map((c) => { const r = svg('rect', { x: 6, y: 192, width: 0, height: 22, fill: c }); S_.append(r); return r; });
-  const latTxt = T(428, 186, '', 'font:700 13px var(--mono)', 'end');
-  S_.append(latTxt);
-  S_.append(T(6, 234, 'final 10 (MMR re-ranked)', 'font:700 13px var(--sans)', 'start', 'var(--text-3)'));
-  const chips = Array.from({ length: 10 }, (_, i) => {
-    const x = 6 + (i % 5) * 86.4, y = 242 + Math.floor(i / 5) * 52;
-    const r = svg('rect', { x, y, width: 82, height: 46, rx: 8 });
-    const a = T(x + 41, y + 20, '', 'font:700 13px var(--sans)', 'middle', '#fff');
-    const b = T(x + 41, y + 37, '', 'font:600 12px var(--mono)', 'middle', '#fff');
-    S_.append(r, a, b); return { r, a, b };
-  });
+  // two layouts: phones get a 360-wide viewBox with 13–15-unit text; desktop keeps the 440-wide one
+  const LAY = {
+    wide: { W: 440, barH: 26, barGap: 32, bF: 14, lF: 13, latY: 186, chipY: 234, chipH: 46, chipGap: 52, cF: 13, iF: 12 },
+    narrow: { W: 360, barH: 28, barGap: 34, bF: 15, lF: 14, latY: 200, chipY: 254, chipH: 50, chipGap: 56, cF: 13, iF: 13 }
+  };
+  let L, bars, latSegs, latTxt, chips;
+  function build(n) {
+    L = n ? LAY.narrow : LAY.wide;
+    const W = L.W, IW = W - 12;
+    S_.innerHTML = '';
+    S_.setAttribute('viewBox', `0 0 ${W} ${L.chipY + 8 + 2 * L.chipGap}`);
+    bars = STAGES.map((name, i) => {
+      const y = 6 + i * L.barGap;
+      const r = svg('rect', { x: W / 2, y, width: 0, height: L.barH, rx: 6, fill: `color-mix(in srgb, var(--accent) ${70 - i * 10}%, var(--surface))` });
+      const t = T(W / 2, y + L.barH / 2 + L.bF * 0.36, '', `font:700 ${L.bF}px var(--sans);paint-order:stroke;stroke:var(--surface);stroke-width:3px`);
+      S_.append(r, t); return { r, t, w: 0, target: 0 };
+    });
+    S_.append(T(6, L.latY, 'latency vs ' + BUDGET + ' ms budget', `font:700 ${L.lF}px var(--sans)`, 'start', 'var(--text-3)'));
+    S_.append(svg('rect', { x: 6, y: L.latY + 6, width: IW, height: 22, rx: 5, fill: 'var(--surface-2)', stroke: 'var(--border)' }));
+    latSegs = LAT_COL.map((c) => { const r = svg('rect', { x: 6, y: L.latY + 6, width: 0, height: 22, fill: c }); S_.append(r); return r; });
+    latTxt = T(W - 12, L.latY, '', `font:700 ${L.lF}px var(--mono)`, 'end');
+    S_.append(latTxt);
+    S_.append(T(6, L.chipY, 'final 10 (MMR re-ranked)', `font:700 ${L.lF}px var(--sans)`, 'start', 'var(--text-3)'));
+    const cw = (IW - 4 * 4.4) / 5;
+    chips = Array.from({ length: 10 }, (_, i) => {
+      const x = 6 + (i % 5) * (cw + 4.4), y = L.chipY + 8 + Math.floor(i / 5) * L.chipGap;
+      const r = svg('rect', { x, y, width: cw, height: L.chipH, rx: 8 });
+      const a = T(x + cw / 2, y + L.chipH * 0.43, '', `font:700 ${L.cF}px var(--sans)`, 'middle', '#fff');
+      const b = T(x + cw / 2, y + L.chipH * 0.8, '', `font:600 ${L.iF}px var(--mono)`, 'middle', '#fff');
+      S_.append(r, a, b); return { r, a, b };
+    });
+  }
+  build(ctx.narrow);
+  ctx.onResize((n) => { build(n); run(); });
 
   function run() {
     // 1. candidate generation: exact top-K by dot product (ANN approximates this) + 20 trending
@@ -95,9 +110,9 @@ SD.widget('recommendation', function (root, ctx) {
       }
     }
     const counts = [N, cands.length, elig.length, ranked.length, pick.length];
-    counts.forEach((n, i) => { bars[i].target = 40 + 388 * Math.log10(n + 1) / Math.log10(N + 1); bars[i].t.textContent = STAGES[i] + ' · ' + n.toLocaleString(); });
+    counts.forEach((n, i) => { bars[i].target = 40 + (L.W - 52) * Math.log10(n + 1) / Math.log10(N + 1); bars[i].t.textContent = STAGES[i] + ' · ' + n.toLocaleString(); });
     const lat = [6 + K * 0.004, 1 + cands.length * 0.001, 3 + elig.length * 0.012, 5 + elig.length * 0.07, 2 + 50 * 0.04];
-    const total = lat.reduce((a, b) => a + b, 0), scale = 428 / Math.max(BUDGET, total);
+    const total = lat.reduce((a, b) => a + b, 0), scale = (L.W - 12) / Math.max(BUDGET, total);
     let x = 6;
     latSegs.forEach((r, i) => { const w = lat[i] * scale; r.setAttribute('x', x); r.setAttribute('width', Math.max(0, w)); x += w; });
     latTxt.textContent = total.toFixed(0) + ' ms';
@@ -115,7 +130,7 @@ SD.widget('recommendation', function (root, ctx) {
       .forEach(([k, v]) => stats.append(el('span', { class: 'w-stat', html: `${k}: <b>${v}</b>` })));
     if (ctx.reduced) bars.forEach((b) => { b.w = b.target; paintBar(b); });
   }
-  function paintBar(b) { b.r.setAttribute('x', (W - b.w) / 2); b.r.setAttribute('width', b.w); }
+  function paintBar(b) { b.r.setAttribute('x', (L.W - b.w) / 2); b.r.setAttribute('width', b.w); }
   ctx.loop((dt) => { bars.forEach((b) => { if (Math.abs(b.target - b.w) > 0.5) { b.w += (b.target - b.w) * Math.min(1, dt / 120); paintBar(b); } }); });
   run();
   say('Drag Diversity from 0% to 60% and watch the topic colours in the final 10. Then watch a few cooking videos.');

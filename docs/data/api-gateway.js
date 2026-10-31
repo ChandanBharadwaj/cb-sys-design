@@ -285,6 +285,9 @@ SD.register({
       else if (s.agg === 'on' && s.style === 'edge') verdict = '⚠ <b>Gateway monolith risk.</b> Move per-screen composition into BFFs that the client teams own.';
       else if (s.auth === 'svc') verdict = '⚠ <b>No front-door check.</b> Validate tokens at the edge and let services re-check scopes.';
       else if (s.io === 'async' && s.auth === 'both' && s.style !== 'edge') verdict = '✅ <b>Solid modern design:</b> a thin non-blocking edge, composition owned by the client teams, and tokens checked at the edge and again in services.';
+      else if (s.io === 'block') verdict = '👍 <b>Blocking only just works here:</b> ' + pool + ' threads cover ' + SD.fmt.num(cpuCap) + ' req/s per node only while backends answer within ' + Math.round(pool / cpuCap * 1000) + ' ms. Any slowdown makes the node thread-bound, so keep strict timeouts.';
+      else if (s.auth === 'gw') verdict = '👍 <b>Fast and simple</b>, but services trust identity headers from the gateway. That is safe only if nothing can reach them around it (mTLS or network policy); re-checking tokens in services is cheap insurance.';
+      else if (s.style === 'edge') verdict = '👍 <b>One gateway with defence in depth.</b> Simple to run; add BFFs once mobile and web need different response shapes.';
       else verdict = '👍 Workable. The meters show which trade-off you are paying for.';
       const showBff = s.agg === 'on' || s.style === 'bff';
       const flow = ['mob>lb', 'lb>gw', 'gw>rl'].concat(showBff ? ['gw>bff', 'bff>ord', 'bff>cat'] : ['gw>cat']);
@@ -317,8 +320,8 @@ SD.register({
       { when: '2015', who: 'Mashape', title: 'Kong open-sourced', text: 'Kong was built at Mashape for its API marketplace and released as open source. It is a <b>Lua application running inside NGINX (OpenResty)</b>, with plugins for auth, logging and rate limiting.', src: 1 },
       { when: 'Sept 2016', who: 'Lyft', title: 'Envoy announced', text: 'A C++ <b>L3/L4 proxy with an HTTP L7 filter layer</b>, run next to every service and at the edge. Lyft used it for Python, Go, C++ and PHP services. It later became the data plane for many service meshes.', src: 2 },
       { when: '2016', who: 'Netflix', title: 'Zuul 2: async and non-blocking', text: 'Zuul was rebuilt on <b>Netty</b>. The main win was <b>connection scaling</b>. For their CPU-bound cluster the efficiency gain was small, and hidden blocking calls and thread-locals made the migration hard.', src: 3 },
-      { when: '2018', who: 'Netflix', title: 'Zuul 2 open-sourced', text: 'At the time Netflix ran <b>more than 80 Zuul 2 clusters</b> in front of ~100 backend clusters, at <b>over 1 million requests per second</b>. The release included HTTP/2 and mutual TLS.', src: 4 },
-      { when: '2020s', who: 'Spring · AWS', title: 'Token-bucket limits as a built-in filter', text: 'Spring Cloud Gateway\'s <code>RequestRateLimiter</code> runs a Redis token bucket (<code>replenishRate</code>, <code>burstCapacity</code>, <code>requestedTokens</code>). AWS API Gateway throttles each account to <b>10,000 req/s with a 5,000 burst</b> per Region by default (lower in some Regions).', src: 5 }
+      { when: '2018', who: 'Netflix', title: 'Zuul 2 open-sourced', text: 'At the time Netflix ran <b>more than 80 Zuul 2 clusters</b> in front of ~100 backend clusters, at <b>over 1 million requests per second</b>. The first open-source release included HTTP/2 and mutual TLS; WebSockets and rate limiting were listed as coming later.', src: 4 },
+      { when: '2020s', who: 'Spring · AWS', title: 'Token-bucket limits as a built-in filter', text: 'Spring Cloud Gateway\'s <code>RequestRateLimiter</code> runs a Redis token bucket (<code>replenishRate</code>, <code>burstCapacity</code>, <code>requestedTokens</code>). AWS API Gateway throttles each account to <b>10,000 req/s with a 5,000 burst</b> per Region by default (lower in some Regions).', src: 6 }
     ],
     lessons: [
       'Keep the gateway <b>thin and generic</b>: cross-cutting concerns only. Business composition belongs in BFFs or services.',
@@ -331,7 +334,8 @@ SD.register({
       { title: 'Kong API Gateway', url: 'https://www.thoughtworks.com/radar/platforms/kong-api-gateway', pub: 'Thoughtworks Technology Radar' },
       { title: 'Announcing Envoy: C++ L7 proxy and communication bus', url: 'https://eng.lyft.com/announcing-envoy-c-l7-proxy-and-communication-bus-92520b6c8191', pub: 'Lyft Engineering, 2016' },
       { title: 'Zuul 2: The Netflix Journey to Asynchronous, Non-Blocking Systems', url: 'https://medium.com/netflix-techblog/zuul-2-the-netflix-journey-to-asynchronous-non-blocking-systems-45947377fb5c', pub: 'Netflix Technology Blog, 2016' },
-      { title: 'Netflix open sources Zuul 2 cloud gateway', url: 'https://hub.packtpub.com/netflix-open-sources-zuul-2-cloud-gateway', pub: 'Packt Hub (summary of the Netflix Tech Blog post), 2018' },
+      { title: 'Open Sourcing Zuul 2', url: 'https://netflixtechblog.com/open-sourcing-zuul-2-82ea476cb2b3', pub: 'Netflix Technology Blog, 2018' },
+      { title: 'Spring Cloud 2025.0 Release Notes (gateway property prefix and starter renames)', url: 'https://github.com/spring-cloud/spring-cloud-release/wiki/Spring-Cloud-2025.0-Release-Notes', pub: 'Spring Cloud (GitHub wiki), 2025' },
       { title: 'RequestRateLimiter GatewayFilter Factory', url: 'https://docs.spring.io/spring-cloud-gateway/reference/spring-cloud-gateway-server-webflux/gatewayfilter-factories/requestratelimiter-factory.html', pub: 'Spring Cloud Gateway reference' },
       { title: 'Throttle requests to your REST APIs for better throughput', url: 'https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-request-throttling.html', pub: 'Amazon API Gateway developer guide' },
       { title: 'How It Works 2.0', url: 'https://github.com/Netflix/zuul/wiki/How-It-Works-2.0', pub: 'Netflix/zuul wiki' }
@@ -370,13 +374,15 @@ SD.register({
     { q: 'How do timeouts, retries and circuit breakers fit together?', a: '<ul><li><b>Timeout</b> on every call, shorter than the client\'s own timeout.</li><li><b>Retry</b> only idempotent requests, with jittered backoff and a retry budget.</li><li><b>Circuit breaker</b>: when the failure or slow-call rate in a window passes a threshold, fail fast for a while, then let probes through (half-open).</li><li><b>Bulkhead</b>: cap concurrency per route so one backend cannot take every connection.</li></ul>', lvl: 'deep' },
     { q: 'How do you do a canary release at the gateway?', a: '<p>Use a weighted route, for example 95/5 between v1 and v2, optionally sticky by user hash. Compare per-version error rate and latency automatically, then raise the weight step by step or set it to 0 to roll back. No redeploy is needed.</p>', lvl: 'core' },
     { q: 'How do routes reach the nodes without restarts?', a: '<p>A <b>control plane</b> holds versioned config and pushes it, for example over Envoy\'s <b>xDS</b> gRPC streams, or each node polls. Nodes swap their routing table atomically and keep the last good version if the control plane is unreachable.</p>', lvl: 'deep' },
+    { q: 'How does the gateway handle WebSockets and other long-lived connections?', a: '<p>Capacity is now measured in <b>open connections</b>, not requests per second, so you need an event-loop proxy (Netty, Envoy) where an idle connection costs memory, not a thread. The L4 balancer must allow the HTTP <code>Upgrade</code> and long idle timeouts, and heartbeats (ping/pong) detect dead peers.</p><p>Deploys are the hard part: a restarted node drops every socket. <b>Drain</b> it (stop accepting, close connections gradually) and have clients reconnect with <b>jittered backoff</b>, or the whole fleet reconnects at once to the remaining nodes.</p>', fu: 'How do you send a message to one user\'s socket when it lives on another node? (A connection registry or pub/sub keyed by user id.)', lvl: 'deep' },
     { q: 'What goes into the gateway\'s latency budget?', a: '<p>TLS termination (session resumption helps), JWT verification (microseconds with cached keys), one Redis round trip for limits (sub-millisecond in the same AZ), the route lookup, and the proxy hop on a pooled connection.</p><p>Keep the total to a few ms. Write logs and metrics asynchronously, never on the response path.</p>', lvl: 'deep' }
   ],
 
   code: [
     {
       title: 'Spring Cloud Gateway: canary route + Redis rate limiter + breaker', lang: 'java',
-      code: `// spring-cloud-starter-gateway(-server-webflux), spring-boot-starter-data-redis-reactive,
+      code: `// spring-cloud-starter-gateway-server-webflux (Spring Cloud 2025.0+; was spring-cloud-starter-gateway),
+// spring-boot-starter-data-redis-reactive,
 // spring-cloud-starter-circuitbreaker-reactor-resilience4j
 @Configuration
 public class GatewayRoutes {
@@ -433,10 +439,12 @@ public class GatewayRoutes {
 
 spring:
   cloud:
-    gateway:                               # 2025.0+: spring.cloud.gateway.server.webflux.*
-      httpclient:
-        connect-timeout: 500               # ms
-        response-timeout: 2s               # global cap; per-route via route metadata`,
+    gateway:
+      server:
+        webflux:                           # Spring Cloud 2025.0+ prefix; before: spring.cloud.gateway.httpclient
+          httpclient:
+            connect-timeout: 500           # ms
+            response-timeout: 2s           # global cap; per-route via route metadata`,
       note: 'The breaker counts calls that time out as failures, so the time limiter and the breaker work together.'
     },
     {

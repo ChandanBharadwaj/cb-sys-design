@@ -42,6 +42,8 @@ SD.widget('proximity-service', function (root, ctx) {
     }
   }
   let places = Array.from({ length: 320 }, randPlace);
+  // phones: the 500-unit map is shown ~340px wide, so text and dots are scaled up by K
+  const K = () => (ctx.narrow ? 1.9 : 1);
 
   // ---- controls ----
   let mode = 'geo', prec = 5, radius = 1.5, last = null;
@@ -107,7 +109,7 @@ SD.widget('proximity-service', function (root, ctx) {
   }
 
   // ---- drawing ----
-  const pt = (p, fill, r) => svg('circle', { cx: p.x, cy: p.y, r: r || 2.4, fill, opacity: 0.9 });
+  const pt = (p, fill, r) => svg('circle', { cx: p.x, cy: p.y, r: (r || 2.4) * (ctx.narrow ? 1.35 : 1), fill, opacity: 0.9 });
   function drawGrid() {
     gGrid.innerHTML = '';
     if (mode === 'geo') {
@@ -134,8 +136,9 @@ SD.widget('proximity-service', function (root, ctx) {
   function search(q) {
     last = q;
     const rpx = radius / KM_PX;
-    const circle = svg('circle', { cx: q.x, cy: q.y, r: rpx, fill: 'none', stroke: 'var(--accent)', 'stroke-width': 2, 'stroke-dasharray': '5 4' });
-    const pin = svg('circle', { cx: q.x, cy: q.y, r: 5, fill: 'var(--accent)', stroke: 'var(--surface)', 'stroke-width': 2 });
+    const k = K();
+    const circle = svg('circle', { cx: q.x, cy: q.y, r: rpx, fill: 'none', stroke: 'var(--accent)', 'stroke-width': 2 * k, 'stroke-dasharray': `${5 * k} ${4 * k}` });
+    const pin = svg('circle', { cx: q.x, cy: q.y, r: 5 * k, fill: 'var(--accent)', stroke: 'var(--surface)', 'stroke-width': 2 * k });
     const hits = new Set(places.filter((p) => hav(q, p) <= radius));
     if (mode === 'geo') {
       const [dl, da] = cellSize(prec);
@@ -146,8 +149,9 @@ SD.widget('proximity-service', function (root, ctx) {
       cells.forEach((h) => {
         const b = bounds(h), x = X(b.lo[0]), y = Y(b.la[1]), w = X(b.lo[1]) - x, hh = Y(b.la[0]) - y;
         rects.push({ x, y, width: w, height: hh, fill: h === me ? 'color-mix(in srgb, var(--accent) 26%, transparent)' : 'color-mix(in srgb, var(--accent) 11%, transparent)', stroke: 'var(--accent)', 'stroke-width': h === me ? 2 : 0.8 });
-        const cx = Math.min(W - 24, Math.max(24, x + w / 2)), cy = Math.min(H - 6, Math.max(12, y + 12));
-        if (h === me || prec < 6) labels.push(svg('text', { x: cx, y: cy, 'text-anchor': 'middle', style: `font:${h === me ? 700 : 500} ${prec === 6 ? 8 : 10}px var(--mono);paint-order:stroke;stroke:var(--surface);stroke-width:3px`, fill: 'var(--text)', text: h }));
+        const fs = (prec === 6 && !ctx.narrow ? 8 : 10) * k;
+        const cx = Math.min(W - 26 * k, Math.max(26 * k, x + w / 2)), cy = Math.min(H - 6, Math.max(fs + 2, y + fs + 2));
+        if (h === me || prec < 6) labels.push(svg('text', { x: cx, y: cy, 'text-anchor': 'middle', style: `font:${h === me ? 700 : 500} ${fs}px var(--mono);paint-order:stroke;stroke:var(--surface);stroke-width:${3 * k}px`, fill: 'var(--text)', text: h }));
       });
       const cand = places.filter((p) => cells.has(p.h));
       const candSet = new Set(cand);
@@ -179,6 +183,7 @@ SD.widget('proximity-service', function (root, ctx) {
     }
   }
 
+  ctx.onResize(() => { if (last) search(last); else draw(); });
   rehash(); buildTree(); syncControls(); draw();
   search({ x: X(-122.412), y: Y(37.784), lng: -122.412, lat: 37.784 });
   say('Tip: in Geohash mode pick <b>len 6</b> and a 2 km radius, then tap downtown. Some places inside the circle are missed (red).');

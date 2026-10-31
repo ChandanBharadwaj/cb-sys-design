@@ -1,8 +1,13 @@
 /* Hybrid fan-out on a real power-law follow graph: push below the threshold, pull (merge at read) above it. */
 SD.widget('newsfeed', function (root, ctx) {
   const { el, svg } = ctx;
-  const N = 240, COLS = 16, K = 12, LEN = 20;
-  const W = 500, H = 372, X0 = 26, DX = 30, Y0 = 66, DY = 21;
+  const N = 240, K = 12, LEN = 20;
+  // desktop: 16 columns in a 500-wide viewBox; phone: 12 columns in a 360-wide one, legend on two lines
+  const LAYOUT = {
+    wide: { W: 500, H: 372, COLS: 16, X0: 26, DX: 30, Y0: 66, DY: 21, fT: 18, fS: 13, subY: [44], rk: 1 },
+    narrow: { W: 360, H: 460, COLS: 12, X0: 22, DX: 28.7, Y0: 86, DY: 19, fT: 17, fS: 13.5, subY: [44, 62], rk: 0.9 }
+  };
+  let L = ctx.narrow ? LAYOUT.narrow : LAYOUT.wide;
 
   // seeded RNG so the graph is the same on every load
   let seed = 7;
@@ -39,26 +44,34 @@ SD.widget('newsfeed', function (root, ctx) {
   root.append(el('div', { class: 'w-controls' }, postBtn, celebBtn, readBtn, el('label', null, 'Pull above ', tOut, ' followers ', tIn)));
 
   const stage = el('div', { class: 'w-stage', style: { maxWidth: '720px', margin: '0 auto' } });
-  const S = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Follow graph with 240 users' });
-  const gLines = svg('g'), gDots = svg('g'), gTop = svg('g');
-  const title = svg('text', { x: 12, y: 22, style: 'font:700 18px var(--sans)', fill: 'var(--text)', text: 'Tap any dot to post as that user' });
-  const sub = svg('text', { x: 12, y: 44, style: 'font:500 13px var(--mono)', fill: 'var(--text-3)', text: 'dot size = followers · ringed = pulled at read time' });
-  S.append(title, sub, gLines, gDots, gTop);
+  const S = svg('svg', { role: 'img', 'aria-label': 'Follow graph with 240 users' });
+  const gLines = svg('g'), gDots = svg('g'), gTop = svg('g'), gHead = svg('g');
+  S.append(gHead, gLines, gDots, gTop);
   stage.append(S); root.append(stage);
   const st = el('div', { class: 'w-stats' });
   const log = el('div', { class: 'w-log', 'aria-live': 'polite' });
   root.append(st, log);
 
-  const pos = (u) => [X0 + (u % COLS) * DX, Y0 + Math.floor(u / COLS) * DY];
+  const pos = (u) => [L.X0 + (u % L.COLS) * L.DX, L.Y0 + Math.floor(u / L.COLS) * L.DY];
   const dots = [];
   for (let u = 0; u < N; u++) {
-    const [x, y] = pos(u);
     const r = Math.min(10.5, 4.2 + Math.log2(1 + followers[u].length) * 0.85);
-    const c = svg('circle', { cx: x, cy: y, r, style: 'cursor:pointer;transition:fill .25s, stroke .25s' });
+    const c = svg('circle', { r, 'data-r': r, style: 'cursor:pointer;transition:fill .25s, stroke .25s' });
     c.addEventListener('click', () => post(u));
     c.append(svg('title', { text: `user #${u} · ${followers[u].length} followers` }));
     gDots.append(c); dots.push(c);
   }
+  function layout() {
+    S.setAttribute('viewBox', `0 0 ${L.W} ${L.H}`);
+    gHead.innerHTML = '';
+    gHead.append(svg('text', { x: 12, y: 22, style: `font:700 ${L.fT}px var(--sans)`, fill: 'var(--text)', text: 'Tap any dot to post as that user' }));
+    const subs = L.subY.length > 1 ? ['dot size = followers', 'ringed = pulled at read time'] : ['dot size = followers · ringed = pulled at read time'];
+    subs.forEach((t, i) => gHead.append(svg('text', { x: 12, y: L.subY[i], style: `font:500 ${L.fS}px var(--mono)`, fill: 'var(--text-3)', text: t })));
+    dots.forEach((c, u) => { const [x, y] = pos(u); c.setAttribute('cx', x); c.setAttribute('cy', y); c.setAttribute('r', (+c.dataset.r * L.rk).toFixed(2)); });
+    gLines.innerHTML = '';
+  }
+  layout();
+  ctx.onResize((n) => { L = n ? LAYOUT.narrow : LAYOUT.wide; layout(); });
   const isCeleb = (u) => followers[u].length > T;
   function paint(hi) {
     dots.forEach((c, u) => {

@@ -131,13 +131,13 @@ SD.register({
     ],
     outputs: [
       { label: 'Chunks to index', f: (v) => v.docs * v.tpd / (v.chunk * (1 - v.overlap / 100)) },
-      { label: 'Vector index (float32, +50% graph overhead)', fmt: 'bytes', f: (v) => v.docs * v.tpd / (v.chunk * (1 - v.overlap / 100)) * v.dims * 4 * 1.5 },
+      { label: 'HNSW index size (float32 + graph links, estimate)', fmt: 'bytes', f: (v) => v.docs * v.tpd / (v.chunk * (1 - v.overlap / 100)) * (v.dims * 4 + 200) },
       { label: 'Tokens to embed for a full re-index', f: (v) => v.docs * v.tpd / (1 - v.overlap / 100) },
       { label: 'Peak questions per second (3× average)', f: (v) => v.qpd / 86400 * 3 },
       { label: 'Prompt tokens per answer (8 chunks + 1.5K)', f: (v) => 8 * v.chunk + 1500 },
       { label: 'Prompt tokens per day', f: (v) => v.qpd * (8 * v.chunk + 1500) }
     ],
-    note: 'The +50% for the HNSW graph and the 1.5K tokens of system prompt and history are <em>estimates</em>. Two levers dominate: <b>chunk size × chunks injected</b> drives LLM cost on every question, while <b>dimensions × chunks</b> drives index RAM. Halving dimensions (or quantizing) halves the index; it does not change LLM cost.'
+    note: 'Index size assumes float32 vectors plus about 200 bytes of HNSW neighbour links per vector (m = 16); pgvector also keeps a second copy of each vector in the table itself. The 1.5K tokens of system prompt and history are an <em>estimate</em>. Two levers dominate: <b>chunk size × chunks injected</b> drives LLM cost on every question, while <b>dimensions × chunks</b> drives index RAM. Halving dimensions (or quantizing) halves the index; it does not change LLM cost.'
   },
 
   api: [
@@ -215,7 +215,7 @@ SD.register({
       steps: [
         { text: 'The CRM MCP server times out on <code>get_customer</code>.', flow: ['orch>tools'], err: ['tools'], badges: { tools: ['timeout', 'err'] }, tone: 'err' },
         { text: 'It is a <b>read</b>, so the orchestrator retries twice with backoff. It is still down.', flow: ['orch>tools', 'orch>tools'], err: ['tools'], badges: { orch: ['retry 2/2', 'warn'] }, tone: 'warn' },
-        { text: 'The error goes back to the model as a tool result marked <code>is_error</code>, not as an exception. The model <b>replans</b>: it searches the docs instead, or asks the user.', flow: ['orch>llm', 'llm>orch', 'orch>retr'], badges: { llm: 'replan' } },
+        { text: 'The error goes back to the model as a tool result flagged as an error (<code>isError</code> in MCP), not as an exception. The model <b>replans</b>: it searches the docs instead, or asks the user.', flow: ['orch>llm', 'llm>orch', 'orch>retr'], badges: { llm: 'replan' } },
         { text: 'A <b>step budget</b> (for example 8 steps) stops a model that keeps retrying. The run is flagged in tracing so it shows up in the eval review.', flow: ['orch>evals'], warn: ['evals'], badges: { evals: ['flagged run', 'warn'] }, tone: 'ok' }
       ]
     },
@@ -263,7 +263,7 @@ SD.register({
       }[s.ret][s.chunk] / 100;
       const fail = Math.min(0.6, F20 * Math.pow(20 / s.k, 0.7));
       const recall = 1 - fail;
-      const chunkTok = 400 + (s.chunk === 'ctx' ? 80 : 0);
+      const chunkTok = 512 + (s.chunk === 'ctx' ? 80 : 0); // same 512-token chunks as the calculator
       const memTok = { none: 0, summary: 300, vector: 700 }[s.mem];
       const ctxTok = s.k * chunkTok + 1500 + memTok;
       const P = {
@@ -294,7 +294,7 @@ SD.register({
       if (s.ret === 'rerank') notes.push('A cross-encoder reads question and chunk together. It is too slow for the whole corpus, so it only reorders the fused top ~50.');
       if (s.chunk === 'ctx') notes.push('Anthropic\'s <b>contextual retrieval</b> prepends a short, generated context to every chunk before embedding and BM25 indexing. With hybrid + rerank they report 67% fewer failed retrievals.');
       if (s.chunk === 'fixed') notes.push('Fixed windows cut tables and sections in half. A chunk saying "the limit is 30 days" may no longer say <i>which</i> limit.');
-      if (s.k > 20 && s.ret !== 'rerank') notes.push('Stuffing ' + s.k + ' chunks adds noise and cost. Rerank and pass fewer, better chunks.');
+      if (s.k > 20 && s.ret !== 'rerank') notes.push('Stuffing ' + s.k + ' chunks adds noise and cost, and models use facts buried in the middle of a long prompt less reliably ("lost in the middle"). Rerank and pass fewer, better chunks.');
       if (s.pattern === 'multi') notes.push('Multi-agent setups multiply LLM calls. Use them for broad, parallel research tasks, not for Q&amp;A.');
       if (s.pattern === 'agent') notes.push('An agent is the right call when you cannot predict the steps. Give it a step budget, tool schemas with clear descriptions, and tracing.');
       if (s.mem === 'vector') notes.push('Long-term facts are retrieved like chunks, so they need the same ACL and staleness rules.');
@@ -346,10 +346,10 @@ SD.register({
     intro: 'The core recipe was published in 2020. Most progress since then is in retrieval quality, evaluation and tool access.',
     timeline: [
       { when: '2009', who: 'Univ. of Waterloo', title: 'Reciprocal rank fusion', text: 'Cormack, Clarke and Büttcher show that summing <code>1/(k + rank)</code> across rankings beats Condorcet and learned fusion. <b>k = 60</b> was fixed in a pilot and not tuned further. Today it is the default way to merge dense and keyword results.', src: 1 },
-      { when: '2020', who: 'Facebook AI', title: 'Retrieval-augmented generation', text: 'Lewis et al. pair a seq2seq generator (parametric memory) with a <b>dense vector index of Wikipedia</b> (non-parametric memory) behind a neural retriever. Answers were more specific and factual than the generator alone.', src: 0 },
+      { when: '2020', who: 'Facebook AI', title: 'Retrieval-augmented generation', text: 'Lewis et al. (NeurIPS 2020) pair a seq2seq generator (parametric memory) with a <b>dense vector index of Wikipedia</b> (non-parametric memory) behind a neural retriever. Answers were more specific and factual than the generator alone.', src: 0 },
       { when: '2023', who: 'Es et al.', title: 'RAGAS', text: 'A framework for <b>reference-free</b> evaluation of RAG pipelines: did the retriever find relevant context, did the model stay faithful to it, and is the answer relevant, without human labels for every case.', src: 2 },
       { when: 'Sep 2024', who: 'Anthropic', title: 'Contextual retrieval', text: 'Prepend a generated, chunk-specific context before embedding and BM25 indexing. Contextual embeddings cut top-20 retrieval failures from <b>5.7% to 3.7%</b>; adding contextual BM25 reached <b>2.9% (−49%)</b>; adding reranking reached <b>1.9% (−67%)</b>.', src: 3 },
-      { when: 'Nov 2024', who: 'Anthropic', title: 'Model Context Protocol', text: 'An open protocol that connects assistants to tools and data, replacing one custom connector per (app, tool) pair. OpenAI adopted it in March 2025.', src: 5 },
+      { when: 'Nov 2024', who: 'Anthropic', title: 'Model Context Protocol', text: 'An open protocol that connects assistants to tools and data, replacing one custom connector per (app, tool) pair. Servers answer <code>tools/list</code> and <code>tools/call</code>; a failed tool returns a normal result with <code>isError: true</code>. OpenAI adopted it in March 2025.', src: 5 },
       { when: 'Dec 2024', who: 'Anthropic', title: 'Building effective agents', text: 'Separates <b>workflows</b> (LLMs and tools on predefined code paths) from <b>agents</b> (the model directs its own steps). Advice: start with the simplest pattern and add complexity only when it clearly pays off.', src: 4 }
     ],
     lessons: [
@@ -359,12 +359,13 @@ SD.register({
       'Prefer a <b>workflow</b>. Use an agent when the path depends on what tools return, and give it budgets.'
     ],
     sources: [
-      { title: 'Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks', url: 'https://arxiv.org/abs/2005.11401', pub: 'Lewis et al., 2020' },
+      { title: 'Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks', url: 'https://papers.nips.cc/paper/2020/hash/6b493230205f780e1bc26945df7481e5-Abstract.html', pub: 'Lewis et al., NeurIPS 2020 (also arXiv 2005.11401)' },
       { title: 'Reciprocal rank fusion outperforms Condorcet and individual rank learning methods', url: 'https://plg.uwaterloo.ca/~gvcormac/cormacksigir09-rrf.pdf', pub: 'SIGIR 2009' },
       { title: 'Ragas: Automated Evaluation of Retrieval Augmented Generation', url: 'https://arxiv.org/abs/2309.15217', pub: 'arXiv, 2023' },
       { title: 'Introducing Contextual Retrieval', url: 'https://www.anthropic.com/news/contextual-retrieval', pub: 'Anthropic, Sep 2024' },
       { title: 'Building effective agents', url: 'https://www.anthropic.com/research/building-effective-agents', pub: 'Anthropic, Dec 2024' },
-      { title: 'Model Context Protocol', url: 'https://en.wikipedia.org/wiki/Model_Context_Protocol', pub: 'Wikipedia' }
+      { title: 'Model Context Protocol', url: 'https://en.wikipedia.org/wiki/Model_Context_Protocol', pub: 'Wikipedia' },
+      { title: 'MCP specification: Tools (tools/list, tools/call, isError)', url: 'https://modelcontextprotocol.io/specification/2025-03-26/server/tools', pub: 'modelcontextprotocol.io, 2025-03-26 revision' }
     ]
   },
 
@@ -398,9 +399,10 @@ SD.register({
     { q: 'How do you evaluate a RAG system?', a: '<p>Split it in two. <b>Retrieval</b>: recall@k and MRR against a labelled set of question → relevant chunks. <b>Generation</b>: faithfulness to the context, answer relevance and correctness, often scored by an LLM judge (as in RAGAS) that you spot-check against humans.</p><p>Add online signals: thumbs, citation clicks, escalations. Every bad trace becomes a regression case.</p>', lvl: 'core' },
     { q: 'How do you enforce document permissions in a multi-tenant system?', a: '<p>Copy ACLs from the source onto every chunk at ingest and keep them in sync. Filter <b>inside the search query</b> for every index (<code>WHERE acl_groups &amp;&amp; :groups</code>), before taking the top k.</p><p>Never rely on the prompt to hide text: anything in the context can leak. For large tenants, use a separate index or partition per tenant.</p>', fu: 'What breaks with post-filtering? (Top 50 minus forbidden chunks can be empty, so recall collapses.)', lvl: 'deep' },
     { q: 'Why add a reranker if you already have vector search?', a: '<p>Vector search uses a <b>bi-encoder</b>: question and chunk are embedded separately, which makes it fast enough for millions of chunks. A <b>cross-encoder</b> reads question and chunk together and scores relevance much better, but is too slow for the whole corpus.</p><p>So retrieve ~50 cheaply, then rerank to the best ~5.</p>', lvl: 'core' },
-    { q: 'What is MCP and why use it?', a: '<p>The <b>Model Context Protocol</b> is an open, JSON-RPC-based protocol where servers expose tools, resources and prompts, and any compatible client (an agent or IDE) can list and call them.</p><p>It turns N apps × M tools of custom glue into N + M implementations, and puts a clear boundary where you enforce auth and approvals.</p>', lvl: 'core' },
+    { q: 'What is MCP and why use it?', a: '<p>The <b>Model Context Protocol</b> is an open, JSON-RPC-based protocol where servers expose tools, resources and prompts, and any compatible client (an agent or IDE) can list and call them.</p><p>It turns N apps × M tools of custom glue into N + M implementations, and puts a clear boundary where you enforce auth and approvals. Two kinds of error: protocol errors (unknown tool, bad arguments) are JSON-RPC errors, while a tool that ran and failed returns a normal result with <code>isError: true</code>, so the model can see it and replan.</p>', lvl: 'core' },
     { q: 'How do you defend against prompt injection?', a: '<p>Treat retrieved documents and tool outputs as <b>untrusted data</b>. Limit which tools each task can call, require human approval for side effects, run input and output classifiers, and never give the agent credentials broader than the user\'s.</p><p>No filter is perfect, so design for <b>least privilege</b>.</p>', lvl: 'deep' },
     { q: 'How do you control cost and latency?', a: '<ul><li>Fewer, better chunks (rerank) instead of stuffing.</li><li>Small model for routing and query rewriting, large model only for the answer.</li><li>Prompt caching for the stable system prompt.</li><li>Stream tokens; run dense and BM25 in parallel.</li><li>Budgets per run, and caching of repeated questions.</li></ul>', lvl: 'deep' },
+    { q: 'An agent run crashes after step 5 of 8, half-way through a refund. How do you recover?', a: '<p>Make the run <b>durable</b>: persist every step (model reply, tool call, tool result) before moving on, as in the <code>run_steps</code> table. On restart, rebuild the message list from the log and continue from the last completed step instead of starting over.</p><p>Side-effecting tools take an <b>idempotency key</b> derived from <code>(run_id, step)</code>, so a call that may or may not have happened can be retried safely. Read-only tools are simply re-run.</p>', fu: 'What if the tool has no idempotency support? (Record intent first, then check the target system for the effect before retrying, or route it to a human.)', lvl: 'deep' },
     { q: 'How do you keep the index fresh?', a: '<p>Use change feeds or webhooks from the sources. Re-chunk only changed docs, skip unchanged ones by content hash, and replace a doc\'s chunks in <b>one transaction</b> keyed by <code>(doc_id, version)</code>.</p><p>An embedding model upgrade needs a full re-embed into a new index, compared on the eval set, then switched with an alias.</p>', lvl: 'core' }
   ],
 
@@ -431,7 +433,8 @@ ORDER BY rrf DESC LIMIT %(top)s
 
 def retrieve(conn: psycopg.Connection, question: str, groups: list[str],
              embed, top: int = 20) -> list[tuple]:
-    qvec = np.asarray(embed(question), dtype=np.float32)   # same model as ingest
+    """embed(text) -> list[float]: your embedding client (same model as ingest)."""
+    qvec = np.asarray(embed(question), dtype=np.float32)
     with conn.cursor() as cur:
         cur.execute("SET LOCAL hnsw.ef_search = 100")
         cur.execute(HYBRID, {"qvec": qvec, "qtext": question,
@@ -474,14 +477,17 @@ def run_agent(model: ChatModel, tools: dict[str, Callable[..., Any]],
         if not reply.tool_calls:            # no tool requested: final answer
             return reply.text or ""
         for call in reply.tool_calls:
+            fn = tools.get(call.name)
             try:
-                result, is_error = tools[call.name](**call.args), False
+                if fn is None:
+                    raise LookupError(f"unknown tool {call.name!r}")
+                result, is_error = fn(**call.args), False
             except Exception as exc:        # unknown tool, bad args, timeout...
                 result, is_error = f"{type(exc).__name__}: {exc}", True
             messages.append({"role": "tool", "tool_call_id": call.id,
                              "content": json.dumps(result, default=str),
                              "is_error": is_error})
-    return "Stopped: step budget exhausted. Here is what I found so far."`,
+    return "Stopped: step budget exhausted without a final answer."`,
       note: 'The model only <i>proposes</i> calls; your code executes them. Errors go back to the model as tool results so it can replan. Each provider adapter maps these neutral messages to its own tool-use format.'
     },
     {
