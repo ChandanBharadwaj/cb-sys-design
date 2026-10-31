@@ -46,7 +46,7 @@ SD.register({
         scene: {
           nodes: [
             { id: 'prod', label: 'Services', sub: 'promo blast', kind: 'client', at: [70, 0] },
-            { id: 'q', label: 'One queue', sub: 'millions waiting', kind: 'queue', at: [210, 0] },
+            { id: 'q', label: 'One queue', sub: 'huge backlog', kind: 'queue', at: [210, 0] },
             { id: 'wk', label: 'Workers', sub: 'retry together', kind: 'compute', at: [350, 0] },
             { id: 'otp', label: 'Login code', sub: 'stuck in line', kind: 'client', at: [70, 110] },
             { id: 'sms', label: 'Providers', sub: 'rejecting', kind: 'external', at: [350, 110] }
@@ -66,8 +66,8 @@ SD.register({
           nodes: [
             { id: 'prod', label: 'Services', sub: 'login · promos', kind: 'client', at: [70, 0] },
             { id: 'api', label: 'Notify API', sub: 'dedup · prefs', kind: 'edge', at: [210, 0] },
-            { id: 'q', label: 'Urgent lane', sub: 'codes, receipts', kind: 'queue', at: [70, 110] },
-            { id: 'qp', label: 'Promo lane', sub: 'paced backlog', kind: 'queue', at: [350, 110] },
+            { id: 'q', label: 'Urgent lane', sub: 'login codes', kind: 'queue', at: [70, 110] },
+            { id: 'qp', label: 'Promo lane', sub: 'paced', kind: 'queue', at: [350, 110] },
             { id: 'wk', label: 'Workers', sub: 'rate-limited', kind: 'compute', at: [210, 220] },
             { id: 'sms', label: 'Providers', sub: 'SMS · push', kind: 'external', at: [350, 220] }
           ],
