@@ -14,6 +14,91 @@ SD.register({
       { v: '~16M', l: 'channels served per Slack channel-server host at peak (2023)' }
     ]
   },
+  intro: {
+    what: 'A chat system delivers short messages between people <b>in real time</b>: one-to-one, in groups, or in big channels. It keeps a connection open to every online phone and browser so new messages show up instantly. It also stores every message, so anyone who was offline can <b>catch up later</b>, in the right order, on any of their devices.',
+    analogy: {
+      icon: '🛎️',
+      title: 'A hotel front desk with a logbook and room phones',
+      text: 'When a message arrives for a guest, the desk writes it in a logbook with the next number. If the guest is in their room, the desk rings the room phone and reads it out. If the guest is out, the message waits, and when they return they ask for "everything after number 41". The desk always knows which room each guest is in. Unlike a real desk, the system also has to cope with guests who hang up mid-sentence and ask for the same message twice.'
+    },
+    problem: 'Alice sends "running 5 min late" to a group of friends. One friend is on fast Wi-Fi, one is in a tunnel, and one has both a phone and a laptop. Each should see the message within a second, <b>exactly once</b>, and in the same order as every other message in the group. Phones lose their connection all the time, so sends and confirmations get lost and retried. The question is <b>"how do I get every message to every device of every member, fast and in order, without losing or duplicating any?"</b>',
+    story: [
+      {
+        stage: 'naive',
+        title: 'Save messages in a database, apps ask for news',
+        text: 'Alice\'s app sends the message to a server, which saves it in a database. Every few seconds, Bob\'s app <b>polls</b> the server: "anything new for me?" It is plain request and response, easy to build, and fine for a small team chat.',
+        scene: {
+          nodes: [
+            { id: 'a', label: 'Alice', sub: 'sends', kind: 'client', at: [70, 0] },
+            { id: 'chat', label: 'Chat server', sub: 'one box', kind: 'service', at: [210, 110] },
+            { id: 'db', label: 'Messages DB', sub: 'all chats', kind: 'store', at: [350, 110] },
+            { id: 'b', label: 'Bob', sub: 'asks every 5 s', kind: 'client', at: [70, 220] }
+          ],
+          edges: [{ from: 'a', to: 'chat' }, { from: 'chat', to: 'db' }, { from: 'b', to: 'chat' }],
+          flow: ['a>chat', 'chat>db', 'b>chat']
+        }
+      },
+      {
+        stage: 'breaks',
+        title: 'Polling floods the server; messages come late or twice',
+        text: 'Millions of phones asking every few seconds means a flood of requests, and almost every answer is "nothing new". Each message still waits up to one poll interval. When Alice\'s confirmation is lost on a bad network, her app resends and the message is <b>stored twice</b>. Add more servers that each stamp messages with their own clock, and friends can see the same messages in different orders.',
+        scene: {
+          nodes: [
+            { id: 'a', label: 'Alice', sub: 'resends', kind: 'client', at: [70, 0] },
+            { id: 'chat', label: 'Chat server', sub: 'polled nonstop', kind: 'service', at: [210, 110] },
+            { id: 'db', label: 'Messages DB', sub: 'duplicates', kind: 'store', at: [350, 110] },
+            { id: 'b', label: 'Bobs ×1M', sub: 'ask every 5 s', kind: 'client', at: [70, 220] }
+          ],
+          edges: [{ from: 'a', to: 'chat' }, { from: 'chat', to: 'db' }, { from: 'b', to: 'chat' }],
+          flow: [['a>chat', 'b>chat'], ['chat>db', 'b>chat'], ['a>chat', 'b>chat']],
+          err: ['chat'],
+          warn: ['db', 'b'],
+          badges: { chat: ['overloaded', 'err'], b: ['late ⏳', 'warn'] }
+        }
+      },
+      {
+        stage: 'fix',
+        title: 'Open connections, one owner per chat, catch up by number',
+        text: 'Each device keeps one <b>WebSocket</b> (a connection that stays open both ways) to a <b>gateway</b> server. A registry records which gateway each user is on. One chat service <b>owns each conversation</b>: it gives every message the next <b>sequence number</b>, saves it, then pushes it to the right gateways. Each message carries an id made on the phone, so a resend is spotted and dropped. A device that was offline asks for everything after the last number it saw.',
+        scene: {
+          nodes: [
+            { id: 'a', label: 'Alice', sub: 'msg id c42', kind: 'client', at: [70, 0] },
+            { id: 'gw1', label: 'Gateway A', sub: 'WebSocket', kind: 'edge', at: [210, 0] },
+            { id: 'reg', label: 'Registry', sub: 'user → gateway', kind: 'cache', at: [70, 110] },
+            { id: 'chat', label: 'Chat service', sub: 'owner · seq #', kind: 'service', at: [210, 110] },
+            { id: 'db', label: 'Message store', sub: 'per chat, in order', kind: 'store', at: [350, 110] },
+            { id: 'b', label: 'Bob', sub: 'after #1080', kind: 'client', at: [70, 220] },
+            { id: 'gw2', label: 'Gateway B', sub: 'WebSocket', kind: 'edge', at: [210, 220] }
+          ],
+          edges: [{ from: 'a', to: 'gw1' }, { from: 'gw1', to: 'chat' }, { from: 'chat', to: 'db' }, { from: 'chat', to: 'reg' }, { from: 'chat', to: 'gw2' }, { from: 'gw2', to: 'b' }],
+          flow: ['a>gw1', 'gw1>chat', 'chat>db', 'chat>reg', 'chat>gw2', 'gw2>b'],
+          ok: ['chat', 'db', 'b'],
+          badges: { db: ['#1081 saved', 'ok'], b: ['✓✓', 'ok'] }
+        }
+      }
+    ],
+    usedBy: ['WhatsApp', 'Discord', 'Slack', 'Facebook Messenger', 'Telegram', 'In-app support chat'],
+    whenToUse: [
+      'People talk to each other and expect replies <b>within a second</b>',
+      'Each conversation needs one stable order and a full history',
+      'Users switch devices or go offline and must catch up <b>without gaps</b>'
+    ],
+    whenNot: [
+      'One-way alerts such as "your order shipped": use a <a href="notifications.html">Notification Gateway</a>',
+      'Posts broadcast to many followers with no conversation: see <a href="newsfeed.html">Newsfeed &amp; Timeline</a>',
+      'Several people editing the same document at once: see <a href="collab-editing.html">Collaborative Editing</a>'
+    ],
+    glossary: [
+      { term: 'WebSocket', def: 'A network connection that stays open, so the server can push messages to the app the moment they arrive.' },
+      { term: 'Gateway', def: 'A server whose only job is to hold many open device connections and pass messages in and out.' },
+      { term: 'Session registry', def: 'A fast lookup table of which gateway each user\'s device is connected to right now; it also tells who is online.' },
+      { term: 'Sequence number', def: 'The position of a message within its conversation, assigned by the server so every member sees the same order.' },
+      { term: 'Client message id', def: 'A unique id the phone creates once per message, so the server can recognise a resend and not store it twice.' },
+      { term: 'At-least-once delivery', def: 'The system resends until it gets a confirmation, so a message may arrive twice but is never lost.' },
+      { term: 'Sync cursor', def: 'The last sequence number a device has received; on reconnect it asks for everything after it.' },
+      { term: 'Fan-out', def: 'Copying one message out to every member, or every gateway, that needs to receive it.' }
+    ]
+  },
 
   requirements: {
     functional: [

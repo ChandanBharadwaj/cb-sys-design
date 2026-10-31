@@ -15,6 +15,92 @@ SD.register({
     ]
   },
 
+  intro: {
+    what: 'A food delivery platform connects three people: a hungry customer, a restaurant kitchen and a delivery rider. It takes the order, tells the kitchen, and chooses which rider should collect the food, so the meal arrives <b>hot and on time</b>.',
+    analogy: {
+      icon: '🍱',
+      title: 'A head waiter who times the pickups',
+      text: 'In a busy restaurant, the head waiter does not send a waiter to the kitchen the moment an order goes in. They know roughly how long each dish takes and call a waiter just as the plate is ready. Too early wastes a waiter; too late and the food goes cold. The platform does the same across a whole city, except its "waiters" are riders spread over many streets, and it has to guess the cooking time.'
+    },
+    problem: 'You order biryani at 8 pm on a rainy Friday. The kitchen says 15 minutes, but it is busy. Send a rider too early and they stand at the counter while other orders wait. Send one too late and your food sits getting cold. The system answers <b>"which rider should take which order, and when, so the food is picked up just as it is ready?"</b>',
+    story: [
+      {
+        stage: 'naive',
+        title: 'Send the nearest free rider right away',
+        text: 'As soon as an order is placed, find the closest idle rider and send them to the restaurant. Each order is handled alone, the moment it arrives. It is simple and feels fast.',
+        scene: {
+          nodes: [
+            { id: 'cust', label: 'Customer', sub: 'orders biryani', kind: 'client', at: [70, 0] },
+            { id: 'rest', label: 'Restaurant', sub: 'cooking 15 min', kind: 'client', at: [350, 0] },
+            { id: 'ord', label: 'Order service', sub: 'grab nearest', kind: 'service', at: [210, 110] },
+            { id: 'rider', label: 'Rider', sub: 'sent at once', kind: 'client', at: [350, 220] }
+          ],
+          edges: [{ from: 'cust', to: 'ord' }, { from: 'ord', to: 'rest' }, { from: 'ord', to: 'rider' }, { from: 'rider', to: 'rest' }],
+          flow: ['cust>ord', ['ord>rest', 'ord>rider'], 'rider>rest']
+        }
+      },
+      {
+        stage: 'breaks',
+        title: 'Riders wait at counters while orders pile up',
+        text: 'The rider arrives in 5 minutes and <b>waits 10 more</b> for the food. At dinner peak there are more orders than free riders, and many riders are stuck at counters. Deciding one order at a time also misses better pairings, such as one rider taking two orders to the same street.',
+        scene: {
+          nodes: [
+            { id: 'cust', label: 'Customers', sub: 'orders piling up', kind: 'client', at: [70, 0] },
+            { id: 'rest', label: 'Restaurant', sub: 'food not ready', kind: 'client', at: [350, 0] },
+            { id: 'ord', label: 'Order service', sub: 'no rider free', kind: 'service', at: [210, 110] },
+            { id: 'rider', label: 'Rider', sub: 'waiting 10 min', kind: 'client', at: [350, 220] }
+          ],
+          edges: [{ from: 'cust', to: 'ord' }, { from: 'ord', to: 'rest' }, { from: 'ord', to: 'rider' }, { from: 'rider', to: 'rest' }],
+          flow: [['cust>ord', 'cust>ord'], 'ord>rider', 'rider>rest'],
+          err: ['ord', 'rider'],
+          warn: ['cust', 'rest'],
+          badges: { ord: ['no riders', 'err'], rider: ['idle ⏳', 'warn'] }
+        }
+      },
+      {
+        stage: 'fix',
+        title: 'Predict when food is ready, and match in batches',
+        text: 'A model predicts <b>when the food will be ready</b> and how long each ride takes. Every few seconds, for each area of the city, a <b>dispatch</b> service looks at all open orders and nearby riders together and picks the best pairing. The rider is timed to arrive as the food is packed, and nearby orders can share one trip.',
+        scene: {
+          nodes: [
+            { id: 'cust', label: 'Customer', sub: 'orders biryani', kind: 'client', at: [70, 0] },
+            { id: 'rest', label: 'Restaurant', sub: 'ready in 17 min', kind: 'client', at: [350, 0] },
+            { id: 'ord', label: 'Order service', sub: 'tracks order', kind: 'service', at: [70, 110] },
+            { id: 'disp', label: 'Dispatch', sub: 'batch per area', kind: 'compute', at: [210, 110] },
+            { id: 'eta', label: 'Prep + ETA ML', sub: 'ready + travel', kind: 'ml', at: [350, 110] },
+            { id: 'geo', label: 'Rider map', sub: 'live positions', kind: 'cache', at: [70, 220] },
+            { id: 'rider', label: 'Rider', sub: 'arrives on time', kind: 'client', at: [350, 220] }
+          ],
+          edges: [{ from: 'cust', to: 'ord' }, { from: 'ord', to: 'disp' }, { from: 'rest', to: 'eta' }, { from: 'disp', to: 'eta' }, { from: 'disp', to: 'geo' }, { from: 'disp', to: 'rider' }],
+          flow: ['cust>ord', 'ord>disp', ['disp>eta', 'disp>geo'], 'disp>rider'],
+          ok: ['disp', 'geo', 'rider'],
+          badges: { rider: ['on time ✓', 'ok'] }
+        }
+      }
+    ],
+    usedBy: ['DoorDash', 'Swiggy', 'Zomato', 'Uber Eats', 'Deliveroo'],
+    whenToUse: [
+      'Three parties must meet: a customer, a place that <b>prepares</b> something, and a courier',
+      'Prep time is uncertain, so timing the pickup matters as much as distance',
+      'Couriers are scarce at peaks, so batching and sharing trips pays off'
+    ],
+    whenNot: [
+      'A ride from A to B with no kitchen to wait for (see <a href="ride-sharing.html">Ride-Sharing</a>)',
+      'Parcels collected once a day for next-day delivery: plan routes overnight in a batch',
+      'You only need to list nearby restaurants (see <a href="proximity-service.html">Proximity Service</a>)'
+    ],
+    glossary: [
+      { term: 'Dispatch', def: 'Deciding which rider gets which order, and sending them the offer.' },
+      { term: 'Prep time', def: 'How long the kitchen needs to cook and pack an order, predicted from its history and current load.' },
+      { term: 'First mile / last mile', def: 'The rider\'s trip to the restaurant, and the trip from the restaurant to the customer.' },
+      { term: 'Batched assignment', def: 'Collecting open orders and riders for a few seconds, then matching them all at once instead of one by one.' },
+      { term: 'Stacking', def: 'Giving one rider two or more orders on the same trip when it does not make anyone too late.' },
+      { term: 'Zone', def: 'A small area of the city that dispatch solves on its own, to keep each problem small.' },
+      { term: 'ETA', def: 'Estimated time of arrival: when the rider or the food is expected to arrive.' },
+      { term: 'Offer', def: 'A job sent to a rider\'s phone with a short countdown to accept or decline.' }
+    ]
+  },
+
   requirements: {
     functional: [
       'Show restaurants that can deliver to an address, with an ETA',

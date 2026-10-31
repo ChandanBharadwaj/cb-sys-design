@@ -14,6 +14,87 @@ SD.register({
       { v: '27,556', l: 'riders in one Peloton class, ranked live (2023, AWS blog)' }
     ]
   },
+  intro: {
+    what: 'A leaderboard ranks players by score. It shows the top of the list, <b>your own position</b>, and the players just above and below you. A <b>live</b> leaderboard changes the moment a score changes, even when tens of millions of players are on the same board.',
+    analogy: {
+      icon: '📚',
+      title: 'A sorted shelf with "books so far" signposts',
+      text: 'Picture a very long shelf of books sorted by score, with a signpost every so often that says how many books stand between it and the next signpost. To find a book\'s position, you hop from signpost to signpost adding up their numbers, then count only the last few books. Adding a book means sliding it into place and fixing a few signposts, not renumbering the whole shelf. The real structure stacks several layers of signposts, from far-apart ones down to close ones.'
+    },
+    problem: 'A game has tens of millions of players, and scores change after every match. Showing the top 10 is easy. But when a player far down the list opens the app and asks <b>"what is my rank?"</b>, a normal database has to count every player with a higher score, and that count is out of date seconds later. The question is how to <b>update a score and answer anyone\'s rank in about a millisecond</b>, thousands of times a second.',
+    story: [
+      {
+        stage: 'naive',
+        title: 'A scores table and an ORDER BY',
+        text: 'Store one row per player with an index on <code>score</code>. The top 10 is <code>ORDER BY score DESC LIMIT 10</code>, which the index answers instantly. "My rank" is <code>COUNT(*)</code> of players with a higher score, plus one. Simple, and fine for a few thousand players.',
+        scene: {
+          nodes: [
+            { id: 'game', label: 'Game servers', sub: 'new scores', kind: 'client', at: [70, 0] },
+            { id: 'app', label: 'Player app', sub: 'my rank?', kind: 'client', at: [350, 0] },
+            { id: 'db', label: 'Scores table', sub: 'index on score', kind: 'store', at: [210, 110] }
+          ],
+          edges: [{ from: 'game', to: 'db' }, { from: 'app', to: 'db' }],
+          flow: [['game>db', 'app>db']]
+        }
+      },
+      {
+        stage: 'breaks',
+        title: 'Every rank query counts millions of rows',
+        text: 'For a player near the bottom, <code>COUNT(*)</code> walks through tens of millions of index entries. The index cannot just "know" how many entries come before a given one. Thousands of players ask for their rank every second while scores keep changing, so the database spends all its time counting and the answers are already stale.',
+        scene: {
+          nodes: [
+            { id: 'game', label: 'Game servers', sub: 'scores nonstop', kind: 'client', at: [70, 0] },
+            { id: 'app', label: 'Players ×10M', sub: 'my rank?', kind: 'client', at: [350, 0] },
+            { id: 'db', label: 'Scores table', sub: 'COUNT(*) ×1000/s', kind: 'store', at: [210, 110] }
+          ],
+          edges: [{ from: 'game', to: 'db' }, { from: 'app', to: 'db' }],
+          flow: [['game>db', 'app>db'], ['game>db', 'app>db']],
+          err: ['db'],
+          warn: ['app'],
+          badges: { db: ['overloaded', 'err'], app: ['slow ⏳', 'warn'] }
+        }
+      },
+      {
+        stage: 'fix',
+        title: 'An in-memory sorted set that keeps its own counts',
+        text: 'Keep each board in a <b>Redis sorted set</b>. Inside, it is a <b>skip list</b>: a sorted list with shortcut links that remember how many players each link jumps over. Updating a score and finding a rank both take about <b>log N steps</b>: a few dozen, even for fifty million players. Every score event is also written to a durable log, so the board can be rebuilt if memory is lost.',
+        scene: {
+          nodes: [
+            { id: 'game', label: 'Game servers', sub: 'new scores', kind: 'client', at: [70, 0] },
+            { id: 'app', label: 'Player app', sub: 'my rank?', kind: 'client', at: [350, 0] },
+            { id: 'log', label: 'Score log', sub: 'durable events', kind: 'queue', at: [70, 110] },
+            { id: 'zset', label: 'Sorted set', sub: 'Redis · in RAM', kind: 'cache', at: [210, 110] },
+            { id: 'pg', label: 'Snapshots', sub: 'final standings', kind: 'store', at: [210, 220] }
+          ],
+          edges: [{ from: 'game', to: 'log' }, { from: 'log', to: 'zset' }, { from: 'app', to: 'zset' }, { from: 'zset', to: 'pg', dashed: true }],
+          flow: ['game>log', 'log>zset', 'app>zset'],
+          ok: ['zset'],
+          badges: { zset: ['rank in ~1 ms', 'ok'] }
+        }
+      }
+    ],
+    usedBy: ['Mobile and console games', 'Peloton class leaderboards', 'Duolingo leagues', 'Strava segment rankings', 'Kaggle competitions', 'Redis sorted sets'],
+    whenToUse: [
+      'Many players, frequent score changes, and each player wants their <b>exact</b> rank',
+      'You need top N, "players around me" and friends views within milliseconds',
+      'Boards reset daily or weekly, and must be rebuilt quickly after a failure'
+    ],
+    whenNot: [
+      'You only need the most popular items, and rough counts are fine (see <a href="top-k.html">Top-K / Heavy Hitters</a>)',
+      'A few thousand players: one SQL table with an index on score is plenty',
+      'Rating players\' skill for matchmaking (Elo and similar): that is a different problem'
+    ],
+    glossary: [
+      { term: 'Sorted set (ZSET)', def: 'A Redis data type that stores members with a score and keeps them in score order.' },
+      { term: 'Skip list', def: 'A sorted linked list with extra layers of shortcut links, so a search skips most entries.' },
+      { term: 'Span', def: 'The number of entries a skip-list shortcut jumps over; adding spans along the path gives a rank.' },
+      { term: 'O(log N)', def: 'Work that grows very slowly with size: doubling the players adds only about one more step.' },
+      { term: 'ZINCRBY / ZREVRANK', def: 'Redis commands that add points to a member\'s score, and return its rank counted from the highest score.' },
+      { term: 'Tie-break', def: 'The rule that orders players with equal scores, such as "whoever got there first ranks higher".' },
+      { term: 'Score-range sharding', def: 'Splitting a huge board across servers by score bands, so the top players all live on one shard.' },
+      { term: 'Snapshot', def: 'A frozen copy of the final standings at the end of a period, saved for history and rewards.' }
+    ]
+  },
 
   requirements: {
     functional: [

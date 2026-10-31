@@ -14,6 +14,88 @@ SD.register({
       { v: '2f + 1', l: 'servers needed to survive f failures (Raft / Zab / Paxos)' }
     ]
   },
+  intro: {
+    what: 'A distributed lock manager lets processes on many different machines agree that <b>only one of them</b> may do a certain thing at a time, such as run the nightly billing job or update one file. A process asks for a named lock, does its work, then releases it. If the holder crashes, the lock frees itself after a short timeout so nobody waits forever.',
+    analogy: {
+      icon: '🎤',
+      title: 'A numbered microphone at a meeting',
+      text: 'Only the person holding the microphone may speak. The chair lends it out for ten minutes at a time, and the speaker must keep nodding to the chair to keep it. If the speaker dozes off, the chair hands a new microphone with a <b>higher number</b> to the next person. The note-taker writes down only words spoken into the highest-numbered microphone so far, so a speaker who wakes up and keeps talking is simply ignored.'
+    },
+    problem: 'Your billing job runs every night at midnight. For safety it is installed on five servers, so at midnight all five start it and every customer is charged five times. You need exactly one of them to do the work. But the winner might crash halfway, or freeze for twenty seconds, and that must neither block the job forever nor let a frozen winner wake up and overwrite someone else\'s work. The question is <b>"how do many machines agree that exactly one of them is in charge right now, even when machines crash, pause or lose the network?"</b>',
+    story: [
+      {
+        stage: 'naive',
+        title: 'One lock key with an expiry time',
+        text: 'Each worker tries to create the key <code>lock:billing</code> in one shared store, with a 10-second expiry. The create succeeds only if the key does not exist yet. The worker that succeeds does the job; the others see the key and back off. If the winner crashes, the key expires and someone else can try.',
+        scene: {
+          nodes: [
+            { id: 'a', label: 'Worker A', sub: 'got the lock', kind: 'client', at: [70, 0] },
+            { id: 'lk', label: 'Lock key', sub: 'one store · 10 s', kind: 'cache', at: [210, 110] },
+            { id: 'b', label: 'Worker B', sub: 'must wait', kind: 'client', at: [70, 220] },
+            { id: 'res', label: 'Storage', sub: 'billing data', kind: 'store', at: [350, 110] }
+          ],
+          edges: [{ from: 'a', to: 'lk' }, { from: 'b', to: 'lk' }, { from: 'a', to: 'res' }, { from: 'b', to: 'res' }],
+          flow: [['a>lk', 'b>lk'], 'a>res']
+        }
+      },
+      {
+        stage: 'breaks',
+        title: 'A frozen holder wakes up and writes anyway',
+        text: 'Worker A freezes for 15 seconds, for example in a <b>garbage-collection pause</b> where the runtime stops the program to clean up memory. Its key expires and worker B takes the lock. Then A wakes up, still believing it holds the lock, and writes too: <b>two writers</b>. Separately, if the single lock store crashes or fails over, the lock can vanish and two workers both win.',
+        scene: {
+          nodes: [
+            { id: 'a', label: 'Worker A', sub: 'paused 15 s', kind: 'client', at: [70, 0] },
+            { id: 'lk', label: 'Lock key', sub: 'expired → B', kind: 'cache', at: [210, 110] },
+            { id: 'b', label: 'Worker B', sub: 'now holds it', kind: 'client', at: [70, 220] },
+            { id: 'res', label: 'Storage', sub: 'A and B write', kind: 'store', at: [350, 110] }
+          ],
+          edges: [{ from: 'a', to: 'lk' }, { from: 'b', to: 'lk' }, { from: 'a', to: 'res' }, { from: 'b', to: 'res' }],
+          flow: ['b>lk', ['a>res', 'b>res']],
+          warn: ['a', 'lk'],
+          err: ['res'],
+          badges: { a: ['frozen', 'warn'], res: ['two writers', 'err'] }
+        }
+      },
+      {
+        stage: 'fix',
+        title: 'A voting cluster, renewed leases and a fencing token',
+        text: 'Locks live in a small <b>consensus cluster</b>: three or five servers that only grant a lock once a majority agrees, so one crash loses nothing. The holder keeps its <b>lease</b> alive by renewing it. Every grant comes with a number that always goes up, the <b>fencing token</b>. Storage remembers the highest token it has seen and rejects older ones, so frozen A is turned away.',
+        scene: {
+          nodes: [
+            { id: 'a', label: 'Worker A', sub: 'old token 33', kind: 'client', at: [70, 0] },
+            { id: 'lk', label: 'Lock cluster', sub: '3 servers · vote', kind: 'service', at: [210, 110] },
+            { id: 'b', label: 'Worker B', sub: 'token 34', kind: 'client', at: [70, 220] },
+            { id: 'res', label: 'Storage', sub: 'max token 34', kind: 'store', at: [350, 110] }
+          ],
+          edges: [{ from: 'a', to: 'lk' }, { from: 'b', to: 'lk' }, { from: 'a', to: 'res' }, { from: 'b', to: 'res' }],
+          flow: ['b>lk', 'b>res', 'a>res'],
+          ok: ['lk', 'res', 'b'],
+          badges: { res: ['rejects 33', 'ok'] }
+        }
+      }
+    ],
+    usedBy: ['Google Chubby (used by Bigtable and GFS)', 'Apache ZooKeeper', 'etcd', 'Kubernetes leader election', 'HashiCorp Consul'],
+    whenToUse: [
+      'A scheduled job runs on many servers but must do its work <b>only once</b>',
+      'Replicas must elect <b>one leader</b>, such as one active scheduler or one primary',
+      'Several workers may update the same file or object and must take turns'
+    ],
+    whenNot: [
+      'All the data lives in one database: use its own transactions, row locks or advisory locks',
+      'Handing out lots of small tasks: use a <a href="message-queue.html">Distributed Message Queue</a> or a <a href="job-scheduler.html">Job Queue &amp; Task Scheduler</a> with per-task leases',
+      'You can design the lock away, for example with a version check on every update or a single writer per partition'
+    ],
+    glossary: [
+      { term: 'Lease', def: 'A lock that is granted only for a limited time and expires unless the holder renews it.' },
+      { term: 'KeepAlive', def: 'The small message a client sends regularly to renew its lease and prove it is still alive.' },
+      { term: 'Fencing token', def: 'A number that grows with every lock grant and is sent with each write, so the storage can reject writes from an older holder.' },
+      { term: 'Consensus (Raft / Zab / Paxos)', def: 'Algorithms that let a group of servers agree on one order of changes, as long as a majority of them is up.' },
+      { term: 'Majority (quorum)', def: 'More than half of the servers; with 3 servers any 2 can decide, so the cluster survives 1 failure.' },
+      { term: 'Split brain', def: 'Two parts of a system that cannot talk to each other both believe they are in charge.' },
+      { term: 'Ephemeral sequential node', def: 'A ZooKeeper entry that gets the next number in a queue and disappears when its owner\'s session ends.' },
+      { term: 'Herd effect', def: 'When a lock is released and every waiter wakes up and retries at once, though only one can win.' }
+    ]
+  },
 
   requirements: {
     functional: [

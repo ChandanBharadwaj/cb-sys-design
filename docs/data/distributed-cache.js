@@ -14,6 +14,88 @@ SD.register({
       { v: '16,384', l: 'hash slots in a Redis Cluster (CRC16 mod 16384)' }
     ]
   },
+  intro: {
+    what: 'A distributed cache keeps copies of frequently read data <b>in memory</b>, spread across many servers, so applications can read it much faster than from the database. The database stays the <b>source of truth</b>. The cache only holds copies that can be thrown away and rebuilt at any time.',
+    analogy: {
+      icon: '📚',
+      title: 'A library front desk that keeps the popular books',
+      text: 'The library\'s stacks hold every book, but fetching one takes a while. So the front desk keeps copies of the most requested books within arm\'s reach. If a book is not at the desk, a clerk fetches it from the stacks and leaves a copy at the desk for the next reader. When a book gets a new edition, the desk copy is thrown away so nobody reads the old one. A big library has several desks, each in charge of a range of titles. Unlike a real desk, a cache copy can be briefly out of date before it is thrown away.'
+    },
+    problem: 'Your app shows each user\'s profile on every page. Every page view reads the same rows from the database again and again, and a database can only answer so many queries per second. When traffic grows tenfold the database falls over, even though almost all of those reads ask for data that has not changed. The question is <b>"how do I serve most reads from fast memory without showing stale data, and without crushing the database when the cache misses?"</b>',
+    story: [
+      {
+        stage: 'naive',
+        title: 'Put one cache server in front of the database',
+        text: 'The app asks the cache first. On a <b>miss</b> (the key is not there) it reads the database and stores a copy in the cache with an expiry time. Later reads are <b>hits</b> served from memory. This pattern is called <b>cache-aside</b>, and it takes most of the load off the database.',
+        scene: {
+          nodes: [
+            { id: 'app', label: 'App servers', sub: 'cache first', kind: 'service', at: [70, 0] },
+            { id: 'cache', label: 'Cache server', sub: 'one box · RAM', kind: 'cache', at: [350, 0] },
+            { id: 'db', label: 'Database', sub: 'source of truth', kind: 'store', at: [70, 220] }
+          ],
+          edges: [{ from: 'app', to: 'cache' }, { from: 'app', to: 'db' }],
+          flow: ['app>cache', 'app>db', 'app>cache']
+        }
+      },
+      {
+        stage: 'breaks',
+        title: 'One box fills up, and every miss lands at once',
+        text: 'The data outgrows one machine\'s memory and network. When the box restarts, or a very popular key expires, thousands of requests miss <b>at the same moment</b> and all query the database for the same row: a <b>stampede</b>. Writes cause a quieter problem too: the cache can keep serving the old value after the database changed.',
+        scene: {
+          nodes: [
+            { id: 'app', label: 'App servers', sub: 'all miss at once', kind: 'service', at: [70, 0] },
+            { id: 'cache', label: 'Cache server', sub: 'full · restarting', kind: 'cache', at: [350, 0] },
+            { id: 'db', label: 'Database', sub: 'same query ×1000', kind: 'store', at: [70, 220] }
+          ],
+          edges: [{ from: 'app', to: 'cache' }, { from: 'app', to: 'db' }],
+          flow: ['app>cache', ['app>db', 'app>db'], ['app>db', 'app>db']],
+          warn: ['cache'],
+          err: ['db'],
+          badges: { cache: ['miss', 'warn'], db: ['stampede', 'err'] }
+        }
+      },
+      {
+        stage: 'fix',
+        title: 'Shard by key, delete on write, let one request refill',
+        text: 'Spread keys over many cache servers by <b>hashing the key</b>, using consistent hashing so adding a server moves only a few keys. On a write, update the database and then <b>delete</b> the cached copy. When a hot key is missing, a <b>lease</b> lets only one request reload it while the others wait a moment.',
+        scene: {
+          nodes: [
+            { id: 'app', label: 'App servers', sub: 'cache-aside', kind: 'service', at: [70, 0] },
+            { id: 'rtr', label: 'hash(key)', sub: 'picks a shard', kind: 'edge', at: [210, 110] },
+            { id: 's1', label: 'Shard A', sub: '⅓ of keys · RAM', kind: 'cache', at: [350, 0] },
+            { id: 's2', label: 'Shard B', sub: '⅓ of keys · RAM', kind: 'cache', at: [350, 110] },
+            { id: 's3', label: 'Shard C', sub: '⅓ of keys · RAM', kind: 'cache', at: [350, 220] },
+            { id: 'db', label: 'Database', sub: '1 reload per key', kind: 'store', at: [70, 220] }
+          ],
+          edges: [{ from: 'app', to: 'rtr' }, { from: 'rtr', to: 's1' }, { from: 'rtr', to: 's2' }, { from: 'rtr', to: 's3' }, { from: 'app', to: 'db' }],
+          flow: ['app>rtr', 'rtr>s2', 'app>rtr', 'rtr>s3'],
+          ok: ['s1', 's2', 's3', 'db'],
+          badges: { s2: ['hit', 'ok'] }
+        }
+      }
+    ],
+    usedBy: ['Facebook', 'Twitter / X', 'Stack Overflow', 'Redis', 'Memcached', 'Amazon ElastiCache'],
+    whenToUse: [
+      'Reads far outnumber writes, and the <b>same items</b> are read again and again',
+      'The database is the bottleneck, and a value that is a few seconds old is acceptable',
+      'Results are expensive to compute or fetch, such as a rendered feed or a joined query'
+    ],
+    whenNot: [
+      'The value must always be exactly current, like a balance during a money transfer',
+      'The data must survive restarts on its own: use a real store (see <a href="kv-store.html">Distributed Key-Value Store</a>)',
+      'You want to cache whole files and pages close to users around the world: use a <a href="cdn.html">Content Delivery Network</a>'
+    ],
+    glossary: [
+      { term: 'Cache-aside (look-aside)', def: 'The app checks the cache, reads the database on a miss, then writes the value into the cache itself.' },
+      { term: 'Hit ratio', def: 'The share of reads answered by the cache; a small drop can multiply the load on the database.' },
+      { term: 'TTL', def: 'Time to live: how long a cached copy may be kept before it expires and is reloaded.' },
+      { term: 'Consistent hashing', def: 'A way to map keys to servers so that adding or removing a server moves only a small share of keys.' },
+      { term: 'Invalidation', def: 'Removing a cached copy after the underlying data changes, so the next read loads the fresh value.' },
+      { term: 'Stampede (thundering herd)', def: 'Many requests miss the same key at once and all hit the database together.' },
+      { term: 'Lease', def: 'A short permission the cache gives to one client to reload a missing key, so the others wait instead of piling on.' },
+      { term: 'Hot key', def: 'A single key read so often that the one server holding it becomes overloaded.' }
+    ]
+  },
 
   requirements: {
     functional: [

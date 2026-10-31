@@ -15,6 +15,88 @@ SD.register({
     ]
   },
 
+  intro: {
+    what: 'A search engine finds the documents that contain some words and <b>ranks them by relevance</b>, best match first. It powers the search box in shops, wikis, help centres and log tools. Engines such as Elasticsearch do this over billions of documents in milliseconds.',
+    analogy: {
+      icon: '📖',
+      title: 'The index at the back of a textbook',
+      text: 'To find "photosynthesis" in a textbook, you do not read all 600 pages. You look it up in the index at the back, which lists the pages where the word appears. A search engine builds that kind of index for every word in every document, then scores the matches so the most useful come first. Unlike a printed index, it has to take in new documents and make them findable within seconds.'
+    },
+    problem: 'An online shop has millions of products. A customer types "wireless headphones". Reading every product description to look for those words takes far too long, and you still get thousands of matches in no useful order. Meanwhile new products keep arriving and must show up quickly. The question is: <b>how do you find and rank the best matches among billions of documents in milliseconds?</b>',
+    story: [
+      {
+        stage: 'naive',
+        title: 'Scan the table with LIKE',
+        text: 'Keep the products in a database and run <code>WHERE description LIKE \'%headphones%\'</code>. The database reads every row and checks its text. On a few thousand rows this feels instant.',
+        scene: {
+          nodes: [
+            { id: 'user', label: 'Shopper', sub: 'types a query', kind: 'client', at: [70, 0] },
+            { id: 'coord', label: 'Shop app', sub: 'builds the SQL', kind: 'service', at: [210, 0] },
+            { id: 'db', label: 'Products DB', sub: 'one big table', kind: 'store', at: [350, 110] }
+          ],
+          edges: [{ from: 'user', to: 'coord', bidi: true }, { from: 'coord', to: 'db', bidi: true }],
+          flow: ['user>coord', 'coord>db', 'db>coord', 'coord>user']
+        }
+      },
+      {
+        stage: 'breaks',
+        title: 'Every query reads every row, and nothing is ranked',
+        text: 'With millions of rows, each search <b>reads the whole table</b>, so queries take seconds and the database falls over at peak time. Matches come back unordered: a product that mentions headphones once in small print ranks the same as one titled "Wireless Headphones".',
+        scene: {
+          nodes: [
+            { id: 'user', label: 'Shoppers', sub: 'thousands/s', kind: 'client', at: [70, 0] },
+            { id: 'coord', label: 'Shop app', sub: 'waiting…', kind: 'service', at: [210, 0] },
+            { id: 'db', label: 'Products DB', sub: 'millions of rows', kind: 'store', at: [350, 110] }
+          ],
+          edges: [{ from: 'user', to: 'coord', bidi: true }, { from: 'coord', to: 'db', bidi: true }],
+          flow: ['user>coord', ['coord>db', 'coord>db'], 'db>coord'],
+          err: ['db'],
+          warn: ['user'],
+          badges: { db: ['full scan', 'err'], user: ['slow ⏳', 'warn'] }
+        }
+      },
+      {
+        stage: 'fix',
+        title: 'An inverted index, split into shards',
+        text: 'Build an <b>inverted index</b>: for each word, the list of documents that contain it. A query reads only the lists for its own words, then <b>scores</b> each match (rare words and short fields count more). The index is split into <b>shards</b> on several machines. A coordinator asks every shard for its top 10 and merges them.',
+        scene: {
+          nodes: [
+            { id: 'user', label: 'Shopper', sub: 'types a query', kind: 'client', at: [70, 0] },
+            { id: 'coord', label: 'Coordinator', sub: 'scatter + merge', kind: 'edge', at: [210, 0] },
+            { id: 's0', label: 'Shard 0', sub: 'index, part 1', kind: 'service', at: [70, 110] },
+            { id: 's1', label: 'Shard 1', sub: 'index, part 2', kind: 'service', at: [210, 110] },
+            { id: 's2', label: 'Shard 2', sub: 'index, part 3', kind: 'service', at: [350, 110] }
+          ],
+          edges: [{ from: 'user', to: 'coord', bidi: true }, { from: 'coord', to: 's0', bidi: true }, { from: 'coord', to: 's1', bidi: true }, { from: 'coord', to: 's2', bidi: true }],
+          flow: ['user>coord', ['coord>s0', 'coord>s1', 'coord>s2'], ['s0>coord', 's1>coord', 's2>coord'], 'coord>user'],
+          ok: ['s0', 's1', 's2'],
+          badges: { coord: ['top 10 merged', 'ok'] }
+        }
+      }
+    ],
+    usedBy: ['Elasticsearch', 'OpenSearch', 'Apache Solr', 'Apache Lucene', 'Wikipedia search', 'Twitter Earlybird'],
+    whenToUse: [
+      'Users type <b>free text</b> and expect the best matches first',
+      'You need typo tolerance, word stemming ("running" finds "run"), synonyms or filter counts (facets)',
+      'The data is too big or too busy for your database\'s built-in text search'
+    ],
+    whenNot: [
+      'Exact lookups by id or simple filters: an ordinary database index is enough',
+      'A few million rows and simple ranking: Postgres full-text search will do',
+      'You search by meaning rather than by words (see <a href="vector-db.html">Vector DB</a>), or by prefix as the user types (see <a href="typeahead.html">Typeahead</a>)'
+    ],
+    glossary: [
+      { term: 'Inverted index', def: 'A map from each word to the list of documents that contain it.' },
+      { term: 'Postings list', def: 'The sorted list of document ids (plus counts and positions) stored for one word.' },
+      { term: 'Analyzer', def: 'The step that turns text into searchable terms: split into words, lowercase them, strip endings.' },
+      { term: 'BM25', def: 'The standard relevance formula. Rare words count more, each repeat of a word counts a little less, and matches in short fields weigh more.' },
+      { term: 'Shard', def: 'One slice of the index, living on one machine. Together the shards hold every document.' },
+      { term: 'Replica', def: 'A copy of a shard on another machine, used for failover and to share the read load.' },
+      { term: 'Segment', def: 'An immutable mini-index file. New documents go into new segments, which are merged in the background.' },
+      { term: 'Refresh', def: 'Opening newly written segments for search. It is what makes a new document visible, by default about once a second.' }
+    ]
+  },
+
   requirements: {
     functional: [
       'Index, update and delete JSON documents',

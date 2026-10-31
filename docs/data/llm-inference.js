@@ -15,6 +15,88 @@ SD.register({
     ]
   },
 
+  intro: {
+    what: 'An LLM inference engine is the software that runs a trained large language model on GPUs and answers requests. It reads a prompt, writes the reply <b>one token (a small piece of a word) at a time</b>, and streams each token back as soon as it exists. Its job is to serve <b>many users at once</b> on as few expensive GPUs as possible.',
+    analogy: {
+      icon: '👨‍🍳',
+      title: 'A chef who rereads the recipe book before every stir',
+      text: 'Picture a chef who has to read the entire recipe book before each stir of any pan. Reading the book is slow, but one read can guide fifty pans as easily as one. So a smart chef keeps as many pans on the stove as the counter space allows, and slides a new pan in the moment one is done. The GPU is the chef, the model weights are the book, each pan is one user\'s reply, and the counter is GPU memory.'
+    },
+    problem: 'A chat assistant gets thousands of questions a minute. Every reply is built in many small steps, one per token, and nobody knows in advance how long a reply will be. GPUs are very expensive, so an idle GPU or wasted GPU memory costs real money. The core question is <b>how to keep every GPU busy with many replies at once, while each user still sees words appear quickly</b>.',
+    story: [
+      {
+        stage: 'naive',
+        title: 'Run one request at a time',
+        text: 'Load the model onto a GPU (a chip built for fast parallel math). Take the next prompt from a queue, generate the full reply token by token, send it back, then start the next one. It is easy to build and fine for one developer testing.',
+        scene: {
+          nodes: [
+            { id: 'u', label: 'Users', sub: 'send prompts', kind: 'client', at: [70, 0] },
+            { id: 'q', label: 'Queue', sub: 'first come', kind: 'queue', at: [210, 0] },
+            { id: 'gpu', label: 'GPU + model', sub: 'one reply at once', kind: 'ml', at: [210, 110] }
+          ],
+          edges: [{ from: 'u', to: 'q' }, { from: 'q', to: 'gpu' }, { from: 'gpu', to: 'u' }],
+          flow: ['u>q', 'q>gpu', 'gpu>u']
+        }
+      },
+      {
+        stage: 'breaks',
+        title: 'The GPU idles while the line grows',
+        text: 'Every step makes one token, but first it must <b>read all the model weights</b> from memory. With one reply in flight, the GPU spends most of its time waiting on memory, not doing math. Running a fixed group together helps a little, but short replies wait for the longest one, and memory reserved for each reply\'s <b>maximum length</b> sits mostly empty. The queue grows and the first word takes seconds.',
+        scene: {
+          nodes: [
+            { id: 'u', label: 'Users ×1000', sub: 'waiting', kind: 'client', at: [70, 0] },
+            { id: 'q', label: 'Queue', sub: 'growing', kind: 'queue', at: [210, 0] },
+            { id: 'gpu', label: 'GPU + model', sub: 'mostly idle', kind: 'ml', at: [210, 110] },
+            { id: 'mem', label: 'GPU memory', sub: 'reserved, unused', kind: 'cache', at: [350, 110] }
+          ],
+          edges: [{ from: 'u', to: 'q' }, { from: 'q', to: 'gpu' }, { from: 'gpu', to: 'mem' }, { from: 'gpu', to: 'u' }],
+          flow: [['u>q', 'u>q'], 'q>gpu', 'gpu>mem'],
+          err: ['q'],
+          warn: ['gpu', 'mem'],
+          badges: { q: ['backlog', 'err'], u: ['slow ⏳', 'warn'] }
+        }
+      },
+      {
+        stage: 'fix',
+        title: 'Batch every step, hand out memory in blocks',
+        text: 'A <b>scheduler</b> rebuilds the batch at <b>every step</b>: finished replies leave and waiting ones join at once. Each reply\'s saved work for earlier tokens (the <b>KV cache</b>) lives in small fixed-size blocks handed out only as needed, so many more replies fit in memory. One read of the weights now serves the whole batch.',
+        scene: {
+          nodes: [
+            { id: 'u', label: 'Users', sub: 'send prompts', kind: 'client', at: [70, 0] },
+            { id: 'q', label: 'Scheduler', sub: 'batch every step', kind: 'compute', at: [210, 0] },
+            { id: 'gpu', label: 'GPU + model', sub: 'one big batch', kind: 'ml', at: [210, 110] },
+            { id: 'mem', label: 'KV blocks', sub: 'small, on demand', kind: 'cache', at: [350, 110] }
+          ],
+          edges: [{ from: 'u', to: 'q' }, { from: 'q', to: 'gpu' }, { from: 'gpu', to: 'mem', bidi: true }, { from: 'gpu', to: 'u' }],
+          flow: ['u>q', 'q>gpu', 'gpu>mem', 'gpu>u'],
+          ok: ['gpu', 'mem'],
+          badges: { gpu: ['full batch', 'ok'] }
+        }
+      }
+    ],
+    usedBy: ['vLLM (open source)', 'NVIDIA TensorRT-LLM', 'SGLang', 'Hugging Face Text Generation Inference', 'Hosted chat assistants and model APIs'],
+    whenToUse: [
+      'You run open-weight models on <b>your own GPUs</b> and pay for every GPU-hour',
+      'Many users or agents call the model <b>at the same time</b>',
+      'Replies must stream back quickly, word by word'
+    ],
+    whenNot: [
+      'You only call hosted model APIs: put an <a href="llm-gateway.html">LLM Gateway</a> in front of them instead',
+      'A few requests per hour: a hosted API or one simple server is cheaper than a tuned GPU fleet',
+      'The model must answer from your own documents: that is retrieval (see <a href="rag-agent-platform.html">RAG &amp; AI Agent Platform</a>)'
+    ],
+    glossary: [
+      { term: 'Token', def: 'A small piece of text, often part of a word. Models read and write text as tokens.' },
+      { term: 'Prefill', def: 'The first phase: the model reads the whole prompt in one pass and produces the first token.' },
+      { term: 'Decode', def: 'The second phase: the model produces one new token per step until the reply ends.' },
+      { term: 'KV cache', def: 'Saved intermediate results (keys and values) for every earlier token, so each step does not redo the whole conversation.' },
+      { term: 'Continuous batching', def: 'Rebuilding the batch at every step, so finished requests leave and new ones join right away.' },
+      { term: 'PagedAttention', def: 'Storing the KV cache in small fixed-size blocks, like memory pages in an operating system, so little memory is wasted.' },
+      { term: 'Prefix caching', def: 'Reusing the KV cache for a prompt start that many requests share, such as a common system prompt.' },
+      { term: 'TTFT / TPOT', def: 'Time to first token and time per output token: how long until the first word appears, and how fast the rest follow.' }
+    ]
+  },
+
   requirements: {
     functional: [
       'OpenAI-compatible chat/completions API with streaming (SSE)',

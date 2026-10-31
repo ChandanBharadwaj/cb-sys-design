@@ -17,7 +17,7 @@ window.SD_CATALOG = {
     { slug: 'distributed-cache', domain: 1, title: 'Distributed Cache', examples: 'Memcache @ Facebook, Redis', tags: ['consistent hashing', 'leases'] },
     { slug: 'lock-manager', domain: 1, title: 'Distributed Lock Manager', examples: 'Chubby, ZooKeeper, etcd', tags: ['raft', 'fencing', 'lease'] },
 
-    { slug: 'ride-sharing', domain: 2, title: 'Ride-Sharing Location & Dispatch', examples: 'Uber, Lyft', tags: ['H3', 'S2', 'matching'] },
+    { slug: 'ride-sharing', domain: 2, title: 'Ride-Sharing Location & Dispatch', one: 'Finds the right nearby driver for a rider in about a second, while millions of drivers keep moving.', examples: 'Uber, Lyft', tags: ['H3', 'S2', 'matching'] },
     { slug: 'proximity-service', domain: 2, title: 'Proximity Service', examples: 'Yelp, Tinder, Google Maps', tags: ['geohash', 'quadtree'] },
     { slug: 'chat', domain: 2, title: 'Real-Time Chat & Messaging', examples: 'WhatsApp, Discord, Slack', tags: ['websocket', 'scylla'] },
     { slug: 'leaderboard', domain: 2, title: 'Live Leaderboard', examples: 'Gaming, Peloton', tags: ['sorted set', 'skip list'] },
@@ -42,15 +42,15 @@ window.SD_CATALOG = {
 
     { slug: 'url-shortener', domain: 6, title: 'URL Shortener', examples: 'TinyURL, Bitly', tags: ['base62', 'cache'] },
     { slug: 'unique-id', domain: 6, title: 'Unique ID Generator', examples: 'Twitter Snowflake, Instagram', tags: ['64-bit', 'clock'] },
-    { slug: 'job-scheduler', domain: 6, title: 'Job Queue & Task Scheduler', examples: 'Airflow, Temporal, Celery', tags: ['DAG', 'lease'] },
-    { slug: 'web-crawler', domain: 6, title: 'Distributed Web Crawler', examples: 'Googlebot, Common Crawl', tags: ['frontier', 'bloom'] },
-    { slug: 'cdn', domain: 6, title: 'Content Delivery Network', examples: 'Akamai, Cloudflare', tags: ['anycast', 'tiered cache'], added: true },
-    { slug: 'api-gateway', domain: 6, title: 'API Gateway', examples: 'Netflix Zuul, Envoy, Kong', tags: ['filters', 'BFF'], added: true },
+    { slug: 'job-scheduler', domain: 6, title: 'Job Queue & Task Scheduler', one: 'Runs background and scheduled work reliably, retrying it when a machine dies halfway through.', examples: 'Airflow, Temporal, Celery', tags: ['DAG', 'lease'] },
+    { slug: 'web-crawler', domain: 6, title: 'Distributed Web Crawler', one: 'Downloads billions of web pages quickly without overloading any one site or fetching the same page twice.', examples: 'Googlebot, Common Crawl', tags: ['frontier', 'bloom'] },
+    { slug: 'cdn', domain: 6, title: 'Content Delivery Network', one: 'Delivers images, video and files fast to users worldwide without overloading your own servers.', examples: 'Akamai, Cloudflare', tags: ['anycast', 'tiered cache'], added: true },
+    { slug: 'api-gateway', domain: 6, title: 'API Gateway', one: 'Gives many backend services one safe front door that checks every caller and sends requests to the right place.', examples: 'Netflix Zuul, Envoy, Kong', tags: ['filters', 'BFF'], added: true },
 
-    { slug: 'search-engine', domain: 7, title: 'Distributed Search Engine', examples: 'Elasticsearch, Lucene', tags: ['inverted index', 'BM25'] },
-    { slug: 'stream-analytics', domain: 7, title: 'Real-Time Stream Analytics', examples: 'Flink, ClickHouse', tags: ['watermarks', 'checkpoints'] },
-    { slug: 'observability', domain: 7, title: 'Log Aggregation & Observability', examples: 'Datadog, ELK, Dapper', tags: ['cardinality', 'sampling'] },
-    { slug: 'ad-click-aggregation', domain: 7, title: 'Ad Click Aggregation', examples: 'Google Photon, Uber Ads', tags: ['exactly-once', 'dedup'], added: true },
+    { slug: 'search-engine', domain: 7, title: 'Distributed Search Engine', one: 'Finds the most relevant matches for typed words among billions of documents in milliseconds.', examples: 'Elasticsearch, Lucene', tags: ['inverted index', 'BM25'] },
+    { slug: 'stream-analytics', domain: 7, title: 'Real-Time Stream Analytics', one: 'Turns an endless stream of late, out-of-order events into correct live numbers within seconds.', examples: 'Flink, ClickHouse', tags: ['watermarks', 'checkpoints'] },
+    { slug: 'observability', domain: 7, title: 'Log Aggregation & Observability', one: 'Collects logs, metrics and traces from thousands of machines so engineers can find what broke, fast.', examples: 'Datadog, ELK, Dapper', tags: ['cardinality', 'sampling'] },
+    { slug: 'ad-click-aggregation', domain: 7, title: 'Ad Click Aggregation', one: 'Counts billions of ad clicks within minutes, with every click counted exactly once for billing.', examples: 'Google Photon, Uber Ads', tags: ['exactly-once', 'dedup'], added: true },
 
     { slug: 'llm-inference', domain: 8, title: 'LLM Inference Engine', examples: 'vLLM, TensorRT-LLM', tags: ['PagedAttention', 'batching'] },
     { slug: 'vector-db', domain: 8, title: 'Distributed Vector Database', examples: 'Milvus, Qdrant, Pinecone', tags: ['HNSW', 'IVF-PQ'] },

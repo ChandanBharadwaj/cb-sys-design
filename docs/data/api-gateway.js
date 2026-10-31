@@ -15,6 +15,93 @@ SD.register({
     ]
   },
 
+  intro: {
+    what: 'An API gateway is the <b>single front door</b> to all of a company\'s backend services. Every request from an app or website reaches it first. It checks who is calling, enforces limits, and forwards the request to the right internal service, adding only a few milliseconds.',
+    analogy: {
+      icon: '🏨',
+      title: 'A hotel front desk',
+      text: 'Guests do not wander the corridors looking for housekeeping or the kitchen. They go to the front desk, which checks their room key, takes the request and passes it to the right department. Departments can move to another floor without guests noticing. A gateway does this for API calls. Unlike a desk clerk, it must answer in milliseconds and must never become the line everyone waits in.'
+    },
+    problem: 'A shopping app talks to dozens of backend services: users, catalog, cart, orders, payments. If the app calls each one directly, every service must check login tokens, block abusive clients and handle encryption on its own, and each team does it slightly differently. The app also has to know every internal address, so services can never be split or moved. The question is: <b>how do you give many services one safe, fast entrance, without each of them rebuilding the same plumbing?</b>',
+    story: [
+      {
+        stage: 'naive',
+        title: 'Every app calls every service directly',
+        text: 'Each service gets its own public address. The website and the mobile app call catalog, orders and payments themselves. With two or three services, this works fine.',
+        scene: {
+          nodes: [
+            { id: 'web', label: 'Web app', sub: 'browser', kind: 'client', at: [70, 0] },
+            { id: 'mob', label: 'Mobile app', sub: 'phone', kind: 'client', at: [70, 220] },
+            { id: 'cat', label: 'Catalog', sub: 'public address', kind: 'service', at: [350, 0] },
+            { id: 'ord', label: 'Orders', sub: 'public address', kind: 'service', at: [350, 110] },
+            { id: 'pay', label: 'Payments', sub: 'public address', kind: 'service', at: [350, 220] }
+          ],
+          edges: [{ from: 'web', to: 'cat' }, { from: 'web', to: 'ord' }, { from: 'mob', to: 'ord' }, { from: 'mob', to: 'pay' }],
+          flow: [['web>cat', 'mob>pay'], ['web>ord', 'mob>ord']]
+        }
+      },
+      {
+        stage: 'breaks',
+        title: 'Copied security, exposed internals, too many trips',
+        text: 'Every team re-builds login checks and rate limits, and one team gets it wrong. Internal addresses are public, so you cannot split or move a service without breaking old app versions. A phone on a slow network makes <b>many round trips</b> just to draw one screen.',
+        scene: {
+          nodes: [
+            { id: 'web', label: 'Web app', sub: 'knows every URL', kind: 'client', at: [70, 0] },
+            { id: 'mob', label: 'Mobile app', sub: 'many round trips', kind: 'client', at: [70, 220] },
+            { id: 'cat', label: 'Catalog', sub: 'own auth code', kind: 'service', at: [350, 0] },
+            { id: 'ord', label: 'Orders', sub: 'own auth, v2', kind: 'service', at: [350, 110] },
+            { id: 'pay', label: 'Payments', sub: 'no rate limit', kind: 'service', at: [350, 220] }
+          ],
+          edges: [{ from: 'web', to: 'cat' }, { from: 'web', to: 'ord' }, { from: 'mob', to: 'ord' }, { from: 'mob', to: 'pay' }],
+          flow: [['web>cat', 'mob>pay'], ['web>ord', 'mob>ord'], 'mob>pay'],
+          err: ['pay'],
+          warn: ['mob'],
+          badges: { pay: ['abused', 'err'], mob: ['slow ⏳', 'warn'] }
+        }
+      },
+      {
+        stage: 'fix',
+        title: 'One gateway in front of everything',
+        text: 'Clients call one address. The gateway runs each request through a <b>filter chain</b>: verify the login token, apply the rate limit, pick the route, then forward it. Services become private and can move freely. Many identical, <b>stateless</b> gateway copies share the load, so the front door never becomes the bottleneck.',
+        scene: {
+          nodes: [
+            { id: 'web', label: 'Web app', sub: 'one address', kind: 'client', at: [70, 0] },
+            { id: 'mob', label: 'Mobile app', sub: 'one address', kind: 'client', at: [70, 220] },
+            { id: 'gw', label: 'API gateway', sub: 'check + route', kind: 'edge', at: [210, 110] },
+            { id: 'cat', label: 'Catalog', sub: 'private', kind: 'service', at: [350, 0] },
+            { id: 'ord', label: 'Orders', sub: 'private', kind: 'service', at: [350, 110] },
+            { id: 'pay', label: 'Payments', sub: 'private', kind: 'service', at: [350, 220] }
+          ],
+          edges: [{ from: 'web', to: 'gw' }, { from: 'mob', to: 'gw' }, { from: 'gw', to: 'cat' }, { from: 'gw', to: 'ord' }, { from: 'gw', to: 'pay' }],
+          flow: [['web>gw', 'mob>gw'], ['gw>cat', 'gw>ord', 'gw>pay']],
+          ok: ['gw', 'cat', 'ord', 'pay'],
+          badges: { gw: ['token ✓', 'ok'] }
+        }
+      }
+    ],
+    usedBy: ['Netflix Zuul', 'Envoy (created at Lyft)', 'Kong', 'Amazon API Gateway', 'Google Apigee', 'Spring Cloud Gateway'],
+    whenToUse: [
+      'Several backend services sit behind <b>one public API</b>',
+      'Login checks, rate limits and logging must be applied the same way to every request',
+      'Different clients (mobile, web, partners) need different routes, limits or response shapes'
+    ],
+    whenNot: [
+      'You have a single backend app: its web framework can check logins and limits itself',
+      'The traffic is service-to-service inside your network: a service mesh fits better',
+      'You mainly need to serve static files quickly worldwide (see <a href="cdn.html">CDN</a>)'
+    ],
+    glossary: [
+      { term: 'Reverse proxy', def: 'A server that receives client requests and forwards them to backend servers on the client\'s behalf.' },
+      { term: 'Filter chain', def: 'The ordered steps (auth, rate limit, routing, logging) that every request passes through.' },
+      { term: 'JWT', def: 'JSON Web Token: a signed login token that the gateway can verify by itself, without calling the login server.' },
+      { term: 'Rate limiting', def: 'Capping how many requests a client may send per second. Extra requests get HTTP 429 "Too Many Requests".' },
+      { term: 'Service discovery', def: 'A registry that maps a service name to the addresses of its running copies.' },
+      { term: 'Circuit breaker', def: 'A switch that stops calling a failing backend for a while, so requests fail fast instead of piling up.' },
+      { term: 'BFF (backend for frontend)', def: 'A small API layer for one kind of client, such as mobile, that combines several backend calls into one response.' },
+      { term: 'Canary release', def: 'Sending a small share of traffic to a new version first, to catch problems before everyone sees them.' }
+    ]
+  },
+
   requirements: {
     functional: [
       'Route by host, path, header or weight to backend services found via discovery',

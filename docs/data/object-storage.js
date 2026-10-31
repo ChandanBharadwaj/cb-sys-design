@@ -15,6 +15,91 @@ SD.register({
     ]
   },
 
+  intro: {
+    what: 'Object storage keeps files, called <b>objects</b>, under a name such as <code>photos/cat.jpg</code> inside a <b>bucket</b>. You upload, download or delete whole objects over HTTP. There are no disks to manage and no space to run out of: it holds anything from a few bytes to terabytes, and is built so that <b>stored data is practically never lost</b>.',
+    analogy: {
+      icon: '🧩',
+      title: 'A warehouse that stores every box as puzzle pieces',
+      text: 'You hand a box to the warehouse desk and get back only a label; you never learn which shelf it sits on. Behind the desk, the warehouse cuts the contents into 6 pieces, makes 3 extra "spare" pieces, and stores all 9 in different buildings. <b>Any 6 of the 9</b> rebuild the original, so even losing a whole building loses nothing. Unlike real spares, these extra pieces are computed with math (erasure codes), not copied.'
+    },
+    problem: 'A photo app stores every user\'s pictures and videos: billions of files and petabytes (millions of gigabytes) of data, growing every day. With that many disks, some fail every single day, yet users expect a photo from ten years ago to still be there. Keeping three full copies of everything triples the bill. The core question is <b>how to store huge amounts of data so that nothing is lost, at the lowest cost per byte</b>.',
+    story: [
+      {
+        stage: 'naive',
+        title: 'Save uploads as files on one server',
+        text: 'Put every upload on a file server with big disks and save it as a normal file, such as <code>/photos/123.jpg</code>. A web server reads and writes those files. It is easy and fine for a small app.',
+        scene: {
+          nodes: [
+            { id: 'cli', label: 'Photo app', sub: 'upload / view', kind: 'client', at: [70, 0] },
+            { id: 'fe', label: 'Web server', sub: 'save as file', kind: 'service', at: [210, 0] },
+            { id: 'enc', label: 'File server', sub: 'one big disk', kind: 'store', at: [210, 110] }
+          ],
+          edges: [{ from: 'cli', to: 'fe', bidi: true }, { from: 'fe', to: 'enc', bidi: true }],
+          flow: ['cli>fe', 'fe>enc', 'enc>fe', 'fe>cli']
+        }
+      },
+      {
+        stage: 'breaks',
+        title: 'Disks fill up, disks die, copies cost a fortune',
+        text: 'One server runs out of space, so you add more and must track <b>which server holds which file</b>. With thousands of disks, some die every day, and a file on a dead disk is <b>gone</b>. Three full copies of everything fix that but <b>triple</b> the storage bill, and folders with millions of files get slow to list.',
+        scene: {
+          nodes: [
+            { id: 'cli', label: 'Photo app', sub: 'photo missing', kind: 'client', at: [70, 0] },
+            { id: 'fe', label: 'Web server', sub: 'which server?', kind: 'service', at: [210, 0] },
+            { id: 'enc', label: 'File server', sub: 'disk died', kind: 'store', at: [210, 110] },
+            { id: 'copy', label: 'Full copies', sub: '3× the disks', kind: 'store', at: [350, 110] }
+          ],
+          edges: [{ from: 'cli', to: 'fe', bidi: true }, { from: 'fe', to: 'enc', bidi: true }, { from: 'enc', to: 'copy' }],
+          flow: ['cli>fe', 'fe>enc', 'enc>copy'],
+          err: ['enc'],
+          warn: ['copy', 'cli'],
+          badges: { enc: ['data lost', 'err'], copy: ['3× cost', 'warn'] }
+        }
+      },
+      {
+        stage: 'fix',
+        title: 'Separate the index, store coded pieces',
+        text: 'A sharded <b>metadata index</b> maps each bucket and key to where its bytes live, and answers every lookup and listing. The bytes are cut into pieces and <b>erasure-coded</b>: for example 6 data pieces plus 3 parity pieces, spread across disks, racks and zones. Any 6 of the 9 rebuild the data, for only <b>1.5×</b> the space. Background <b>repair</b> rebuilds lost pieces before more failures pile up.',
+        scene: {
+          nodes: [
+            { id: 'cli', label: 'Photo app', sub: 'upload / view', kind: 'client', at: [70, 0] },
+            { id: 'fe', label: 'Front end', sub: 'stateless', kind: 'edge', at: [210, 0] },
+            { id: 'meta', label: 'Metadata', sub: 'key → pieces', kind: 'store', at: [350, 0] },
+            { id: 'enc', label: 'Erasure coder', sub: '6 data + 3 parity', kind: 'compute', at: [210, 110] },
+            { id: 'z1', label: 'Zone A', sub: 'pieces 1, 4, 7', kind: 'store', at: [70, 220] },
+            { id: 'z2', label: 'Zone B', sub: 'pieces 2, 5, 8', kind: 'store', at: [210, 220] },
+            { id: 'z3', label: 'Zone C', sub: 'pieces 3, 6, 9', kind: 'store', at: [350, 220] }
+          ],
+          edges: [{ from: 'cli', to: 'fe', bidi: true }, { from: 'fe', to: 'meta', bidi: true }, { from: 'fe', to: 'enc', bidi: true }, { from: 'enc', to: 'z1' }, { from: 'enc', to: 'z2' }, { from: 'enc', to: 'z3' }],
+          flow: ['cli>fe', 'fe>enc', ['enc>z1', 'enc>z2', 'enc>z3'], 'fe>meta'],
+          ok: ['z1', 'z2', 'z3'],
+          badges: { enc: ['1.5× space', 'ok'] }
+        }
+      }
+    ],
+    usedBy: ['Amazon S3', 'Google Cloud Storage', 'Azure Blob Storage', 'MinIO and Ceph (self-hosted)', 'Backups and data lakes', 'Photo and video storage behind apps'],
+    whenToUse: [
+      'Lots of files: photos, videos, backups, logs, data-lake tables',
+      'Data is <b>written once and read many times</b>, as whole files or byte ranges',
+      'You want to pay per byte stored and <b>never think about disks</b>'
+    ],
+    whenNot: [
+      'Small records updated in place many times a second: use a database or a <a href="kv-store.html">Distributed Key-Value Store</a>',
+      'Users edit and sync files across their devices: see <a href="file-sync.html">Cloud Storage &amp; File Sync</a>',
+      'The same popular files must load fast worldwide: put a <a href="cdn.html">Content Delivery Network</a> in front'
+    ],
+    glossary: [
+      { term: 'Bucket and key', def: 'A bucket is a named container; the key is the object\'s full name inside it, such as photos/2024/cat.jpg.' },
+      { term: 'Metadata index', def: 'The strongly consistent table that maps each key and version to where its pieces are stored.' },
+      { term: 'Erasure coding', def: 'Splitting data into k pieces and computing m extra parity pieces, so any k of the k + m can rebuild it.' },
+      { term: 'RS(k, m)', def: 'Reed-Solomon code with k data and m parity pieces. RS(6,3) uses 1.5× the space and survives any 3 lost pieces.' },
+      { term: 'Durability', def: 'The chance that stored data is never lost, often quoted in "nines" such as 99.999999999%.' },
+      { term: 'Multipart upload', def: 'Uploading a big file as many parts in parallel, each retried on its own, then joining them into one object.' },
+      { term: 'Scrubbing', def: 'Background re-reading of stored pieces to check their checksums and catch silent corruption early.' },
+      { term: 'Read-after-write consistency', def: 'Once an upload succeeds, every later read or listing sees it, never an older version.' }
+    ]
+  },
+
   requirements: {
     functional: [
       'PUT / GET / DELETE an object by bucket + key, including range GET',

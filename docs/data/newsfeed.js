@@ -15,6 +15,92 @@ SD.register({
     ]
   },
 
+  intro: {
+    what: 'A newsfeed system builds your <b>home timeline</b>: the scrolling list of recent posts from the accounts you follow. When someone posts, it makes sure the post shows up for their followers. When you open the app, it hands you a ready page of posts in a blink.',
+    analogy: {
+      icon: '📬',
+      title: 'Mailboxes versus a celebrity notice board',
+      text: 'A local club photocopies each member\'s newsletter and drops it in every follower\'s mailbox, so reading is just opening your own box. That is fine for a member with 50 friends. For a celebrity with millions of fans, photocopying takes forever, so their notice is pinned on one board instead, and you glance at it when you check your mailbox. The real system does the same, except it copies only a short <b>post id</b>, not the whole post.'
+    },
+    problem: 'You open a social app and expect your feed in a fraction of a second, from hundreds of accounts you follow. Meanwhile, a pop star with tens of millions of followers just posted. People read feeds far more often than they post. So the question is: <b>do you do the work when someone posts, or when someone reads, and how do you handle accounts with huge followings?</b>',
+    story: [
+      {
+        stage: 'naive',
+        title: 'Build the feed when the reader opens the app',
+        text: 'When you open the app, the server looks up <b>who you follow</b>, fetches their recent posts from the database, sorts them by time and returns the top 20. Nothing is stored ahead of time. Simple, and fine for a small app.',
+        scene: {
+          nodes: [
+            { id: 'cli', label: 'Reader', sub: 'opens the app', kind: 'client', at: [70, 0] },
+            { id: 'tls', label: 'Feed service', sub: 'query + sort', kind: 'service', at: [210, 110] },
+            { id: 'graph', label: 'Follows', sub: 'who I follow', kind: 'store', at: [70, 220] },
+            { id: 'pdb', label: 'Posts DB', sub: 'all posts', kind: 'store', at: [350, 220] }
+          ],
+          edges: [{ from: 'cli', to: 'tls' }, { from: 'tls', to: 'graph' }, { from: 'tls', to: 'pdb' }],
+          flow: ['cli>tls', ['tls>graph', 'tls>pdb']]
+        }
+      },
+      {
+        stage: 'breaks',
+        title: 'Every page load gathers hundreds of authors',
+        text: 'Each feed load now touches posts from hundreds of authors, and feeds are loaded far more often than posts are written. The database drowns in these big merge queries and pages get slow. Flipping it around, copying every post into every follower\'s list, makes reads cheap, but one celebrity post then means <b>millions of writes</b>.',
+        scene: {
+          nodes: [
+            { id: 'cli', label: 'Readers', sub: 'many loads/s', kind: 'client', at: [70, 0] },
+            { id: 'tls', label: 'Feed service', sub: '300 authors/load', kind: 'service', at: [210, 110] },
+            { id: 'graph', label: 'Follows', sub: 'who I follow', kind: 'store', at: [70, 220] },
+            { id: 'pdb', label: 'Posts DB', sub: 'huge merges', kind: 'store', at: [350, 220] }
+          ],
+          edges: [{ from: 'cli', to: 'tls' }, { from: 'tls', to: 'graph' }, { from: 'tls', to: 'pdb' }],
+          flow: [['cli>tls', 'cli>tls'], ['tls>graph', 'tls>pdb'], ['tls>pdb', 'tls>pdb']],
+          err: ['pdb'],
+          warn: ['tls'],
+          badges: { pdb: ['overloaded', 'err'], cli: ['slow ⏳', 'warn'] }
+        }
+      },
+      {
+        stage: 'fix',
+        title: 'Push ids for most, pull celebrities at read time',
+        text: 'When a normal user posts, background <b>fan-out</b> workers push the post\'s <b>id</b> into a short cached list for each follower. Celebrity posts are stored <b>once</b>, in the author\'s own list. When you read, the timeline service takes your cached list, merges in the few celebrities you follow, then <b>hydrates</b> the page with the actual post text.',
+        scene: {
+          nodes: [
+            { id: 'src', label: 'New post', sub: 'normal or celeb', kind: 'client', at: [70, 0] },
+            { id: 'kfk', label: 'Queue', sub: 'post events', kind: 'queue', at: [210, 0] },
+            { id: 'fan', label: 'Fan-out', sub: 'push id to fans', kind: 'compute', at: [350, 0] },
+            { id: 'auth', label: 'Celeb posts', sub: 'stored once', kind: 'cache', at: [70, 110] },
+            { id: 'tls', label: 'Timeline svc', sub: 'merge + rank', kind: 'service', at: [210, 110] },
+            { id: 'tl', label: 'Home lists', sub: 'ids per user', kind: 'cache', at: [350, 110] },
+            { id: 'cli', label: 'Reader', sub: 'opens the app', kind: 'client', at: [210, 220] }
+          ],
+          edges: [{ from: 'src', to: 'kfk' }, { from: 'kfk', to: 'fan' }, { from: 'fan', to: 'tl' }, { from: 'src', to: 'auth' }, { from: 'cli', to: 'tls' }, { from: 'tls', to: 'tl' }, { from: 'tls', to: 'auth' }],
+          flow: ['src>kfk', 'kfk>fan', 'fan>tl', 'cli>tls', ['tls>tl', 'tls>auth']],
+          ok: ['tl', 'tls'],
+          badges: { tls: ['fast page ✓', 'ok'] }
+        }
+      }
+    ],
+    usedBy: ['X / Twitter home timeline', 'Facebook News Feed', 'Instagram Feed', 'LinkedIn Feed', 'Mastodon home timelines'],
+    whenToUse: [
+      'Users follow many accounts and want <b>one merged, recent list</b> of their posts',
+      'Feeds are read much more often than posts are written',
+      'A few seconds of delay before a post reaches every follower is fine'
+    ],
+    whenNot: [
+      'Messages must arrive in strict order and never be missed, like a chat (see <a href="chat.html">Real-Time Chat &amp; Messaging</a>)',
+      'The list is picked by a model from everything, not from who you follow (see <a href="recommendation.html">Recommendation System</a>)',
+      'A small community: one SQL query over follows and posts is enough'
+    ],
+    glossary: [
+      { term: 'Home timeline', def: 'The feed of recent posts from accounts a user follows, as opposed to one author\'s own profile timeline.' },
+      { term: 'Fan-out', def: 'Delivering one post to many followers; on write means copying it to each follower\'s list, on read means gathering it when they load the feed.' },
+      { term: 'Hybrid fan-out', def: 'Push posts from normal accounts, but pull posts from accounts above a follower threshold at read time.' },
+      { term: 'Social graph', def: 'The stored set of follow relationships: who follows whom.' },
+      { term: 'Hydration', def: 'Turning a list of post ids into full posts by fetching text, author and like counts from caches.' },
+      { term: 'Cursor pagination', def: 'Asking for "the next 20 after this post id" instead of "page 3", so new posts do not shift the pages.' },
+      { term: 'Hot key', def: 'One cache entry read so often (like a celebrity\'s post list) that the single server holding it gets overloaded.' },
+      { term: 'Ranking', def: 'Ordering candidate posts by predicted interest instead of just by time.' }
+    ]
+  },
+
   requirements: {
     functional: [
       'Post text and media',

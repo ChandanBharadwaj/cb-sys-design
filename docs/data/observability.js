@@ -15,6 +15,92 @@ SD.register({
     ]
   },
 
+  intro: {
+    what: 'An observability platform collects the signals that running software gives off: <b>logs</b> (text records of events), <b>metrics</b> (numbers over time) and <b>traces</b> (the path of one request through many services). It stores them centrally and makes them searchable, so engineers can see whether systems are healthy, get alerted when they are not, and find out why.',
+    analogy: {
+      icon: '✈️',
+      title: 'Flight recorders plus a control tower',
+      text: 'Every plane records its readings in a black box, and the control tower watches gauges for all planes at once. Metrics are the tower\'s gauges, logs are the black-box records, and a trace follows one passenger through every gate. The big difference: a software fleet produces so much data that you must choose what to keep, or the recorders cost more than the planes.'
+    },
+    problem: 'A checkout service starts failing for some users at 3 am. It runs on hundreds of servers, each writing thousands of log lines a minute, and the failing request passed through six other services. Without a central system, an engineer has to log into machines one by one, and the evidence may already be gone. The question is: <b>how do you collect everything from thousands of machines, find the one bad request in seconds, and not go broke storing it all?</b>',
+    story: [
+      {
+        stage: 'naive',
+        title: 'Log files on each server, read by hand',
+        text: 'Every service writes logs to its own disk. When something breaks, an engineer connects to each machine over SSH and searches the files with <code>grep</code>. With three servers, this works.',
+        scene: {
+          nodes: [
+            { id: 's1', label: 'Server 1', sub: 'app.log', kind: 'service', at: [70, 0] },
+            { id: 's2', label: 'Server 2', sub: 'app.log', kind: 'service', at: [210, 0] },
+            { id: 's3', label: 'Server 3', sub: 'app.log', kind: 'service', at: [350, 0] },
+            { id: 'eng', label: 'Engineer', sub: 'ssh + grep', kind: 'client', at: [210, 110] }
+          ],
+          edges: [{ from: 'eng', to: 's1', bidi: true }, { from: 'eng', to: 's2', bidi: true }, { from: 'eng', to: 's3', bidi: true }],
+          flow: ['eng>s1', 'eng>s2', 'eng>s3']
+        }
+      },
+      {
+        stage: 'breaks',
+        title: 'Thousands of machines, and the clues are scattered',
+        text: 'Now there are thousands of short-lived containers. A container\'s logs <b>vanish when it is replaced</b>, one request crosses six services, and nobody notices a problem until users complain. Searching machine by machine takes hours in the middle of an outage.',
+        scene: {
+          nodes: [
+            { id: 's1', label: 'Pods ×2000', sub: 'logs on local disk', kind: 'service', at: [70, 0] },
+            { id: 's2', label: 'Replaced pod', sub: 'logs deleted', kind: 'service', at: [210, 0] },
+            { id: 's3', label: 'Checkout', sub: 'failing', kind: 'service', at: [350, 0] },
+            { id: 'eng', label: 'Engineer', sub: 'hours of grep', kind: 'client', at: [210, 110] }
+          ],
+          edges: [{ from: 'eng', to: 's1', bidi: true }, { from: 'eng', to: 's2', bidi: true }, { from: 'eng', to: 's3', bidi: true }],
+          flow: ['eng>s1', 'eng>s2', 'eng>s3'],
+          err: ['s2'],
+          warn: ['s3', 'eng'],
+          badges: { s2: ['logs lost', 'err'], eng: ['3 am ⏳', 'warn'] }
+        }
+      },
+      {
+        stage: 'fix',
+        title: 'Ship everything to purpose-built stores',
+        text: 'A small <b>agent</b> on each host ships logs, metrics and traces to a collector tier, which buffers them (often in Kafka) and writes each kind to a store built for it. Every log line and span carries a shared <b>trace id</b>, so one click jumps from a spike on a chart to the exact failing request. Traces are <b>sampled</b> to keep the bill down.',
+        scene: {
+          nodes: [
+            { id: 's1', label: 'Services', sub: 'emit telemetry', kind: 'service', at: [70, 0] },
+            { id: 'agent', label: 'Node agents', sub: 'buffer + ship', kind: 'edge', at: [210, 0] },
+            { id: 'coll', label: 'Collectors', sub: 'batch · sample', kind: 'service', at: [350, 0] },
+            { id: 'tsdb', label: 'Metrics DB', sub: 'numbers by time', kind: 'store', at: [70, 110] },
+            { id: 'logs', label: 'Log store', sub: 'searchable text', kind: 'store', at: [210, 110] },
+            { id: 'traces', label: 'Trace store', sub: 'by trace id', kind: 'store', at: [350, 110] },
+            { id: 'eng', label: 'Dashboards', sub: 'alerts + search', kind: 'client', at: [210, 220] }
+          ],
+          edges: [{ from: 's1', to: 'agent' }, { from: 'agent', to: 'coll' }, { from: 'coll', to: 'tsdb' }, { from: 'coll', to: 'logs' }, { from: 'coll', to: 'traces' }, { from: 'tsdb', to: 'eng' }, { from: 'logs', to: 'eng' }, { from: 'traces', to: 'eng' }],
+          flow: ['s1>agent', 'agent>coll', ['coll>tsdb', 'coll>logs', 'coll>traces'], ['tsdb>eng', 'logs>eng', 'traces>eng']],
+          ok: ['eng'],
+          badges: { eng: ['root cause ✓', 'ok'] }
+        }
+      }
+    ],
+    usedBy: ['Datadog', 'Grafana (Prometheus, Loki, Tempo)', 'Elastic (ELK stack)', 'Splunk', 'New Relic', 'Google Dapper'],
+    whenToUse: [
+      'You run <b>many services or machines</b> and need one place to see them all',
+      'Someone must be alerted when users are affected, not hours later',
+      'A request crosses several services and you need to see where the time went'
+    ],
+    whenNot: [
+      'One app on one server: its log file plus a simple uptime check may be enough',
+      'You want business numbers such as revenue per region (see <a href="stream-analytics.html">Stream Analytics</a>)',
+      'You need full-text search over product or document data (see <a href="search-engine.html">Search Engine</a>)'
+    ],
+    glossary: [
+      { term: 'Log', def: 'A timestamped text record of one event, such as "card declined for order 42".' },
+      { term: 'Metric', def: 'A number measured over time, such as requests per second or memory in use.' },
+      { term: 'Trace / span', def: 'A trace is the path of one request across services. Each step in it is a span, with a start time and a duration.' },
+      { term: 'Agent', def: 'A small program on each host that collects telemetry and ships it onward, buffering when the network is slow.' },
+      { term: 'TSDB', def: 'Time-series database: a store built for numbers indexed by time.' },
+      { term: 'Cardinality', def: 'How many distinct label combinations a metric has. Each one is a separate series that costs memory.' },
+      { term: 'Sampling', def: 'Keeping only some traces. Tail sampling decides after a request finishes, so errors and slow requests are always kept.' },
+      { term: 'Hot / cold tier', def: 'Recent data on fast, expensive storage; older data moved to cheap object storage.' }
+    ]
+  },
+
   requirements: {
     functional: [
       'Ship logs, metrics and traces from every host and container',

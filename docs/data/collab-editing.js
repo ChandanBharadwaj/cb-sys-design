@@ -14,6 +14,88 @@ SD.register({
       { v: '0.5 s vs 60 s', l: 'Figma journal vs checkpoint write cadence (Figma blog)' }
     ]
   },
+  intro: {
+    what: 'A collaborative editor lets several people change the same document <b>at the same time</b>, each seeing the others\' edits and cursors within a fraction of a second. Your own typing shows up instantly, without waiting for a server. Behind the scenes, the system makes sure every copy of the document ends up <b>exactly the same</b>.',
+    analogy: {
+      icon: '📝',
+      title: 'Editors marking up copies, with one referee',
+      text: 'Each editor has their own printed copy and writes notes like "insert a word at line 3". They send their notes to one referee, who numbers them in the order they arrive. If an earlier note added a line above, the referee adjusts the later note: "your line 3 is now line 4". Everyone then applies the same numbered notes, so all copies match. In the real system the "notes" are tiny edits sent many times a second.'
+    },
+    problem: 'Ana and Ben are both looking at the text <code>abc</code>. Ana types <code>X</code> after the <code>a</code>. At the same moment, Ben deletes the <code>c</code>. Each change shows instantly on its own screen, then is sent as "insert X at position 1" and "delete position 2". If each side applies the other\'s edit as it arrives, Ana deletes the <code>b</code> by mistake, and the two copies no longer match. The question is <b>"how can many people edit one document at once, with no lag, and always end up with the same text?"</b>',
+    story: [
+      {
+        stage: 'naive',
+        title: 'Send every edit straight to everyone',
+        text: 'Each keystroke is applied on your own screen, then sent to a server as a small <b>operation</b>, such as "insert X at position 1". The server forwards it to everyone else, who applies it as is, and saves the document now and then. It feels instant, and with one person typing at a time it works.',
+        scene: {
+          nodes: [
+            { id: 'ca', label: 'Ana', sub: 'insert X @1', kind: 'client', at: [70, 0] },
+            { id: 'srv', label: 'Relay server', sub: 'forwards edits', kind: 'service', at: [210, 110] },
+            { id: 'log', label: 'Saved doc', sub: 'now and then', kind: 'store', at: [350, 110] },
+            { id: 'cb', label: 'Ben', sub: 'delete @2', kind: 'client', at: [70, 220] }
+          ],
+          edges: [{ from: 'ca', to: 'srv', bidi: true }, { from: 'cb', to: 'srv', bidi: true }, { from: 'srv', to: 'log' }],
+          flow: [['ca>srv', 'cb>srv'], ['srv>ca', 'srv>cb']]
+        }
+      },
+      {
+        stage: 'breaks',
+        title: 'Positions point at different versions, so copies drift',
+        text: 'Ben\'s "delete position 2" was meant for <code>abc</code>, but on Ana\'s screen the text is already <code>aXbc</code>, where position 2 is the <code>b</code>. Ana ends up with <code>aXc</code> while Ben has <code>aXb</code>. Nothing crashes and no error appears: the copies have silently <b>diverged</b>, and every later edit makes it worse.',
+        scene: {
+          nodes: [
+            { id: 'ca', label: 'Ana', sub: 'deletes the b', kind: 'client', at: [70, 0] },
+            { id: 'srv', label: 'Relay server', sub: 'no merge rule', kind: 'service', at: [210, 110] },
+            { id: 'log', label: 'Saved doc', sub: 'which one?', kind: 'store', at: [350, 110] },
+            { id: 'cb', label: 'Ben', sub: 'gets X', kind: 'client', at: [70, 220] }
+          ],
+          edges: [{ from: 'ca', to: 'srv', bidi: true }, { from: 'cb', to: 'srv', bidi: true }, { from: 'srv', to: 'log' }],
+          flow: [['ca>srv', 'cb>srv'], ['srv>ca', 'srv>cb'], 'srv>log'],
+          err: ['ca', 'cb'],
+          warn: ['log'],
+          badges: { ca: ['aXc', 'err'], cb: ['aXb', 'err'] }
+        }
+      },
+      {
+        stage: 'fix',
+        title: 'One server orders the edits and adjusts them',
+        text: 'All editors of a document talk to <b>one session server</b>. It numbers every operation (a <b>revision</b>) and, when two edits were made at the same time, <b>transforms</b> the later one so it still means what its author intended: Ben\'s "delete 2" becomes "delete 3". This is <b>operational transformation</b>; a <b>CRDT</b> reaches the same result with edits that merge in any order. Every operation is saved to a log, with regular snapshots.',
+        scene: {
+          nodes: [
+            { id: 'ca', label: 'Ana', sub: 'rev 8', kind: 'client', at: [70, 0] },
+            { id: 'srv', label: 'Session server', sub: 'orders, adjusts', kind: 'service', at: [210, 110] },
+            { id: 'log', label: 'Op log', sub: 'revs + snapshots', kind: 'store', at: [350, 110] },
+            { id: 'cb', label: 'Ben', sub: 'rev 9', kind: 'client', at: [70, 220] }
+          ],
+          edges: [{ from: 'ca', to: 'srv', bidi: true }, { from: 'cb', to: 'srv', bidi: true }, { from: 'srv', to: 'log' }],
+          flow: [['ca>srv', 'cb>srv'], 'srv>log', ['srv>ca', 'srv>cb']],
+          ok: ['ca', 'cb', 'srv'],
+          badges: { ca: ['aXb', 'ok'], cb: ['aXb', 'ok'] }
+        }
+      }
+    ],
+    usedBy: ['Google Docs', 'Figma', 'Microsoft 365 co-authoring', 'Notion', 'Yjs and Automerge libraries'],
+    whenToUse: [
+      'Several people edit the <b>same</b> document, design or board at the same time',
+      'Edits must show on your own screen instantly, without waiting for the server',
+      'People edit offline and their changes must merge cleanly when they reconnect'
+    ],
+    whenNot: [
+      'Only one person edits at a time: save whole versions with a simple version check',
+      'Messages are added, never edited in place: see <a href="chat.html">Real-Time Chat &amp; Messaging</a>',
+      'Whole files are copied between devices: see <a href="file-sync.html">Cloud Storage &amp; File Sync</a>'
+    ],
+    glossary: [
+      { term: 'Operation (op)', def: 'One small edit, such as "insert X at position 1" or "delete position 2".' },
+      { term: 'Operational transformation (OT)', def: 'Rewriting an operation so it still has its intended effect after other edits that happened at the same time.' },
+      { term: 'CRDT', def: 'Conflict-free replicated data type: a data structure whose edits can be merged in any order and still give the same result.' },
+      { term: 'Convergence', def: 'The guarantee that every copy shows the same document once all edits have arrived.' },
+      { term: 'Revision', def: 'The server\'s running number for each accepted operation; it defines the one official order.' },
+      { term: 'Op log', def: 'An append-only list of every accepted operation, used for history and recovery.' },
+      { term: 'Snapshot', def: 'A saved copy of the whole document at some revision, so opening it does not replay its entire history.' },
+      { term: 'Presence', def: 'Live cursors, selections and avatars of other editors; sent often but never saved.' }
+    ]
+  },
 
   requirements: {
     functional: [

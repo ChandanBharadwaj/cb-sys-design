@@ -15,6 +15,92 @@ SD.register({
     ]
   },
 
+  intro: {
+    what: 'A notification gateway is the one place every team in a company uses to message users: <b>phone push alerts, SMS and email</b>. It checks what each user agreed to receive, picks the channel, and hands the message to outside delivery services such as Apple\'s and Google\'s push networks or an SMS company.',
+    analogy: {
+      icon: '📮',
+      title: 'A post office with an express counter',
+      text: 'Every department drops its letters at one post office instead of driving them around itself. The clerk throws away letters to people who said "no junk mail", and puts urgent letters in an <b>express tray</b> that never waits behind the bulk flyers. The trucks (outside providers) only take so many bags per hour, so the office paces the bulk mail and keeps room on each truck for express. Unlike real mail, the office cannot see whether a letter reached the doorstep once the truck has it.'
+    },
+    problem: 'You try to log in and wait for a one-time code by SMS. At that same moment, marketing is sending a promotion to millions of users. The SMS company only accepts so many messages per second and starts refusing extras. Without care, <b>your code waits behind the promotion</b> and arrives after it has expired. The question is: <b>how do you deliver urgent messages fast, respect each user\'s choices, and never overload the outside providers?</b>',
+    story: [
+      {
+        stage: 'naive',
+        title: 'One queue, send everything as fast as possible',
+        text: 'Every service drops its messages into <b>one shared queue</b>. Workers take them in order and call the SMS or push provider as fast as they can. Easy to build, and fine while volumes are small.',
+        scene: {
+          nodes: [
+            { id: 'prod', label: 'Services', sub: 'login · promos', kind: 'client', at: [70, 0] },
+            { id: 'q', label: 'One queue', sub: 'in arrival order', kind: 'queue', at: [210, 0] },
+            { id: 'wk', label: 'Workers', sub: 'send at once', kind: 'compute', at: [350, 0] },
+            { id: 'sms', label: 'Providers', sub: 'SMS · push', kind: 'external', at: [350, 110] }
+          ],
+          edges: [{ from: 'prod', to: 'q' }, { from: 'q', to: 'wk' }, { from: 'wk', to: 'sms' }],
+          flow: ['prod>q', 'q>wk', 'wk>sms']
+        }
+      },
+      {
+        stage: 'breaks',
+        title: 'The OTP waits behind a promo blast',
+        text: 'A promotion puts millions of messages in the queue. The provider hits its limit and answers <b>"too many requests"</b>. Workers retry all at once, which makes it worse. A login code queued behind the promotion arrives <b>minutes late</b>. Retries also send some messages twice, and users who opted out still get promos.',
+        scene: {
+          nodes: [
+            { id: 'prod', label: 'Services', sub: 'promo blast', kind: 'client', at: [70, 0] },
+            { id: 'q', label: 'One queue', sub: 'millions waiting', kind: 'queue', at: [210, 0] },
+            { id: 'wk', label: 'Workers', sub: 'retry together', kind: 'compute', at: [350, 0] },
+            { id: 'otp', label: 'Login code', sub: 'stuck in line', kind: 'client', at: [70, 110] },
+            { id: 'sms', label: 'Providers', sub: 'rejecting', kind: 'external', at: [350, 110] }
+          ],
+          edges: [{ from: 'prod', to: 'q' }, { from: 'otp', to: 'q' }, { from: 'q', to: 'wk' }, { from: 'wk', to: 'sms' }],
+          flow: [['prod>q', 'otp>q'], 'q>wk', ['wk>sms', 'wk>sms']],
+          err: ['sms', 'otp'],
+          warn: ['q'],
+          badges: { sms: ['429 too many', 'err'], otp: ['expired ⏳', 'err'] }
+        }
+      },
+      {
+        stage: 'fix',
+        title: 'Check once, split into lanes, pace each provider',
+        text: 'A single <b>API</b> drops duplicates using an <b>idempotency key</b> and applies each user\'s <b>preferences</b> up front. Messages then go into <b>separate queues by priority</b>, each with its own workers, so a promo backlog cannot block a login code. Workers send at the provider\'s allowed rate and retry with growing, randomized waits.',
+        scene: {
+          nodes: [
+            { id: 'prod', label: 'Services', sub: 'login · promos', kind: 'client', at: [70, 0] },
+            { id: 'api', label: 'Notify API', sub: 'dedup · prefs', kind: 'edge', at: [210, 0] },
+            { id: 'q', label: 'Urgent lane', sub: 'codes, receipts', kind: 'queue', at: [70, 110] },
+            { id: 'qp', label: 'Promo lane', sub: 'paced backlog', kind: 'queue', at: [350, 110] },
+            { id: 'wk', label: 'Workers', sub: 'rate-limited', kind: 'compute', at: [210, 220] },
+            { id: 'sms', label: 'Providers', sub: 'SMS · push', kind: 'external', at: [350, 220] }
+          ],
+          edges: [{ from: 'prod', to: 'api' }, { from: 'api', to: 'q' }, { from: 'api', to: 'qp' }, { from: 'q', to: 'wk' }, { from: 'qp', to: 'wk' }, { from: 'wk', to: 'sms' }],
+          flow: ['prod>api', ['api>q', 'api>qp'], 'q>wk', 'wk>sms'],
+          ok: ['q', 'wk'],
+          badges: { q: ['code in ~1 s', 'ok'] }
+        }
+      }
+    ],
+    usedBy: ['Apple Push (APNs)', 'Firebase Cloud Messaging', 'Amazon SNS', 'Twilio', 'Uber trip updates', 'Netflix (RENO)'],
+    whenToUse: [
+      'Many teams need to message users over <b>push, SMS or email</b>',
+      'Some messages are urgent (login codes, receipts) and some are bulk (promotions)',
+      'Outside providers impose rate limits you must respect'
+    ],
+    whenNot: [
+      'Two people chatting live in an open app (see <a href="chat.html">Real-Time Chat &amp; Messaging</a>)',
+      'Service-to-service events with no human reader (see <a href="message-queue.html">Distributed Message Queue</a>)',
+      'A small app sending a few hundred emails a day: call the email provider\'s API directly'
+    ],
+    glossary: [
+      { term: 'Push provider (APNs / FCM)', def: 'Apple\'s and Google\'s services that actually deliver push alerts to phones; you hand them the message and they deliver it.' },
+      { term: 'Device token', def: 'An address for one app install on one device, issued by the push provider; it can change, so apps re-register it often.' },
+      { term: 'Idempotency key', def: 'A unique id the sender attaches to a request, so repeating the request does not create a second notification.' },
+      { term: 'Transactional vs promotional', def: 'Messages the user needs right now (codes, receipts) versus marketing that can wait or be dropped.' },
+      { term: 'Priority lane', def: 'A separate queue with its own workers for one kind of message, so a backlog in one lane never delays another.' },
+      { term: 'Token bucket', def: 'A rate limiter that refills "permission to send" at a fixed speed; a send happens only when a token is available.' },
+      { term: 'Backoff with jitter', def: 'Waiting longer after each failed try, plus a random amount, so retries do not all hit the provider at the same instant.' },
+      { term: 'Dead-letter queue (DLQ)', def: 'A holding queue for messages that failed too many times or expired, kept for alerts and later re-sending.' }
+    ]
+  },
+
   requirements: {
     functional: [
       'One API for every team to send a notification',

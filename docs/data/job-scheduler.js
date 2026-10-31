@@ -15,6 +15,92 @@ SD.register({
     ]
   },
 
+  intro: {
+    what: 'A job queue and task scheduler runs work <b>in the background</b>, away from the request a user is waiting on. Apps hand it jobs such as "send this email", "resize this video" or "build the sales report at 2 am". It stores each job safely, gives it to one of many worker machines, and <b>retries it</b> if something fails.',
+    analogy: {
+      icon: '🧾',
+      title: 'Order tickets on a restaurant rail',
+      text: 'Waiters clip order tickets to a rail, and any free cook takes the next one. If a cook walks out mid-dish, the ticket goes back on the rail for someone else. Some tickets say "start at 7 pm" or "dessert only after the mains", which is what schedules and dependencies are. One difference matters: the system often cannot tell whether a vanished cook finished the dish, so every job must be safe to do twice.'
+    },
+    problem: 'A shop sends a receipt email after each order and builds a sales report every night. If the web server does this inline, a slow mail provider makes checkout slow, and a crash halfway loses the email for good. The nightly report must not be skipped or started twice, even if the machine that triggers it is rebooting at 2 am. The question is: <b>how do you run every job on time and at least once, when any machine can die mid-task?</b>',
+    story: [
+      {
+        stage: 'naive',
+        title: 'One cron server that runs everything',
+        text: 'A single server runs <b>cron</b>, the classic Unix timer, plus a loop that reads a jobs table and runs each job itself. It is easy to build, and fine for a few jobs a minute.',
+        scene: {
+          nodes: [
+            { id: 'app', label: 'Web app', sub: 'adds jobs', kind: 'client', at: [70, 0] },
+            { id: 'db', label: 'Jobs table', sub: 'one row per job', kind: 'store', at: [210, 0] },
+            { id: 'sch', label: 'Cron server', sub: 'timer + runner', kind: 'service', at: [210, 110] },
+            { id: 'ext', label: 'Email / APIs', sub: 'side effects', kind: 'external', at: [350, 110] }
+          ],
+          edges: [{ from: 'app', to: 'db' }, { from: 'db', to: 'sch' }, { from: 'sch', to: 'ext' }],
+          flow: ['app>db', 'db>sch', 'sch>ext']
+        }
+      },
+      {
+        stage: 'breaks',
+        title: 'The server dies, and its jobs die with it',
+        text: 'Jobs arrive faster than one machine can run them, so a backlog grows. When the server crashes mid-job, nobody knows the job was half done, so it is <b>silently lost</b>. While the server is down no cron fires at all, and the 2 am report simply never runs.',
+        scene: {
+          nodes: [
+            { id: 'app', label: 'Web app', sub: 'adds jobs', kind: 'client', at: [70, 0] },
+            { id: 'db', label: 'Jobs table', sub: 'jobs pile up', kind: 'store', at: [210, 0] },
+            { id: 'sch', label: 'Cron server', sub: 'crashed mid-job', kind: 'service', at: [210, 110] },
+            { id: 'ext', label: 'Email / APIs', sub: 'never called', kind: 'external', at: [350, 110] }
+          ],
+          edges: [{ from: 'app', to: 'db' }, { from: 'db', to: 'sch' }, { from: 'sch', to: 'ext' }],
+          flow: ['app>db', 'app>db', 'db>sch'],
+          err: ['sch'],
+          warn: ['db'],
+          badges: { sch: ['down', 'err'], db: ['backlog', 'warn'] }
+        }
+      },
+      {
+        stage: 'fix',
+        title: 'Durable jobs, leased to many workers',
+        text: 'Keep every job in a <b>durable job store</b>. Two schedulers share the work of marking due jobs as ready. Any worker can claim a job with a time-limited <b>lease</b> and renews it with heartbeats while it works. If a worker goes quiet, the lease expires and another worker retries the job. Jobs are written to be <b>idempotent</b>, so a second run does no harm.',
+        scene: {
+          nodes: [
+            { id: 'app', label: 'Web app', sub: 'adds jobs', kind: 'client', at: [70, 0] },
+            { id: 'db', label: 'Job store', sub: 'durable', kind: 'store', at: [210, 0] },
+            { id: 'sch', label: 'Schedulers ×2', sub: 'cron · due jobs', kind: 'service', at: [350, 0] },
+            { id: 'q', label: 'Task queue', sub: 'ready + leases', kind: 'queue', at: [210, 110] },
+            { id: 'w1', label: 'Worker A', sub: 'lease + heartbeat', kind: 'compute', at: [70, 220] },
+            { id: 'w2', label: 'Worker B', sub: 'lease + heartbeat', kind: 'compute', at: [210, 220] },
+            { id: 'w3', label: 'Worker C', sub: 'lease + heartbeat', kind: 'compute', at: [350, 220] }
+          ],
+          edges: [{ from: 'app', to: 'db' }, { from: 'sch', to: 'db', bidi: true }, { from: 'sch', to: 'q' }, { from: 'q', to: 'w1', bidi: true }, { from: 'q', to: 'w2', bidi: true }, { from: 'q', to: 'w3', bidi: true }],
+          flow: ['app>db', 'sch>db', 'sch>q', ['q>w1', 'q>w2', 'q>w3']],
+          ok: ['w1', 'w2', 'w3'],
+          badges: { q: ['no job lost', 'ok'] }
+        }
+      }
+    ],
+    usedBy: ['Apache Airflow (created at Airbnb)', 'Celery (Python)', 'Sidekiq (Ruby)', 'Temporal', 'Uber Cadence', 'Kubernetes CronJobs'],
+    whenToUse: [
+      'Work is slow or unreliable (emails, video, third-party APIs) and should not block a user request',
+      'Tasks must run <b>on a schedule</b>, or only after other tasks finish (nightly data pipelines)',
+      'A lost or skipped task costs money or trust, so you need retries and a record of every attempt'
+    ],
+    whenNot: [
+      'You want to broadcast one event to many consumers (see <a href="message-queue.html">Message Queue</a>)',
+      'You compute live numbers over an endless event stream (see <a href="stream-analytics.html">Stream Analytics</a>)',
+      'A few jobs a day on one machine: plain cron is enough'
+    ],
+    glossary: [
+      { term: 'Worker', def: 'A process that takes jobs from the queue and runs them.' },
+      { term: 'Lease / visibility timeout', def: 'A time-limited claim on a job. If the worker does not finish or renew it in time, the job becomes available again.' },
+      { term: 'Heartbeat', def: 'A small "I am still alive" message a worker sends to extend its lease.' },
+      { term: 'At-least-once delivery', def: 'Every job is guaranteed to run, but after a failure it may run twice.' },
+      { term: 'Idempotent', def: 'Safe to repeat: running the task a second time has the same effect as running it once.' },
+      { term: 'DAG', def: 'Directed acyclic graph: tasks joined by "run B after A" arrows, with no loops.' },
+      { term: 'Dead-letter queue', def: 'Where a job goes after failing too many times, so a human can inspect it.' },
+      { term: 'SKIP LOCKED', def: 'A Postgres clause that lets many workers each claim a different row without waiting on each other.' }
+    ]
+  },
+
   requirements: {
     functional: [
       'Submit a job now, at a time, or on a cron schedule',

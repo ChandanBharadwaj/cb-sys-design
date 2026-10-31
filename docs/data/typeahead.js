@@ -15,6 +15,89 @@ SD.register({
     ]
   },
 
+  intro: {
+    what: 'A typeahead (autocomplete) system suggests how to finish what you are typing. Type <b>"sys"</b> in a search box and it offers "system design", "systemctl" and a few more, <b>updated on every keystroke</b>. It ranks suggestions by how often people search for them, with a boost for what is trending.',
+    analogy: {
+      icon: '📖',
+      title: 'A dictionary with sticky notes on every tab',
+      text: 'Picture a dictionary with thumb tabs: S, then SY, then SYS. On every tab, an editor has already stuck a note listing the 10 most popular words that start there. When you flip to SYS you just read the note; you never scan the pages. The editor rewrites the notes from time to time, and keeps a separate "hot today" note for sudden news.'
+    },
+    problem: 'Millions of people type into a search box at once, and each keystroke can send a request. A short prefix like "s" matches millions of past searches. Yet the suggestions must appear <b>before the next key is pressed</b>, in well under a tenth of a second including the network. The question is: <b>how do you find the 10 best completions of any prefix almost instantly?</b>',
+    story: [
+      {
+        stage: 'naive',
+        title: 'Ask the database on every keystroke',
+        text: 'Keep a table of past searches with a count for each. On every keystroke, run a query like <code>WHERE query LIKE \'sys%\' ORDER BY count DESC LIMIT 10</code>. It is a few lines of code and works for a small site.',
+        scene: {
+          nodes: [
+            { id: 'cli', label: 'Search box', sub: 'types "sys"', kind: 'client', at: [70, 0] },
+            { id: 'sug', label: 'App server', sub: 'LIKE \'sys%\'', kind: 'service', at: [210, 110] },
+            { id: 'db', label: 'Query table', sub: 'query → count', kind: 'store', at: [350, 220] }
+          ],
+          edges: [{ from: 'cli', to: 'sug' }, { from: 'sug', to: 'db' }],
+          flow: ['cli>sug', 'sug>db']
+        }
+      },
+      {
+        stage: 'breaks',
+        title: 'Short prefixes match millions of rows',
+        text: 'Typing "s" matches <b>millions of rows</b>, and the database must sort them all by count to pick 10. Every user sends several requests per search, so traffic is a multiple of search traffic. Answers arrive after the user has already typed more, and new trends only appear when counts are recomputed.',
+        scene: {
+          nodes: [
+            { id: 'cli', label: 'Search boxes', sub: 'every keystroke', kind: 'client', at: [70, 0] },
+            { id: 'sug', label: 'App server', sub: 'waiting', kind: 'service', at: [210, 110] },
+            { id: 'db', label: 'Query table', sub: 'sort millions', kind: 'store', at: [350, 220] }
+          ],
+          edges: [{ from: 'cli', to: 'sug' }, { from: 'sug', to: 'db' }],
+          flow: [['cli>sug', 'cli>sug'], ['sug>db', 'sug>db']],
+          err: ['db'],
+          warn: ['sug'],
+          badges: { db: ['overloaded', 'err'], cli: ['laggy ⏳', 'warn'] }
+        }
+      },
+      {
+        stage: 'fix',
+        title: 'Precompute answers in a trie, cache the hot ones',
+        text: 'Offline, build a <b>trie</b> (a prefix tree) from the search logs and store the <b>top 10 completions at every node</b>. A lookup just walks the letters of the prefix and returns the ready list. Popular prefixes are cached close to users, and a small <b>trending layer</b> adds queries that spiked in the last few minutes.',
+        scene: {
+          nodes: [
+            { id: 'cli', label: 'Search box', sub: 'debounced', kind: 'client', at: [70, 0] },
+            { id: 'cdn', label: 'Edge cache', sub: 'hot prefixes', kind: 'edge', at: [210, 0] },
+            { id: 'sug', label: 'Suggest svc', sub: 'merge + filter', kind: 'service', at: [350, 0] },
+            { id: 'trend', label: 'Trending', sub: 'last few minutes', kind: 'compute', at: [210, 110] },
+            { id: 'shA', label: 'Trie in RAM', sub: 'top 10 per node', kind: 'cache', at: [350, 110] },
+            { id: 'build', label: 'Trie builder', sub: 'from search logs', kind: 'compute', at: [350, 220] }
+          ],
+          edges: [{ from: 'cli', to: 'cdn' }, { from: 'cdn', to: 'sug' }, { from: 'sug', to: 'shA' }, { from: 'sug', to: 'trend' }, { from: 'build', to: 'shA' }],
+          flow: ['build>shA', 'cli>cdn', 'cdn>sug', ['sug>shA', 'sug>trend']],
+          ok: ['shA', 'cdn'],
+          badges: { shA: ['3 hops ✓', 'ok'] }
+        }
+      }
+    ],
+    usedBy: ['Google Search suggestions', 'Amazon product search', 'LinkedIn search', 'YouTube search', 'Maps place search'],
+    whenToUse: [
+      'Users type into a search box and you want to <b>suggest completions as they type</b>',
+      'Suggestions can be ranked mostly by overall popularity, refreshed periodically',
+      'The answer must arrive in tens of milliseconds, at very high request rates'
+    ],
+    whenNot: [
+      'You need full search results with relevance ranking over documents (see <a href="search-engine.html">Distributed Search Engine</a>)',
+      'The list is a few thousand fixed items, like countries: filter them in the browser',
+      'You only need the most frequent items, not completions of a prefix (see <a href="top-k.html">Top-K / Heavy Hitters</a>)'
+    ],
+    glossary: [
+      { term: 'Prefix', def: 'The beginning of a word or query that the user has typed so far, such as "sys".' },
+      { term: 'Trie', def: 'A tree where each step down adds one character, so all queries that share a prefix share the same path.' },
+      { term: 'Top-k per node', def: 'The k best completions stored at each trie node ahead of time, so a lookup never scans the subtree.' },
+      { term: 'Debounce', def: 'Waiting for a short pause in typing before sending a request, which cuts the number of requests.' },
+      { term: 'Edge cache (CDN)', def: 'Cache servers close to users that can answer common requests without reaching your servers.' },
+      { term: 'Time decay', def: 'Counting recent searches more than old ones, so suggestions follow what people search for now.' },
+      { term: 'Snapshot and hot swap', def: 'Each rebuild produces a new read-only trie file; servers load it and switch to it in one step, keeping the old one for rollback.' },
+      { term: 'Denylist', def: 'A list of suggestions that must never be shown, checked at serve time so removals take effect within minutes.' }
+    ]
+  },
+
   requirements: {
     functional: [
       'Suggest up to 10 completions for a prefix',

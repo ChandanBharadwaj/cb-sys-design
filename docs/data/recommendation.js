@@ -15,6 +15,92 @@ SD.register({
     ]
   },
 
+  intro: {
+    what: 'A recommendation system decides which items to show each person: videos, products, songs or posts. It learns from what people watched, clicked, liked or skipped. Then it picks the <b>handful most likely to interest this user right now</b> out of a huge catalog.',
+    analogy: {
+      icon: '📼',
+      title: 'A video-store clerk who knows your taste',
+      text: 'A good clerk does not walk you past every shelf. They first grab a small pile of likely titles from the sections you enjoy, then think harder about which few you will love, and make sure the pile is not all one genre. A recommender works the same way in steps: <b>cheap models first, expensive ones last</b>. Unlike the clerk, it serves millions of people at once and updates its picture of you as you click.'
+    },
+    problem: 'You open a video app and expect a feed of things you want to watch, in the blink of an eye. The catalog holds many millions of videos, and your taste may have shifted in the last few minutes. Scoring every video with a smart model, for every user, is far too slow and costly. The core question is <b>how to pick the best 20 items out of millions, for each person, in a fraction of a second</b>.',
+    story: [
+      {
+        stage: 'naive',
+        title: 'Score every item with one model',
+        text: 'Train one model that predicts how much a user will like an item. When the feed loads, score <b>every item</b> in the catalog for this user, sort, and show the top 20. It is simple and works for a shop with a few hundred products.',
+        scene: {
+          nodes: [
+            { id: 'user', label: 'User app', sub: 'opens feed', kind: 'client', at: [70, 0] },
+            { id: 'feed', label: 'Feed service', sub: 'score, sort', kind: 'service', at: [210, 0] },
+            { id: 'cat', label: 'Catalog', sub: 'every item', kind: 'store', at: [350, 0] },
+            { id: 'rank', label: 'Ranking model', sub: 'scores each item', kind: 'ml', at: [210, 110] }
+          ],
+          edges: [{ from: 'user', to: 'feed', bidi: true }, { from: 'feed', to: 'cat', bidi: true }, { from: 'feed', to: 'rank', bidi: true }],
+          flow: ['user>feed', 'feed>cat', 'feed>rank', 'rank>feed', 'feed>user']
+        }
+      },
+      {
+        stage: 'breaks',
+        title: 'Too many items, too little time',
+        text: 'A catalog of 100 million items times thousands of feed requests per second means <b>hundreds of billions of model scores every second</b>. Every request blows its time budget. And if the model only learns once a day, the feed ignores the cooking videos you watched five minutes ago.',
+        scene: {
+          nodes: [
+            { id: 'user', label: 'User app', sub: 'spinner…', kind: 'client', at: [70, 0] },
+            { id: 'feed', label: 'Feed service', sub: 'timing out', kind: 'service', at: [210, 0] },
+            { id: 'cat', label: 'Catalog', sub: '100M items', kind: 'store', at: [350, 0] },
+            { id: 'rank', label: 'Ranking model', sub: 'overloaded', kind: 'ml', at: [210, 110] }
+          ],
+          edges: [{ from: 'user', to: 'feed', bidi: true }, { from: 'feed', to: 'cat', bidi: true }, { from: 'feed', to: 'rank', bidi: true }],
+          flow: ['user>feed', 'feed>cat', ['feed>rank', 'feed>rank']],
+          err: ['rank'],
+          warn: ['feed', 'user'],
+          badges: { rank: ['100M scores', 'err'], user: ['slow ⏳', 'warn'] }
+        }
+      },
+      {
+        stage: 'fix',
+        title: 'A funnel: cheap filters first, the smart model last',
+        text: 'A cheap <b>candidate generation</b> step uses item embeddings and nearest-neighbour search to pull about a thousand likely items from millions. A heavier <b>ranking model</b> scores only those, using fresh signals from a <b>feature store</b>. A <b>re-ranker</b> adds variety and business rules and keeps the top 20. Your clicks stream back within seconds, so the next scroll already reflects them.',
+        scene: {
+          nodes: [
+            { id: 'user', label: 'User app', sub: 'opens feed', kind: 'client', at: [70, 0] },
+            { id: 'feed', label: 'Feed service', sub: 'runs the funnel', kind: 'service', at: [210, 0] },
+            { id: 'cg', label: 'Candidates', sub: 'millions → 1,000', kind: 'ml', at: [70, 110] },
+            { id: 'rank', label: 'Ranking model', sub: 'scores 1,000', kind: 'ml', at: [210, 110] },
+            { id: 'rerank', label: 'Re-ranker', sub: 'top 20, varied', kind: 'service', at: [350, 110] },
+            { id: 'ann', label: 'Item index', sub: 'nearest items', kind: 'store', at: [70, 220] },
+            { id: 'fs', label: 'Feature store', sub: 'fresh signals', kind: 'cache', at: [210, 220] }
+          ],
+          edges: [{ from: 'user', to: 'feed', bidi: true }, { from: 'feed', to: 'cg' }, { from: 'cg', to: 'ann', bidi: true }, { from: 'cg', to: 'rank' }, { from: 'rank', to: 'fs', bidi: true }, { from: 'rank', to: 'rerank' }, { from: 'rerank', to: 'feed' }],
+          flow: ['feed>cg', 'cg>rank', 'rank>rerank', 'rerank>feed', 'feed>user'],
+          ok: ['cg', 'rank', 'rerank'],
+          badges: { user: ['20 picks', 'ok'] }
+        }
+      }
+    ],
+    usedBy: ['YouTube home feed and Up next', 'Netflix home rows', 'TikTok For You feed', 'Amazon "customers also bought"', 'Spotify Discover Weekly', 'Pinterest related pins'],
+    whenToUse: [
+      'The catalog is <b>far too big</b> for people to browse',
+      'Users come back often, so their history shows what they like',
+      'Engagement or sales depend on showing the <b>right few items first</b>'
+    ],
+    whenNot: [
+      'Users know exactly what they want and type it: that is search (see <a href="search-engine.html">Distributed Search Engine</a>)',
+      'A small catalog of a few hundred items: sort by popularity or let editors choose',
+      'A time-ordered list of posts from accounts a user follows: see <a href="newsfeed.html">Newsfeed &amp; Timeline</a>'
+    ],
+    glossary: [
+      { term: 'Candidate generation', def: 'The first, cheap stage that narrows millions of items to a few hundred or thousand worth scoring.' },
+      { term: 'Two-tower model', def: 'Two networks that turn a user and an item into embeddings (lists of numbers), so a close pair means a good match.' },
+      { term: 'ANN search', def: 'Approximate nearest-neighbour search: quickly finding the item embeddings closest to the user\'s, without checking them all.' },
+      { term: 'Ranking model', def: 'A heavier model that scores each candidate using many user and item features, predicting clicks, watch time and more.' },
+      { term: 'Re-ranker', def: 'The last step that reorders the top results for variety, freshness and business rules.' },
+      { term: 'Feature store', def: 'A shared store of model inputs, such as "last 50 items watched", served fast online and kept as history for training.' },
+      { term: 'Cold start', def: 'The problem of recommending for a brand-new user or item that has no history yet.' },
+      { term: 'Training-serving skew', def: 'When the model sees features computed differently in production than in training, so its predictions quietly get worse.' }
+    ]
+  },
+
   requirements: {
     functional: [
       'Personalized home feed with infinite scroll',

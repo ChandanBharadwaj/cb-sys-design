@@ -15,6 +15,91 @@ SD.register({
     ]
   },
 
+  intro: {
+    what: 'A vector database stores <b>embeddings</b>: lists of numbers that capture the meaning of a piece of text, an image or a product. Given a new embedding, it quickly finds the stored ones that are <b>closest in meaning</b>. It also keeps metadata such as owner or language, so results can be filtered.',
+    analogy: {
+      icon: '📚',
+      title: 'A library shelved by topic, not by title',
+      text: 'In a library sorted by topic, you walk to the shelf for your subject and look only there, instead of reading every spine in the building. A vector database places every item at a point in a "meaning space", so similar items sit close together. A search jumps to the right neighbourhood and checks only nearby items. Like a quick shelf scan, it can now and then miss a good book shelved elsewhere: the answer is <b>approximate on purpose</b>.'
+    },
+    problem: 'A support bot must find the five help articles that best match "my card was charged twice", even when no article uses those exact words. Embeddings place "charged twice" and "duplicate payment" close together. But comparing the question with every one of many millions of stored vectors takes far too long. The core question is <b>how to find the nearest vectors among millions in a few milliseconds, with filters, while new ones keep arriving</b>.',
+    story: [
+      {
+        stage: 'naive',
+        title: 'Compare the query with every vector',
+        text: 'Turn the question into a vector with an <b>embedding model</b>. Keep all stored vectors in one table. For each search, compute the distance from the query to <b>every</b> row, sort, and return the top 10. It is exact and simple, and fine for a few thousand items.',
+        scene: {
+          nodes: [
+            { id: 'app', label: 'App', sub: 'user question', kind: 'client', at: [70, 0] },
+            { id: 'emb', label: 'Embed model', sub: 'text → numbers', kind: 'ml', at: [350, 0] },
+            { id: 'db', label: 'Vector table', sub: 'check every row', kind: 'store', at: [210, 110] }
+          ],
+          edges: [{ from: 'app', to: 'emb', bidi: true }, { from: 'app', to: 'db', bidi: true }],
+          flow: ['app>emb', 'emb>app', 'app>db', 'db>app']
+        }
+      },
+      {
+        stage: 'breaks',
+        title: 'Every search reads everything',
+        text: 'Each vector has hundreds of numbers. With 100 million of them, one search means tens of billions of multiplications and <b>hundreds of gigabytes</b> of memory to read. That takes seconds, not milliseconds. One machine cannot hold it all in memory, and new vectors keep arriving while you search.',
+        scene: {
+          nodes: [
+            { id: 'app', label: 'App', sub: 'waiting…', kind: 'client', at: [70, 0] },
+            { id: 'emb', label: 'Embed model', sub: 'text → numbers', kind: 'ml', at: [350, 0] },
+            { id: 'ins', label: 'New vectors', sub: 'keep arriving', kind: 'client', at: [70, 110] },
+            { id: 'db', label: 'Vector table', sub: 'full scan', kind: 'store', at: [210, 110] }
+          ],
+          edges: [{ from: 'app', to: 'emb', bidi: true }, { from: 'app', to: 'db', bidi: true }, { from: 'ins', to: 'db' }],
+          flow: [['app>db', 'ins>db'], 'db>app'],
+          err: ['db'],
+          warn: ['app'],
+          badges: { db: ['seconds ⏳', 'err'], app: ['slow', 'warn'] }
+        }
+      },
+      {
+        stage: 'fix',
+        title: 'Use an approximate index, split across machines',
+        text: 'Build an <b>approximate index</b>, such as a graph that links each vector to its near neighbours. A search hops through the graph toward the query and checks only a few thousand vectors. Split the data into <b>segments</b> spread over several query nodes. Each node returns its local top 10 and a <b>proxy</b> merges them. New writes land in a <b>log</b> first, so they are safe and searchable within about a second.',
+        scene: {
+          nodes: [
+            { id: 'app', label: 'App', sub: 'user question', kind: 'client', at: [70, 0] },
+            { id: 'emb', label: 'Embed model', sub: 'text → numbers', kind: 'ml', at: [350, 0] },
+            { id: 'log', label: 'Write log', sub: 'new vectors', kind: 'queue', at: [70, 110] },
+            { id: 'proxy', label: 'Proxy', sub: 'merge top 10', kind: 'edge', at: [210, 110] },
+            { id: 'q1', label: 'Query node 1', sub: 'graph index', kind: 'compute', at: [70, 220] },
+            { id: 'q2', label: 'Query node 2', sub: 'graph index', kind: 'compute', at: [210, 220] },
+            { id: 'q3', label: 'Query node 3', sub: 'graph index', kind: 'compute', at: [350, 220] }
+          ],
+          edges: [{ from: 'app', to: 'emb', bidi: true }, { from: 'app', to: 'proxy', bidi: true }, { from: 'app', to: 'log' }, { from: 'log', to: 'q1', dashed: true }, { from: 'proxy', to: 'q1', bidi: true }, { from: 'proxy', to: 'q2', bidi: true }, { from: 'proxy', to: 'q3', bidi: true }],
+          flow: ['app>proxy', ['proxy>q1', 'proxy>q2', 'proxy>q3'], ['q1>proxy', 'q2>proxy', 'q3>proxy'], 'proxy>app'],
+          ok: ['q1', 'q2', 'q3'],
+          badges: { proxy: ['top 10 in ms', 'ok'] }
+        }
+      }
+    ],
+    usedBy: ['Milvus', 'Qdrant', 'Pinecone', 'pgvector for Postgres', 'Chatbots that answer from documents (RAG)', 'Image and product similarity search'],
+    whenToUse: [
+      'You search by <b>meaning</b>, not exact words: questions, images, similar products',
+      'Millions of embeddings or more, with answers needed <b>in milliseconds</b>',
+      'Results must be filtered by metadata such as tenant, language or date'
+    ],
+    whenNot: [
+      'Users search for exact words, ids or phrases: a keyword index fits better (see <a href="search-engine.html">Distributed Search Engine</a>)',
+      'Up to a few million vectors next to rows you already have: the pgvector extension in Postgres is enough',
+      'You need exact answers such as "all orders over $100": that is an ordinary database query'
+    ],
+    glossary: [
+      { term: 'Embedding', def: 'A list of numbers (a vector) produced by a model, where similar meanings get nearby vectors.' },
+      { term: 'Approximate nearest neighbour (ANN)', def: 'Search that finds almost the closest vectors while checking only a tiny fraction of them.' },
+      { term: 'HNSW', def: 'Hierarchical Navigable Small World: a layered graph index where search greedily hops toward the query.' },
+      { term: 'IVF', def: 'Inverted file index: vectors are grouped into clusters, and a search scans only the few clusters nearest the query.' },
+      { term: 'Product quantization (PQ)', def: 'Compressing each vector into a short code so far more vectors fit in memory, at some cost in accuracy.' },
+      { term: 'Recall', def: 'The share of the true top results that the approximate search actually returned, such as 95 of 100.' },
+      { term: 'Segment', def: 'A chunk of the collection that is sealed (made read-only) once full and then gets its own index.' },
+      { term: 'Metadata filter', def: 'A condition on stored fields, such as tenant_id = 42, applied together with the vector search.' }
+    ]
+  },
+
   requirements: {
     functional: [
       'Upsert / delete vectors with an id and metadata (tenant, doc, tags)',

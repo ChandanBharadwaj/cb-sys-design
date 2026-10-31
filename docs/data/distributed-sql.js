@@ -15,6 +15,90 @@ SD.register({
     ]
   },
 
+  intro: {
+    what: 'A distributed SQL database looks like an ordinary SQL database, with tables, joins and transactions, but runs on <b>many machines</b>, even across regions. It splits the data into pieces, keeps several copies of each piece, and still makes a transaction that touches several pieces <b>all-or-nothing</b>.',
+    analogy: {
+      icon: '📒',
+      title: 'A bank ledger split into volumes, copied by three branches',
+      text: 'Picture a bank whose ledger is split into volumes by account name, with three branches each keeping a copy of every volume. A change counts once a majority of those copies have written it down. A transfer between two volumes is first pencilled into both, then confirmed in one place, so it happens fully or not at all. The hard part is agreeing on the time of each entry, because every branch\'s clock is slightly off.'
+    },
+    problem: 'A payments app runs on one Postgres server. Traffic grows until that machine cannot take more writes, and if its region goes down, nobody can pay. Splitting customers across several databases by hand adds capacity, but then a transfer between two customers on different databases is no longer one safe transaction. The core question is <b>how to keep SQL and all-or-nothing transactions while the data spreads across many machines and regions</b>.',
+    story: [
+      {
+        stage: 'naive',
+        title: 'One primary, plus read copies',
+        text: 'Run one Postgres <b>primary</b> that takes every write, and add read-only copies (replicas) for extra reads. Everything is ordinary SQL and transactions just work. For most apps this is the right choice.',
+        scene: {
+          nodes: [
+            { id: 'app', label: 'App', sub: 'SQL queries', kind: 'client', at: [70, 0] },
+            { id: 'pri', label: 'Primary', sub: 'all writes', kind: 'store', at: [210, 110] },
+            { id: 'rep', label: 'Read replica', sub: 'copy for reads', kind: 'store', at: [350, 110] }
+          ],
+          edges: [{ from: 'app', to: 'pri', bidi: true }, { from: 'pri', to: 'rep' }],
+          flow: ['app>pri', 'pri>rep', 'pri>app']
+        }
+      },
+      {
+        stage: 'breaks',
+        title: 'Writes max out, and hand sharding breaks transactions',
+        text: 'All writes still go to <b>one machine</b>, so write throughput stops at its CPU and disk. If its region fails, writes stop until someone promotes a replica. Splitting customers over several databases by hand (<b>sharding</b>) adds capacity, but a transfer from alice on shard 1 to bob on shard 2 is <b>no longer one transaction</b>: a crash halfway can lose or duplicate money.',
+        scene: {
+          nodes: [
+            { id: 'app', label: 'App', sub: 'transfer $50', kind: 'client', at: [70, 0] },
+            { id: 'pri', label: 'Shard 1', sub: 'alice: −$50', kind: 'store', at: [210, 110] },
+            { id: 'rep', label: 'Shard 2', sub: 'bob: never +$50', kind: 'store', at: [350, 110] }
+          ],
+          edges: [{ from: 'app', to: 'pri', bidi: true }, { from: 'app', to: 'rep', bidi: true }],
+          flow: ['app>pri', 'app>rep'],
+          err: ['rep'],
+          warn: ['pri'],
+          badges: { rep: ['crashed', 'err'], app: ['$50 lost', 'warn'] }
+        }
+      },
+      {
+        stage: 'fix',
+        title: 'Split into ranges, replicate each with Raft',
+        text: 'Sort all rows into one long key space and cut it into <b>ranges</b>. Each range has 3 copies on different machines that agree on every write using <b>Raft</b>, a consensus protocol: a write counts once a majority has it. Any node accepts SQL. A transaction across ranges writes provisional values to each, then commits them all at once by flipping a single transaction record, with <b>timestamps</b> deciding the order.',
+        scene: {
+          nodes: [
+            { id: 'app', label: 'App', sub: 'transfer $50', kind: 'client', at: [70, 0] },
+            { id: 'gw', label: 'SQL gateway', sub: 'any node', kind: 'service', at: [210, 0] },
+            { id: 'pri', label: 'Range A', sub: 'alice · leader', kind: 'store', at: [70, 110] },
+            { id: 'txn', label: 'Txn record', sub: 'one atomic flip', kind: 'service', at: [210, 110] },
+            { id: 'rep', label: 'Range B', sub: 'bob · leader', kind: 'store', at: [350, 110] },
+            { id: 'af', label: 'A copies', sub: '2 followers', kind: 'store', at: [70, 220] },
+            { id: 'bf', label: 'B copies', sub: '2 followers', kind: 'store', at: [350, 220] }
+          ],
+          edges: [{ from: 'app', to: 'gw', bidi: true }, { from: 'gw', to: 'pri' }, { from: 'gw', to: 'rep' }, { from: 'gw', to: 'txn' }, { from: 'pri', to: 'af', bidi: true }, { from: 'rep', to: 'bf', bidi: true }],
+          flow: ['app>gw', ['gw>pri', 'gw>rep'], ['pri>af', 'rep>bf'], 'gw>txn', 'gw>app'],
+          ok: ['pri', 'rep', 'txn'],
+          badges: { txn: ['committed', 'ok'] }
+        }
+      }
+    ],
+    usedBy: ['Google Spanner', 'CockroachDB', 'YugabyteDB', 'TiDB', 'Google Ads data (F1 on Spanner)'],
+    whenToUse: [
+      'You need SQL and <b>all-or-nothing transactions</b>, but one primary can no longer take the writes',
+      'Data must survive losing a machine, a zone or even a region, with <b>no manual failover</b>',
+      'Users in several regions need consistent access to the same data'
+    ],
+    whenNot: [
+      'One Postgres primary still keeps up: it is simpler, cheaper and faster per query',
+      'Simple lookups by key at huge scale, without multi-row transactions: see <a href="kv-store.html">Distributed Key-Value Store</a>',
+      'Large analytical scans over years of history: use a column-oriented data warehouse'
+    ],
+    glossary: [
+      { term: 'Range', def: 'A contiguous slice of the sorted key space, a few hundred megabytes at most, that is stored and replicated as one unit.' },
+      { term: 'Raft', def: 'A consensus protocol: replicas elect a leader, and a write is committed once a majority has stored it.' },
+      { term: 'Leaseholder', def: 'The one replica of a range allowed to serve consistent reads and coordinate its writes, usually the Raft leader.' },
+      { term: 'MVCC', def: 'Multi-version concurrency control: each write adds a new timestamped version, so readers see a consistent snapshot without blocking writers.' },
+      { term: 'Two-phase commit (2PC)', def: 'First prepare a change on every participant, then commit it everywhere only if all of them succeeded.' },
+      { term: 'Write intent', def: 'A provisional value tagged with its transaction id, which becomes a normal value once that transaction commits.' },
+      { term: 'TrueTime / HLC', def: 'Two ways to timestamp transactions across machines: Spanner\'s GPS- and atomic-clock-bounded time, or a hybrid logical clock on ordinary clocks.' },
+      { term: 'Serializable isolation', def: 'The strictest level: transactions behave as if they ran one at a time. Conflicts surface as retry errors (40001).' }
+    ]
+  },
+
   requirements: {
     functional: [
       'Standard SQL: secondary indexes, joins, constraints',

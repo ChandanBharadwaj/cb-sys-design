@@ -15,6 +15,90 @@ SD.register({
     ]
   },
 
+  intro: {
+    what: 'A distributed key-value store saves values under keys, like a giant dictionary: <code>put(key, value)</code> to save, <code>get(key)</code> to read it back. It spreads the keys over <b>many machines</b> and keeps <b>several copies</b> of each. So it can hold far more data than one server, and keep working when some servers die.',
+    analogy: {
+      icon: '🏢',
+      title: 'Every file kept in three branch offices',
+      text: 'Picture a company that files every document in three branch offices, chosen by a fixed rule on the document\'s name. To save a change you phone all three and wait until two confirm. To read, you ask two and keep the newer copy. If one office is closed for a day, the other two still answer, and the closed office catches up when it reopens.'
+    },
+    problem: 'An online shop keeps every shopper\'s cart under a key such as <code>cart:alice</code>. Millions of carts must be read and written in milliseconds, all day, even while servers crash or the network splits. One database server cannot hold them all, and if it dies, nobody can shop. The core question is <b>how to spread keys over many machines, keep the copies in sync, and decide what a read returns while some machines are down</b>.',
+    story: [
+      {
+        stage: 'naive',
+        title: 'One server holds every key',
+        text: 'Run one database server and store each cart as a row under its key. Every app server reads and writes there. It is simple and always correct, because there is only one copy of each value.',
+        scene: {
+          nodes: [
+            { id: 'a1', label: 'App server', sub: 'put cart:alice', kind: 'client', at: [70, 0] },
+            { id: 'a2', label: 'App server', sub: 'get cart:bob', kind: 'client', at: [350, 0] },
+            { id: 'db', label: 'One server', sub: 'all keys', kind: 'store', at: [210, 110] }
+          ],
+          edges: [{ from: 'a1', to: 'db', bidi: true }, { from: 'a2', to: 'db', bidi: true }],
+          flow: [['a1>db', 'a2>db'], ['db>a1', 'db>a2']]
+        }
+      },
+      {
+        stage: 'breaks',
+        title: 'One server fills up, then fails',
+        text: 'Keys and traffic keep growing until one machine\'s disk and CPU run out. Splitting keys with <code>hash(key) % servers</code> helps, but adding a server then moves <b>almost every key</b>. Worse, when a server dies, every key on it is unreachable and writes start failing.',
+        scene: {
+          nodes: [
+            { id: 'a1', label: 'App server', sub: 'put cart:alice', kind: 'client', at: [70, 0] },
+            { id: 'a2', label: 'App server', sub: 'get cart:bob', kind: 'client', at: [350, 0] },
+            { id: 'db', label: 'One server', sub: 'disk full · down', kind: 'store', at: [210, 110] }
+          ],
+          edges: [{ from: 'a1', to: 'db', bidi: true }, { from: 'a2', to: 'db', bidi: true }],
+          flow: [['a1>db', 'a2>db']],
+          err: ['db'],
+          warn: ['a1', 'a2'],
+          badges: { db: ['down', 'err'], a1: ['writes fail', 'warn'] }
+        }
+      },
+      {
+        stage: 'fix',
+        title: 'A hash ring with three copies of each key',
+        text: 'Place nodes on a <b>consistent-hash ring</b>: each key belongs to the next few nodes clockwise, so adding a node moves only a small slice of keys. Each key is copied to <b>N = 3</b> nodes. A write waits for <b>W = 2</b> acknowledgements and a read for <b>R = 2</b> replies. Because 2 + 2 &gt; 3, every read overlaps the latest write, and one dead node stops nothing.',
+        scene: {
+          nodes: [
+            { id: 'a1', label: 'App server', sub: 'put cart:alice', kind: 'client', at: [70, 0] },
+            { id: 'a2', label: 'App server', sub: 'get cart:bob', kind: 'client', at: [350, 0] },
+            { id: 'db', label: 'Coordinator', sub: 'any node', kind: 'edge', at: [210, 110] },
+            { id: 'nA', label: 'Node A', sub: 'copy 1', kind: 'service', at: [70, 220] },
+            { id: 'nB', label: 'Node B', sub: 'copy 2', kind: 'service', at: [210, 220] },
+            { id: 'nC', label: 'Node C', sub: 'copy 3 · down', kind: 'service', at: [350, 220] }
+          ],
+          edges: [{ from: 'a1', to: 'db', bidi: true }, { from: 'a2', to: 'db', bidi: true }, { from: 'db', to: 'nA', bidi: true }, { from: 'db', to: 'nB', bidi: true }, { from: 'db', to: 'nC', bidi: true }],
+          flow: ['a1>db', ['db>nA', 'db>nB', 'db>nC'], ['nA>db', 'nB>db'], 'db>a1'],
+          warn: ['nC'],
+          ok: ['nA', 'nB'],
+          badges: { db: ['2 of 3 acks', 'ok'] }
+        }
+      }
+    ],
+    usedBy: ['Amazon DynamoDB', 'Apache Cassandra', 'ScyllaDB', 'Riak', 'Shopping carts, sessions and user profiles'],
+    whenToUse: [
+      'Huge numbers of small records looked up <b>by key</b>: carts, sessions, profiles, device data',
+      'Writes must keep working even when servers or network links fail',
+      'Data and traffic will outgrow one machine'
+    ],
+    whenNot: [
+      'You need joins, ad-hoc queries or multi-row transactions: see <a href="distributed-sql.html">Distributed SQL</a>',
+      'The data fits on one machine: a single Postgres or Redis with a replica is simpler',
+      'You store large files such as images or videos: see <a href="object-storage.html">Object Storage</a>'
+    ],
+    glossary: [
+      { term: 'Consistent hashing', def: 'Placing nodes and keys on a ring of hash values, so adding or removing a node moves only nearby keys. Virtual nodes give each server many small slices.' },
+      { term: 'Replication factor (N)', def: 'How many nodes hold a copy of each key, often 3.' },
+      { term: 'Quorum (R and W)', def: 'How many replicas must answer a read (R) or acknowledge a write (W) before the client gets a reply.' },
+      { term: 'Hinted handoff', def: 'A healthy node temporarily keeps a write meant for a dead node, with a note, and passes it on when that node returns.' },
+      { term: 'Read repair', def: 'During a read, the coordinator notices a stale replica and writes the newest value back to it.' },
+      { term: 'Vector clock', def: 'A small per-node version counter attached to a value, used to tell whether two writes happened one after the other or at the same time.' },
+      { term: 'LSM tree', def: 'A storage layout that buffers writes in memory, flushes them as sorted files and merges the files in the background.' },
+      { term: 'Gossip', def: 'Nodes regularly swap status with a few random peers, so news about joins and failures spreads without a central master.' }
+    ]
+  },
+
   requirements: {
     functional: [
       'put(key, value), get(key), delete(key) via tombstones',

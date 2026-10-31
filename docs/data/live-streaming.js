@@ -15,6 +15,92 @@ SD.register({
     ]
   },
 
+  intro: {
+    what: 'A live event streaming system sends one live video, such as a cricket match or a concert, to a <b>huge audience at the same moment</b>. It turns the camera feed into small video files, copies them to servers close to viewers, and runs the app servers that handle login, subscriptions and the home page.',
+    analogy: {
+      icon: '📰',
+      title: 'A newspaper printed every few seconds',
+      text: 'Think of a paper that prints a new short page every few seconds. Printing happens once, at one plant, and bundles go to local newsstands, so readers queue at the corner shop, not at the plant. The hard day is when millions of new readers rush to the ticket office to buy a subscription at once. That office (the app servers) must be staffed up <b>before</b> the rush, because hiring takes too long once the queue forms.'
+    },
+    problem: 'A big match starts and a phone alert says "the toss is happening". <b>Millions of people open the app within a few minutes.</b> Each one logs in, checks their subscription and loads the home page before the video even starts. The video itself is the same for everyone, so it copies well. The question is: <b>how do you survive a sudden wave of viewers without the app falling over just when the moment they came for arrives?</b>',
+    story: [
+      {
+        stage: 'naive',
+        title: 'One video server, autoscaled app servers',
+        text: 'The camera feed goes to a <b>video server</b> that streams to each viewer. App servers handle login and the home page, and <b>autoscaling</b> adds machines when CPU gets high. This works for a small audience that trickles in.',
+        scene: {
+          nodes: [
+            { id: 'venue', label: 'Stadium feed', sub: 'camera', kind: 'external', at: [70, 0] },
+            { id: 'origin', label: 'Video server', sub: 'streams to all', kind: 'store', at: [210, 0] },
+            { id: 'player', label: 'Viewers', sub: 'phones · TVs', kind: 'client', at: [350, 110] },
+            { id: 'api', label: 'App servers', sub: 'autoscale on CPU', kind: 'service', at: [210, 220] }
+          ],
+          edges: [{ from: 'venue', to: 'origin' }, { from: 'origin', to: 'player' }, { from: 'player', to: 'api' }],
+          flow: ['venue>origin', 'origin>player', 'player>api']
+        }
+      },
+      {
+        stage: 'breaks',
+        title: 'The toss wave melts both tiers',
+        text: 'One server cannot push video to millions of screens; it runs out of network long before that. Meanwhile the app servers see a wall of logins. Autoscaling notices only after a few minutes, and new machines take more minutes to start. By then requests have timed out, apps <b>retry</b> and multiply the load, and viewers see an error screen.',
+        scene: {
+          nodes: [
+            { id: 'venue', label: 'Stadium feed', sub: 'camera', kind: 'external', at: [70, 0] },
+            { id: 'origin', label: 'Video server', sub: 'out of bandwidth', kind: 'store', at: [210, 0] },
+            { id: 'player', label: 'Viewers', sub: 'millions join', kind: 'client', at: [350, 110] },
+            { id: 'api', label: 'App servers', sub: 'scaling too late', kind: 'service', at: [210, 220] }
+          ],
+          edges: [{ from: 'venue', to: 'origin' }, { from: 'origin', to: 'player' }, { from: 'player', to: 'api' }],
+          flow: ['venue>origin', ['origin>player', 'player>api'], ['player>api', 'player>api']],
+          err: ['origin', 'api'],
+          warn: ['player'],
+          badges: { origin: ['overloaded', 'err'], api: ['CPU 100%', 'err'] }
+        }
+      },
+      {
+        stage: 'fix',
+        title: 'Cache the video near viewers, scale the app ahead',
+        text: 'Encode the feed once into short <b>segments</b> of a few seconds, at several quality levels. <b>CDN</b> servers near viewers cache each segment, so the source serves a handful of copies, not millions. App servers are <b>pre-scaled</b> before the match from a forecast, and <b>panic switches</b> turn off extras like recommendations if load still beats the plan.',
+        scene: {
+          nodes: [
+            { id: 'venue', label: 'Stadium feed', sub: 'camera', kind: 'external', at: [70, 0] },
+            { id: 'origin', label: 'Encode+origin', sub: '4 s segments', kind: 'store', at: [210, 0] },
+            { id: 'cdn', label: 'CDN edges', sub: 'cached copies', kind: 'edge', at: [350, 0] },
+            { id: 'flags', label: 'Panic switch', sub: 'drop extras', kind: 'service', at: [70, 110] },
+            { id: 'player', label: 'Viewers', sub: 'millions', kind: 'client', at: [350, 110] },
+            { id: 'scaler', label: 'Capacity plan', sub: 'before the toss', kind: 'compute', at: [70, 220] },
+            { id: 'api', label: 'App servers', sub: 'pre-scaled', kind: 'service', at: [210, 220] }
+          ],
+          edges: [{ from: 'venue', to: 'origin' }, { from: 'origin', to: 'cdn' }, { from: 'cdn', to: 'player' }, { from: 'player', to: 'api' }, { from: 'scaler', to: 'api' }, { from: 'flags', to: 'api', dashed: true }],
+          flow: ['venue>origin', 'origin>cdn', 'cdn>player', ['player>api', 'scaler>api']],
+          ok: ['cdn', 'api'],
+          badges: { api: ['ready early', 'ok'] }
+        }
+      }
+    ],
+    usedBy: ['YouTube Live', 'Twitch', 'JioHotstar cricket streams', 'Amazon Prime Video live sports', 'Netflix live events'],
+    whenToUse: [
+      'One live event is watched by a <b>very large audience at the same time</b>',
+      'Viewers arrive in sudden waves tied to moments you can partly predict (kick-off, toss, a goal)',
+      'A few seconds of delay behind real life is acceptable'
+    ],
+    whenNot: [
+      'Videos are watched on demand, at any time (see <a href="video-streaming.html">Video Streaming &amp; Encoding</a>)',
+      'People must talk back with sub-second delay, like a video call or a game (WebRTC media servers fit better)',
+      'A small webinar for a few hundred people: a hosted streaming service is enough'
+    ],
+    glossary: [
+      { term: 'Segment', def: 'A short video file, a few seconds long; players download them one after another to play the stream (the HLS and DASH formats work this way).' },
+      { term: 'ABR ladder', def: 'The same video encoded at several quality levels (rungs), so each player can switch up or down to match its network speed.' },
+      { term: 'CDN', def: 'Content delivery network: many cache servers spread around the world that serve copies of files from close to the viewer.' },
+      { term: 'Origin shield', def: 'A middle cache layer in front of the source server, so many cache misses for the same segment turn into one request.' },
+      { term: 'Concurrency', def: 'How many people are watching at the same moment, usually counted from player heartbeats.' },
+      { term: 'Heartbeat', def: 'A small message each player sends every few seconds to say "still watching" and report its playback quality.' },
+      { term: 'Pre-scaling (ladder)', def: 'Adding server capacity before the expected peak, in planned steps, instead of waiting for load alarms.' },
+      { term: 'Panic switch', def: 'A pre-tested setting that turns off non-essential features or caps video quality to protect playback under overload.' }
+    ]
+  },
+
   requirements: {
     functional: [
       'Ingest the venue feed over redundant paths',
