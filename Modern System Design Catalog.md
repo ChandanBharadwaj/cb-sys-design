@@ -243,3 +243,18 @@ These 16 systems extend the catalog above. Each has an animated page in the [Sys
 * **Purpose:** Horizontally scalable SQL with serializable transactions across regions.
 * **Key Challenges:** Global ordering of transactions, cross-shard commits, and multi-region latency.
 * **Core Patterns & Tech:** Range sharding with a Raft group per range, 2PC over Raft, MVCC, TrueTime / hybrid logical clocks.
+
+### Live Train Tracking, Offline (e.g., Where Is My Train by Google)
+* **Purpose:** Shows a train's live position and expected arrival even on board with no mobile data or GPS fix.
+* **Key Challenges:** Locating a moving train without GPS or internet, building a map of cell towers along tracks with no official data, predicting delays, and battery/data budgets on low-end phones.
+* **Core Patterns & Tech:** Offline-first app with on-device timetables, cell-tower ID → track-segment fingerprints (crowdsourced from GPS traces), dead reckoning on the timetable, and background sync when online.
+
+### Railway Ticketing at Tatkal Scale (e.g., IRCTC on CRIS PRS)
+* **Purpose:** Books train berths for millions of passengers, including the 10 AM / 11 AM Tatkal rush.
+* **Key Challenges:** One berth can be sold for several non-overlapping journey segments; quotas; waitlist → RAC → confirmed; charting; bots; payment timeouts.
+* **Core Patterns & Tech:** Segment bitmask inventory per berth, quota pools, ordered waitlist promotion, idempotent booking with payment reconciliation, Aadhaar-OTP gating, anti-bot edge and CDN.
+
+### Temple Darshan Booking Queue (e.g., TTD Tirumala)
+* **Purpose:** Releases a fixed monthly quota of darshan and seva slots to millions of devotees who arrive in the same minute.
+* **Key Challenges:** Demand many times the quota, fairness, bots and agents, payment failures holding slots, and not crashing at T0.
+* **Core Patterns & Tech:** Virtual waiting room with paced admission, date × time-slot inventory with TTL holds, per-identity limits, electronic lucky dip for sevas, CDN and pre-scaling.

@@ -462,5 +462,5 @@ def allow(key: str, limit: int, window: int = 60) -> bool:
     }
   ],
 
-  related: ['api-gateway', 'distributed-cache', 'llm-gateway', 'cdn', 'payment-gateway', 'ticket-booking']
+  related: ['api-gateway', 'distributed-cache', 'llm-gateway', 'cdn', 'payment-gateway', 'ticket-booking', 'ttd-darshan-booking']
 });

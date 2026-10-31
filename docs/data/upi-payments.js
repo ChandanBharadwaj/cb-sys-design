@@ -482,5 +482,5 @@ SELECT txn_id, o.status AS ours, t.status AS npci, o.amount_paise, t.amount_pais
     }
   ],
 
-  related: ['payment-gateway', 'ecommerce-orders', 'rate-limiter', 'message-queue', 'stock-exchange', 'notifications']
+  related: ['payment-gateway', 'ecommerce-orders', 'rate-limiter', 'message-queue', 'stock-exchange', 'notifications', 'irctc-booking']
 });

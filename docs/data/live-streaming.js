@@ -471,7 +471,7 @@ ffmpeg -i "srt://0.0.0.0:9000?mode=listener" \\
     }
   ],
 
-  related: ['video-streaming', 'cdn', 'rate-limiter', 'notifications', 'stream-analytics', 'distributed-cache']
+  related: ['video-streaming', 'cdn', 'rate-limiter', 'notifications', 'stream-analytics', 'distributed-cache', 'ttd-darshan-booking']
 });
 
 /* knobs diagram = architecture + an optional SSAI stitcher */

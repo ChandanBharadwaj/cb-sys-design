@@ -35,7 +35,7 @@ TEMPLATE = """<!doctype html>
 </html>
 """
 
-pat = re.compile(r"slug: '([^']+)', domain: (\d+), title: '([^']+)', examples: '([^']+)'")
+pat = re.compile(r"slug: '([^']+)', domain: (\d+), title: '([^']+)',(?: one: '(?:[^'\\]|\\.)*',)? examples: '([^']+)'")
 out = DOCS / "systems"
 out.mkdir(parents=True, exist_ok=True)
 n = 0

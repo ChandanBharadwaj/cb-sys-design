@@ -426,7 +426,7 @@ def match_batch(riders, drivers, eta):          # eta(r, d) -> seconds
     }
   ],
 
-  related: ['proximity-service', 'food-delivery', 'chat', 'message-queue', 'distributed-cache', 'notifications']
+  related: ['proximity-service', 'food-delivery', 'chat', 'message-queue', 'distributed-cache', 'notifications', 'train-tracking']
 });
 
 /* knobs diagram = architecture + an optional batch optimizer node */

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>System Design Atlas</title>
-<meta name="description" content="41 animated, research-backed system designs: architecture in motion, design knobs, real-world implementations from published papers and engineering blogs, and interview questions.">
+<meta name="description" content="44 animated, research-backed system designs: architecture in motion, design knobs, real-world implementations from published papers and engineering blogs, and interview questions.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
@@ -23,7 +23,7 @@
   <section class="ix-hero">
     <div class="ix-net" aria-hidden="true"><svg id="net"></svg></div>
     <div class="eyebrow" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
-      <span class="pill accent">41 systems · 9 domains</span>
+      <span class="pill accent" id="countPill">44 systems · 9 domains</span>
       <span class="pill">sourced from papers &amp; engineering blogs</span>
     </div>
     <h1>System design you can <span class="grad">watch, tweak and break.</span></h1>
@@ -54,6 +54,7 @@
   document.getElementById('themeSlot').append(SD.themeButton());
   document.getElementById('navSlot').append(SD.globalNav({ base: 'systems/', home: 'index.html' }));
   const C = window.SD_CATALOG;
+  document.getElementById('countPill').textContent = C.systems.length + ' systems · ' + C.domains.length + ' domains';
   const visited = new Set(store.get('sd-visited', []));
   const host = document.getElementById('domains');
   let n = 0;
