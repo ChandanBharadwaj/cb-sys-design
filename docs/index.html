@@ -13,7 +13,8 @@
 </head>
 <body>
 <header class="topbar">
-  <a class="brand" href="index.html"><span class="brand-mark">◇</span><span>Design Atlas</span></a>
+  <a class="brand" href="index.html"><span class="brand-mark">◇</span><span class="brand-t">Design Atlas</span></a>
+  <span id="navSlot"></span>
   <span class="spacer"></span>
   <span id="themeSlot"></span>
 </header>
@@ -39,6 +40,7 @@
       <div class="stat"><div class="v">? Interview</div><div class="l">Questions with crisp answers and a quiz mode</div></div>
     </div>
   </section>
+  <nav class="dom-chips" aria-label="Domains"><div class="dom-chips-inner" id="domChips"></div></nav>
   <div id="domains"></div>
   <div class="empty" id="empty" hidden>No systems match that search.</div>
   <footer class="foot">Built as a static site for GitHub Pages · numbers marked <em>estimate</em> are back-of-envelope; company facts link to their sources.</footer>
@@ -50,6 +52,7 @@
 (function () {
   const { el, svg, store } = SD.h;
   document.getElementById('themeSlot').append(SD.themeButton());
+  document.getElementById('navSlot').append(SD.globalNav({ base: 'systems/', home: 'index.html' }));
   const C = window.SD_CATALOG;
   const visited = new Set(store.get('sd-visited', []));
   const host = document.getElementById('domains');
@@ -78,6 +81,22 @@
     });
     host.append(sec);
   });
+
+  // domain jump bar + scrollspy
+  const chipHost = document.getElementById('domChips');
+  const chips = {};
+  C.domains.forEach((d) => { const a = el('a', { href: '#domain-' + d.id, text: d.icon + ' ' + d.name }); chips['domain-' + d.id] = a; chipHost.append(a); });
+  if ('IntersectionObserver' in window) {
+    const spy = new IntersectionObserver((es) => es.forEach((e) => {
+      if (!e.isIntersecting) return;
+      Object.values(chips).forEach((a) => a.classList.remove('active'));
+      const a = chips[e.target.id];
+      if (a) { a.classList.add('active'); chipHost.scrollTo({ left: a.offsetLeft - chipHost.clientWidth / 2 + a.offsetWidth / 2, behavior: SD.reduced ? 'auto' : 'smooth' }); }
+    }), { rootMargin: '-40% 0px -55% 0px' });
+    document.querySelectorAll('.ix-domain').forEach((s) => spy.observe(s));
+  }
+  // deep links like index.html#domain-3 (sections are rendered by script, after the browser's own hash scroll)
+  if (location.hash) { const t = document.getElementById(location.hash.slice(1)); if (t) { t.classList.add('in'); requestAnimationFrame(() => t.scrollIntoView()); } }
 
   // search + filter
   const q = document.getElementById('q');
