@@ -733,3 +733,468 @@ Each entry lists what changed and what was deliberately left as it was.
 - Ran the HLC snippet: causality across a 300 ns-skewed peer, logical-counter bumps and max-offset refusal all behave as documented.
 - Checked and left alone: the knob sweep (every option changes the meters) and Spanner ε ≈ 1–7 ms with a typical 4 ms. Also unchanged: the commit wait max(0, 2ε − consensus), the 3-replica default, 40001 semantics, READ COMMITTED 23.2 preview / 24.1 GA, and the multi-region SQL syntax. There is no CockroachDB binary here, so the SQL was reviewed rather than executed.
 - **Compile check (JDK 21):** `CrdbTx` compiled clean. With a fake DataSource, three 40001 commits retried and then succeeded, a constant 40001 gave up after 6 attempts, and 23505 was not retried. On Postgres 16, "insufficient funds" (P0001) was not retried, and concurrent opposite transfers hit real 40P01 deadlocks that the loop retried with balances conserved. Under an 8-thread hammer on two rows, a few transfers used up all 6 attempts, which is the intended give-up. No change.
+
+---
+
+# New pages from the senior HLD interview list (Nov 2026)
+
+Nine pages added to cover the remaining items of a common "Top 25 HLD interview questions" list. Each was written and verified on its own; the full notes are in `tools/review/<slug>.md` and are reproduced here.
+
+## Multi-Region Active-Active (`multi-region`)
+
+- New page: Multi-Region Active-Active. It answers "Design a multi-region active-active architecture" and covers:
+  - active-passive vs active-active vs active-active with a home region;
+  - global steering (GeoDNS vs anycast / global LB) and the DNS TTL tail;
+  - data strategies by class: async multi-master with LWW / CRDT / app merge, single-home writes with async replicas, and synchronous cross-region consensus;
+  - RPO / RTO per strategy, (N−1)/N headroom (and why the largest region sets the limit), and pre-scaling vs autoscaling lag;
+  - evacuation drills, split-brain with leases, epochs and fencing, idempotency keys and region-aware IDs;
+  - replication-lag heartbeats, which state stays regional (sessions, caches, queues), data residency and egress cost.
+  
+  It links to `distributed-sql` (consensus internals), `kv-store` (quorums, vector clocks), `distributed-cache` (cross-region invalidation), `cdn` (anycast vs DNS), `unique-id` and `message-queue` instead of repeating them.
+- **Our design vs documented fact:** these are our design, not any one company's:
+  - the 3-region topology with a consensus store for homes and epochs plus home-region writes;
+  - the lease + epoch fencing protocol;
+  - the heartbeat-row lag measurement;
+  - the 307 home-routing filter;
+  - the 85 % ceiling, the 30 % warm-standby size, and the knob RTO minutes. The RTO minutes are labelled estimates.
+  
+  The traffic shares in the widget (45/35/20 %) and the RTTs (75/120/190 ms) are labelled illustrative.
+
+### Facts used (sources in `realWorld.sources`)
+- **Netflix 2013 (TechBlog):**
+  - two-region active-active for the Americas;
+  - no cross-region calls on the user's call path;
+  - async Cassandra multi-DC replication;
+  - EVCache remote invalidation;
+  - Route 53 layered over UltraDNS, with latency-based routing avoided because traffic moved unpredictably;
+  - split-brain exercises run many times.
+- **Netflix 2016 (TechBlog, "Global Cloud — Active-Active and Beyond"):** three regions, steering one region's traffic to both remaining regions, and personalisation recompute events delivered to all three regions.
+- **Netflix Project Nimble (opensource.com 2018, by the Netflix speaker):** about 45 min failover before, and a breakdown of detect 2 + scale 4 + shift 3 ≈ 7 min after pre-scaling.
+- **Shopify (InfoQ 2017):** each pod is active in one region and replicated to a second; Sorting Hat routing; the failover steps; the pauser.
+- **Uber (Engineering blog, Dec 2020):** regional Kafka clusters plus aggregate clusters via uReplicator; active/active consumers (surge pricing) vs active/passive with offset mapping.
+- **Slack (2023 blog + InfoQ Jan 2024):** cells after a 2021-06-30 AZ network disruption; InfoQ reports draining an AZ within about 5 minutes.
+- **DynamoDB global tables (AWS docs and community.aws tutorial):**
+  - LWW for concurrent writes in the default MREC mode;
+  - the consistency mode is fixed at creation;
+  - typical lag of 0.5–2.5 s between Regions in one geography (community.aws tutorial, which quotes the AWS guidance).
+- **DynamoDB MRSC (AWS What's New):** GA on **30 June 2025**, with RPO 0.
+- **Spanner (Google Cloud blog + replication docs):** read-write regions with a default leader, read-only replicas and a witness region; writes need a majority of voters; leader-aware routing.
+- **AWS (Well-Architected REL13-BP02, DR whitepaper, Architecture Blog Part IV):** the DR strategies, and backups still needed with active-active.
+- **Aurora Global Database (AWS docs):** listed as a source for the "async failover RPO is non-zero seconds; switchover RPO 0" framing used in interview answers.
+- **CRDTs:** Shapiro et al., SSS 2011.
+
+### Hedged or not used
+- **MRSC preview date:** "previewed Dec 2024" comes from the task brief and an aws-news.com sidebar. The AWS GA post is the primary source used for the GA date.
+- **MRSC expansion:** an aws-news.com item (Sep 2026) says MRSC expanded to cross-continent configurations. It is not verified against AWS, so it was not used.
+- **MRSC region-set limits:** not stated on the page.
+- **Chaos Kong:** the original Netflix "Chaos Engineering Upgraded" post did not appear in search results, so Chaos Kong is mentioned only by name as Netflix's region-evacuation exercise. The bram.us and IEEE pieces were not cited.
+- **Netflix region count today:** not stated (secondary sources disagree, three vs four).
+- **Global Accelerator:** "sub-second failover" claims came only from training notes and were not used. The page says "within seconds".
+- **Inter-region price:** about $0.02/GB between big US regions comes only from third-party summaries of AWS pricing. It is labelled an estimate in the calculator, with "other pairs cost more".
+- **Slack "weekly drains":** comes from a QCon abstract and was dropped.
+- **Search budget:** the shared web-search budget ran out before I could look for an official AWS pricing-page URL or the Netflix EVCache cross-region AWS blog.
+
+### Knobs
+- Checker result: 9 buttons, 8 changes. The first click is the already-selected default.
+- Every option changes the meters:
+  - **Model** changes latency, RPO, conflicts, RTO, the hidden nodes and the verdict.
+  - **N** changes survivor load (u·N/(N−1)), copies per write and consensus latency. For active-passive it changes fleet cost, because there are N−1 warm standbys.
+  - **Utilisation** changes survivor load and fleet cost.
+  - **Steering** changes the RTO and a note.
+- **Special cases:**
+  - Consensus with N = 2 gives the ❌ verdict (no majority after a loss).
+  - Survivor load above 100 % gives ⚠ plus a shed percentage.
+
+### Widget
+- **The simulator:** a real 3-region replication simulator on one counter.
+  - Each write produces per-link messages delivered after the lag slider value (with ±20 % jitter).
+  - Partitioning US↔EU holds those messages in place, shown as red dots.
+- **LWW:** applies when `(ts, origin)` is newer. "US + EU at once" converges to N+1 instead of N+2, and the log names the overwritten write.
+- **CRDT:** a per-region slot vector with element-wise max merge. It always reaches the full count.
+- **Home mode:**
+  - It forwards non-home writes to us-east with the RTT shown (animation 8× slower).
+  - It refuses writes when the home is unreachable (partition or down).
+  - When the home fails, it re-homes to eu-west after a 1.2 s simulated detection, bumps the epoch, and the replica apply path rejects stale-epoch messages.
+- **Fail / heal (tap a region or press Fail US):**
+  - It drops the failed region's in-flight messages.
+  - It counts acked writes that no live region has seen as RPO losses.
+  - A healed region re-syncs from the survivors.
+- **Utilisation:** spreads the failed share over survivors in proportion to capacity, so util = u / (1 − share_failed). With the default 60 % and US = 45 %, survivors reach 109 % and shed 8 %. The stats show "safe utilisation 55 %".
+- **Tested in Playwright:**
+  - LWW: 3 acked → 2.
+  - CRDT: 3 → 3.
+  - Home: 3 → 3, with forwarded latency ≈ 80 ms.
+  - A partitioned EU write was refused.
+  - Failing US right after 2 writes gave RPO 2, a re-home to EU at epoch 2, and survivors at 109 % (shed 8 %).
+  - CRDT under partition converged after healing.
+  - No page errors.
+- **Layouts:**
+  - Phone: viewBox 360×470, regions stacked, links curve on the right, text 14–24 units.
+  - Desktop: viewBox 600×250, regions side by side with a US–AP arc.
+  - Phone fonts: min 13.2 / p25 13.2 px.
+
+### Code
+- **SQL:**
+  - Ran on Postgres 16 on port 5448. initdb refuses to run as root and the scratchpad socket path exceeds 107 bytes, so the server ran as the `postgres` user with its data and socket under `/tmp/pgs5448`. It was stopped afterwards.
+  - Fenced apply: epoch 4 v7 → epoch 5 v1 wins. The zombie (epoch 4 v9) and the replay both return `INSERT 0 0`, and epoch 5 v2 wins.
+  - PN-counter: the stale replicated row (4 < 6) keeps 6, a replay keeps 6, and the totals were 7 and then 8 as expected.
+- **Java:**
+  - `javac --release 21 -Xlint:all` against real Spring Boot 3.5.6 jars fetched with Maven (spring-web 6.2.11). It compiled cleanly.
+  - It also ran inside a tiny Boot app on port 18448 with `app.region=us-east` and the SpEL map, tested with curl:
+    - user homed in EU → 307 with `Location: https://eu.api/orders?x=1`;
+    - lease not held → 503;
+    - home user → 200 with the epoch attribute;
+    - GET → served locally.
+- **Python:** ran on 3.13 (3.11+ syntax only). The note quotes its exact output: losing us-east puts eu-west at 108 % and ap-south at 110 % with 21,800 rps over the ceiling; losing eu-west gives 92 % / 92 % with 7,350 rps over; losing ap-south gives 75 % / 75 %.
+
+### Diagram
+- One edge (ap-south → consensus store) crossed the Global steering box on desktop, so it was removed. The consensus-store tooltip says every region uses it.
+
+### Checker
+- `node tools/check.js --require-intro --fonts multi-region` reports ALL OK on phone and desk: 5 scenarios, 12 interview questions, 17 sources.
+
+## Product Catalog & Cart (`catalog-cart`)
+
+- New page: Product Catalog & Cart (domain 3). It covers the catalog data model (product → variant/SKU → seller offer), flexible category attributes (wide table vs EAV vs JSONB + per-category JSON Schema vs document store), seller feed ingestion and validation (GTIN matching, idempotent upsert by seller SKU, quarantine), catalog → search and cache sync through an outbox + CDC with versioned upserts, the product page read path (edge-cached shell with surrogate keys, live price and availability composed per view, request collapsing for hot products), a price service with `price_version`, and the cart: guest cart keyed by a cookie id, merge on sign-in, a Dynamo-style always-writeable KV store, the union-merge "deleted item reappears" anomaly and the OR-Set fix, re-validation at view and checkout (the cart is not a reservation), and TTL / abandonment. It hands off to `ecommerce-orders` at checkout: it links there from the TL;DR insight, intro `whenNot`, the architecture "Checkout → Orders" node, the last step of the "Guest cart → sign in → checkout" scenario, the hot-product scenario, an interview answer and `related`. It does not repeat reservations, sagas or payment.
+- **Our design vs documented fact:** the node layout, page composer (BFF), 50–80 ms timeouts, 1–2 s per-SKU micro-cache, availability buckets, `price_version`, "max quantity" guest merge, per-line OR-Set presence + per-line last-writer-wins quantity, cart TTL range (30–90 days in the data model), the 5% add-to-cart rate, and all calculator inputs are our design or estimates and are labelled that way. No company is said to use the OR-Set cart; the OR-Set is presented as the research fix (CRDT report, Riak data types).
+- **Facts used (sources in `realWorld.sources`):**
+  - Dynamo (SOSP 2007): the cart is the motivating example; customers must be able to view and add to the cart while disks fail, routes flap or datacenters are destroyed; vector clocks; application merge; "add to cart" never lost, deleted items can resurface.
+  - Shapiro et al., INRIA RR-7506 (2011): CRDT report that includes the OR-Set (unique add tags; remove deletes observed tags).
+  - Riak 2.x data types (Python client docs): sets and maps with add-wins / observed-remove semantics; maps hold sets, counters, flags, registers, maps; "you cannot remove what you haven't seen" with a context. Year given as "2010s" because the docs page has no date.
+  - eBay PBSE (2018): product adoption by ePID / UPC / EAN / ISBN / brand+MPN; listings grouped by product; each variation needs an ePID in enabled categories.
+  - Instacart "story behind an order, part 1": catalog from retailers, third parties, manufacturers and shopper data; >100 retailer partners onboarded in 2018 alone, each with its own attributes; "more catalog data points updated every night than the world tweets in a day". Dated "c. 2019" because the post refers to 2018 in the past tense. A "half a billion listings" figure appeared only in a search summary and could not be confirmed, so it is not used; a 430M figure (The Muse) was also not used.
+  - Walmart Global Tech (2020): Hyperloop = Spec Parser + Feed Ingestor + Item Setup Orchestrator, REST + Kafka; 40% growth; >300M transactions/day over the holidays; JSON serializer switch.
+  - Amazon SP-API Product Type Definitions (API version 2020-09-01): JSON Schema per product type with requirements and conditional rules; Amazon recommends validating before submitting.
+  - Shopify Storefront Renderer rewrite (2020): ~45 ms p75, ~230 ms p90, ~900 ms p99; average nearly 5× faster; reads from replicas; verifier on live traffic.
+  - Shopify "Simplify, batch, cache": multiple cache layers including full-page caching; caching should not be the first step. Dated "2020s" (no date in the snippet).
+  - Shopify BFCM 2024: 284M requests/min at the edge, >80M on app servers. (The 489M figure is BFCM 2025 and was not used.)
+  - Shopify changelog (Oct 2025): variant limit 100 → 2,048 for all merchants; apps on old REST product APIs may break.
+  - Fastly docs: surrogate-key tagging and purge; request collapsing of simultaneous misses per POP.
+  - Debezium Outbox Event Router docs (CDC of an outbox table, routed by aggregate type, keyed by aggregate id).
+  - Baymard: 70.22% average documented cart abandonment (50 studies, updated Sep 2025); the page says "about 70%".
+  - Shopify Community staff answer: unused carts expire within about 10 days. Listed as a source only, labelled as a community answer (another thread reports 30 days, so no number from it is stated in the page text).
+- **Hedged / dropped:** no Flipkart engineering post on catalog or cart was found (searches returned seller guides only), so Flipkart appears only in `examples` / `usedBy`. No Etsy or Zalando primary source on catalog sync was found; not used. The DynamoDB "dropped vector clocks" claim (single blog) was not used. Third-party Shopify cache-hit claims (>85%) were not used.
+- **Knobs:** 5 controls, every option changes a meter or the verdict (checker: 14/14). Hit ratio, latency and origin numbers are illustrative (hit ratio grows with log TTL; a page embedding the price is capped at 80% because price changes purge it; 50K views/s), and the latency meter is labelled "illustrative". Default (JSONB, split page, CDC, OR-Set, 600 s) gives the ✅ verdict; whole-page caching with TTL > 120 s and whole-cart LWW give ❌.
+- **Widget:** a real cart replication model, not a script. Each replica holds `adds: tag → {sku, qty, ts}` and a `removed` tag set; every add or quantity change creates a fresh tag; remove marks the tags that replica has seen. Connected = state copy with a sync pulse. Partitioned = edits diverge, and three merges are computed live from the two states: whole-cart LWW (later last write wins), Dynamo-style union with max quantity, and the OR-Set (union of adds and of removes; newest quantity per SKU). Each preview is checked against the shopper's intents during the split and marks lost adds (✗), revived removes (↺), reverted quantity changes (≠) and add-vs-remove clashes where the add won (+). Heal applies the selected policy to both replicas. Driven with Playwright at 390 px and 1300 px: the demo (phone adds Cable, laptop removes Charger) gives LWW "1 add lost", union "1 item revived", OR-Set "intents kept", and healing with each policy logs exactly that; a bump-vs-remove clash keeps the line (add wins) and union shows "qty reverted" for a concurrent decrement. No console errors. Two layouts via `ctx.onResize`: phone viewBox 360 (replica cards side by side, previews stacked, 2-column lines, 14–14.5-unit text), desktop viewBox 560 capped at 720 px (three previews side by side). Card heights shrink to the number of lines shown. Phone fonts: min 13.2 px, p25 13.2 px.
+- **Code:**
+  - SQL: ran on a throwaway Postgres 16.15 (port 5442; data dir and socket under /tmp/cc5442 because the scratchpad path is longer than the 107-byte socket limit and initdb refused to run as root there). The snippet runs clean; a TV row without `screen_in`, or with it as a string, fails the CHECK; a shirt passes; the upsert bumps `version` to 2 and the outbox payload in the same transaction carries version 2; with `enable_seqscan=off` the `@>` filter uses a bitmap scan on the `jsonb_path_ops` GIN index and `?` does not (matches the note); `@?` jsonpath works.
+  - Python: ran on python3; output matches the comments (`union : {'cable': 1, 'case': 1, 'charger': 1}`, `orset : {'cable': 1, 'case': 1}`).
+  - Java: compiled with `javac --release 21 -proc:none -Xlint:deprecation,removal` against real Spring Boot 3.5.6 jars (spring-web/context 6.2.11) fetched with Maven, no warnings. Also run against a JDK HttpServer stub with `ConcurrentMapCacheManager`: shell fetched once then cached (catalogCalls=1), price/stock parsed into records, and a 300 ms price stub returned `price=null, canAddToCart=false` after ~80 ms. The very first call on a cold JVM also timed out, which is the intended behaviour of the 80 ms budget.
+- Checker: `node tools/check.js --require-intro --fonts catalog-cart` passes on phone and desk (5 scenarios, knobs 14/14, 12 interview questions, 16 sources, fonts min 13.2 / p25 13.2 px).
+- Screenshots reviewed: desk and phone architecture, phone knobs, phone deep dive, phone intro. The phone layout has one edge (cart → price) that passes close to the Availability box corner without crossing it.
+
+## Image Hosting & Thumbnails (`image-hosting`)
+
+- **New page: Image Hosting & Thumbnails** (domain 4, slug `image-hosting`). It answers "Design an image hosting / serving system with thumbnails". It covers:
+  - direct-to-storage upload with a presigned PUT, plus two completion signals (storage `ObjectCreated` event and client `/complete`) made idempotent by a conditional `PENDING → PROCESSING` claim;
+  - the processing worker: magic-byte sniffing, a pixel limit, EXIF orientation baked into the pixels, metadata stripped (keeping the ICC profile), a moderation hook, and SHA-256 + perceptual-hash dedup;
+  - eager vs lazy vs hybrid derivatives, allow-listed widths vs signed transform URLs vs unsigned `?w=`;
+  - Accept-based WebP/AVIF negotiation with `Vary: Accept` and a normalised format bucket in the cache key; `srcset`/`sizes`;
+  - request collapsing at the resizer; immutable versioned URLs with a one-year TTL;
+  - hot / warm EC / archive tiers for originals; private images on signed URLs; delete propagation by surrogate-key purge.
+- **Not duplicated, linked instead:** erasure coding and durability go to `object-storage`, anycast / tiered cache / CDN coalescing to `cdn`, video to `video-streaming`, sync and dedup side channels to `file-sync`. Object-storage already has a presigned multipart Spring snippet and CDN already has a Python single-flight, so this page's code is different: a signed, allow-listed resize endpoint in Java, band-indexed perceptual-hash lookup in SQL, and a Pillow cleaning step in Python.
+- **Our design vs documented fact:** these are all labelled as our design or as a recommendation, not as any company's documented architecture:
+  - quarantine bucket, two completion signals and the reconciler;
+  - the 6-width allow-list, the hybrid strategy, and the HMAC path format `/i/{sig}/{id}/{ver}/w{w}`;
+  - surrogate-key purge on delete, and the 90-day tiering threshold.
+  
+  The knob and widget byte and CPU constants (JPEG 0.20 / WebP 0.14 / AVIF 0.10 bytes per pixel, AVIF ≈ 8× JPEG encode cost, 25 ms per 1080-px JPEG encode, 60 ms decode, 25% lazy share, ×1.4 for signed sizes, cost index 100/55/25) are all marked *estimate*. The calculator inputs are generic estimates, not company figures.
+- **Facts used (sources in `realWorld.sources`):**
+  - **Facebook 2009 blog:** 4 sizes per upload, 60 B images, 1.5 PB.
+  - **Haystack OSDI 2010:** ~260 B images, >20 PB, ~1 M images/s at peak; metadata kept in memory; NFS needed several disk operations for metadata.
+  - **Facebook photo-caching SOSP 2013 (+ 2014 blog):** 65.5% browser / 20.0% edge / 4.6% origin / 9.9% Haystack; 77 M+ requests traced; edge S4LRU 59.2% → 67.7%; ~90% absorbed by caches.
+  - **f4 OSDI 2014:** 3.6× → 2.8× or 2.1×, >65 PB, >400 B photos as of Feb 2014.
+  - **Facebook iOS progressive JPEG (2015):** ~10% less data, a good image 15% faster.
+  - **Pinterest PinLater (2014):** thumbnails of all sizes generated as async jobs after Pin It.
+  - **PDQ:** open-sourced Aug 2019, 256-bit, Hamming distance (AFP arXiv paper).
+  - **Dropbox Cannes (2021):** ML pre-warming, $1.7 M a year.
+  - **Thumbor:** HMAC `SECURITY_KEY`; the docs' quote that a user "can easily ask for other sizes in loops".
+  - **imgix:** `s=` signature and `expires`.
+  - **Cloudflare:** `format=auto` serves WebP/AVIF to supporting browsers; by default transforms only images from your own zone.
+  - **AWS Dynamic Image Transformation:** Lambda + Sharp behind CloudFront, optional Rekognition moderation and smart crop.
+  - **MDN:** `srcset` / `sizes` behaviour.
+  - **Wolt:** a slow AVIF speed setting took up to 3–4 s, too slow for on-demand encoding.
+- **Hedged / dropped:**
+  - The f4 "Haystack → f4 after ~3 months" migration age came only from a secondary summary, so it was not used as a fact; the 90-day threshold is labelled our design.
+  - I could not find a primary Instagram or Pinterest post on their image-serving or format pipeline (searches returned only third-party content), so the page has no Instagram/Pinterest serving internals or format-savings numbers.
+  - Whether the 2013 Facebook paper describes on-the-fly "resizers" could not be confirmed from search snippets, so it was dropped.
+  - The Wolt post's year was not visible in search results, so it is cited without a year.
+  - The imgix hash algorithm (MD5 per imgix's own docs vs HMAC-SHA256 in a third-party lib) conflicted, so the page says only "signature `s=`".
+  - The web-search budget ran out before I could get primary AWS docs on presigned URLs and S3 event delivery semantics. The page states general behaviour only ("at-least-once, make the worker idempotent") without citing AWS numbers.
+- **Knobs:** 5 controls, and every option changes the meters or the verdict (checker 14/14). The baseline (hybrid, signed, AVIF, collapsing on, warm EC) gives the ✅ verdict. Unsigned `?w=` with lazy/hybrid gives ❌. Archive + lazy, or collapsing off, give ⚠. For eager, the size policy changes only the verdict and the abuse meter (eager snaps sizes), which is stated in the verdict text. The cold node is hidden for "all hot".
+- **Widget:** one request stream (600 req/s, 20 uploads/s, 2000 live popularity slots with Zipf(1.0); each upload replaces a random slot so most photos are rarely viewed) drives three systems in parallel:
+  - **Eager:** all 6 widths × 3 formats encoded at upload;
+  - **Lazy:** snap up to the allow-list, resize on miss;
+  - **Any size:** exact width.
+  
+  Each system has a real Map-based LRU edge cache, a derivative store and an in-flight map. With collapsing on, concurrent misses wait for the leader's completion time; with it off, each miss starts its own resize. Before showing numbers, it warms with 120 s of simulated traffic in chunks.
+  - Node calibration (same code), steady state: eager ≈ 39 cores and 14.7 GB, lazy ≈ 25 cores and 3.4 GB, any-size ≈ 41 cores with an edge hit ratio of 19% vs 44%.
+  - Viral burst (50% of requests for 2 s to a new photo): lazy made 18 resizes with collapsing vs 496 without; any-size 90 vs 237.
+  - Attack (25% random widths): any-size CPU goes from ~40 to ~98 cores and its store from 3.9 to 9.9 GB; eager and lazy are unaffected.
+  - Layouts: two via `ctx.onResize`. Phone: viewBox 360, one column of 4 panels, 14.5/13.5-unit text. Desktop: 2×2, viewBox 640. Phone fonts measured min 12.7 / p25 12.7 px.
+  - Fixed during review: the caption claimed "new posts are hottest" and an LRU derivative cache; it now describes the slot model and the derivative store accurately.
+- **Diagram:** 12 nodes. Desktop has no edges through boxes. On the phone the "purge" edge label sat in the 12-unit gap between Image API and CDN edge and overlapped the borders, so I removed the label (the edge is still dashed, and scenario 5 explains it).
+- **Code:**
+  - **SQL:** ran on a throwaway Postgres 16.15 (port 5441) with 200,005 rows. The claim UPDATE returned 1 row and then 0. The near-duplicate query returned exactly ids 2/3/4/5 (distance 0/1/3/3, including the "3 bits in 3 different bands" case), excluded the 4-bit one, and EXPLAIN shows a BitmapOr over the four band indexes. Generated band columns were checked for negative bigints.
+  - **Java:** compiled with `javac --release 21 -parameters` against Spring Boot 3.5.6 / Spring 6.2.11 (jars fetched with Maven). I ran it in embedded Tomcat with a fake 300 ms Resizer:
+    - 50 concurrent requests made 1 render and all got 200;
+    - a WebP Accept made a separate key and returned `image/webp`, `Cache-Control: max-age=31536000, public, immutable` and `Vary: Accept`;
+    - a tampered width, an off-list width and bad base64 all returned 403;
+    - no Accept returned JPEG.
+    
+    Without `-parameters`, `@PathVariable` name resolution fails; Spring Boot's build plugins set it by default. The page snippet omits imports.
+  - **Python:** ran on Python 3.13 with Pillow 12.3:
+    - Orientation = 6 + GPS input came out rotated (400×300 → 300×400) with empty EXIF;
+    - the dHash had Hamming distance 0 after a resize plus a q60 re-encode;
+    - PDF → UnidentifiedImageError, GIF → ValueError, 108 MP → DecompressionBombError, 56 MP → DecompressionBombWarning raised as an error by the `simplefilter` line.
+    
+    That warning filter was added after I found that Pillow only *warns* between 1× and 2× `MAX_IMAGE_PIXELS`.
+- **Checker:** `node tools/check.js --require-intro --fonts image-hosting` gives ✓ phone and ✓ desk (5 scenarios, knobs 14/14, 12 interview questions, 17 sources, phone font min 12.7 / p25 12.7). Screenshots checked: desk and phone architecture, phone knobs, phone and desk deep dive, and phone intro.
+- **Suggested cross-links (for the coordinator):** add `image-hosting` to `related` in `object-storage` (f4/Haystack use case), `cdn` (image transforms at the edge), `video-streaming` and `file-sync`.
+
+## Feature Flag & Config Service (`feature-flags`)
+
+- New page: Feature Flag & Config Service (domain 6). It covers the data model (tenant → project → environment → flag with variations, individual targets, rules, segments, prerequisites, fallthrough rollout), where evaluation happens (server SDKs evaluate locally from an in-memory ruleset; client SDKs get evaluated values only), deterministic bucketing (`hash(flagKey.salt.userKey)` → 0..99,999, monotonic as the % grows, independent across flags, reshuffled by a new salt), propagation (outbox → snapshot builder → SSE stream with polling fallback, relay proxy, CDN snapshots, per-flag versions and `Last-Event-ID` resume), fail-static and code defaults, multi-tenancy (isolation, per-tenant change limits, coalescing, fair queues, fan-out cost, sharding by tenant/env), config safety (validation, approvals, staged rollout, audit log, kill switch, stale-flag cleanup) and a short part on exposure events / SRM.
+- Neighbours: it links to `lock-manager` (etcd/ZooKeeper for strongly consistent coordination, in `whenNot`), `distributed-cache` (`whenNot`) and lists `api-gateway`, `lock-manager`, `distributed-cache`, `notifications`, `rate-limiter`, `observability` in `related`. It does not re-explain SSE/push delivery mechanics (notifications), JWT/rate limits (api-gateway) or consensus (lock-manager).
+- **Our design vs documented fact:** the Postgres schema, the change_log outbox doubling as the audit log, the per-environment `env_version` row lock, the snapshot builder, streaming tier sharded by environment, per-tenant fair queues, ~200 ms coalescing window, "one relay per ~500 SDKs", the 0..99,999 bucket scale in the widget, and the 30 s polling interval in the knobs are **our design / illustrative**. The evaluation order (off → prerequisites → targets → rules → fallthrough) is LaunchDarkly's documented order; we added "missing flag → code default". Calculator and knob load numbers (200 req/s × 15 checks per instance, 1 KB patch) are labelled estimates.
+- **Facts used (sources in `realWorld.sources`):**
+  - Meta SOSP 2015 (Tang et al.): thousands of online config changes and trillions of config checks per day (abstract); Configerator = version control, review, automated canary testing, distribution; tailers sync git → Zeus (Facebook's ZooKeeper) and a tree of observers/proxies; Gatekeeper evaluates "restraints"; PackageVessel distributes large configs peer-to-peer (paper + Morning Paper summary).
+  - LaunchDarkly: started with polling, moved to streaming because polling cost grew; relay proxy keeps a single connection, motivated partly by customers' NAT (blog "evolution from polling to streaming", dated 2020 by a third-party index). Flags/rules cached on Fastly's CDN on every change and local caching as fallback ("Designing for failure"). Server-side evaluation order and reasons (docs). Percentage rollout hash uses flag key, hidden salt and user key, stable while inputs are unchanged (Space Camp). Ruby SDK: SHA-1 of `key.salt.id`, first 15 hex digits / 0xFFFFFFFFFFFFFFF (RubyDoc of SDK source). Secure mode = HMAC-SHA256 of the context key signed with the SDK key (docs). 2020 press release: "over six trillion" evaluations/day, 14M mobile devices, 3M servers.
+  - Unleash: backend SDKs fetch all config and evaluate locally, frontend SDKs fetch evaluated flags only; propagation delay of a few seconds, configurable; Edge keeps user data from going upstream and supports streaming; stickiness = MurmurHash of user id + groupId, groupId defaults to the flag name and can be shared.
+  - Uber Flipr (2021): exceptions/constraints on city, app version, user id, experiment; gateways as fan-out cache, host agent, async replication (eventually consistent), on-disk copy on clients.
+  - Netflix Archaius wiki: polling source refreshes a whole snapshot, ZooKeeper-like sources update single properties, cached `Property` API.
+  - Flipper: 0.2.0 compared `id % 100` with the percentage; later versions hash feature name + actor id with CRC32 (RubyDoc pages for both versions).
+  - OpenFeature became CNCF incubating in Dec 2023 (CNCF blog).
+  - Google Cloud 12 Jun 2025: new Service Control code path was not feature-flag protected; policy metadata replicated globally within seconds; remediation "feature flag protected and disabled by default" (Google status-page incident report).
+  - Cloudflare 18 Nov 2025: permission change → duplicate rows → Bot Management feature file doubled and exceeded a limit; propagated fleet-wide (Cloudflare blog).
+- **Hedged / not used:** LaunchDarkly's newer "20T / 42T evaluations a day" and "<200 ms" figures are inconsistent marketing claims, so only the dated 2020 press-release number is used, worded as a company claim. A secondary (translated) summary's "~15 s" Configerator latency breakdown and "billions of checks per second" for Gatekeeper were not used; only the paper's abstract figures are. Cloudflare's "60 → 200+ features" detail came only from secondary write-ups, so the page says "exceeded a limit" without numbers. Google's red-button/recovery timings were not used. The Slack and GitHub flag posts could not be found as primary sources in search, so they are not cited. WebSearch budget ran out before I could check the 2024 Meta MobileConfig paper; it is not used. Netflix "Fast Properties" had no primary source in results, so only Archaius is cited.
+- **Knobs:** 4 segmented controls + 1 range; every option changes the meters or verdict (checker: 11/11). Verdict precedence: random bucketing ❌ → no fallback ❌ → remote eval ⚠ → id % 100 ⚠ → direct stream > 50K ⚠ → polling 👍 → relay/stream + snapshot ✅. The knobs diagram adds a "Local snapshot" store (hidden unless chosen) and hides the relay unless "SSE via relay proxy" is selected. Remote mode draws a temporary dashed SDK → eval-service hop (no permanent edge, to avoid crossing the relay box).
+- **Widget:** real MurmurHash3 x86 32-bit (seed 0) in JS. Checked against the published vectors ("" seed 1 = 514e28b7, "hello" = 248bfa47, "The quick brown fox…" = 2e4ff723) and against Python `mmh3` 5.3.1 on `new-checkout.a1f3.user-42` (de59014f) and `dark-mode.b7.user-119` (f2ad6d77). Bucket = hash mod 100,000; on iff bucket < pct × 1000. Modes: hash, `random()` per check (re-drawn on each "live request" tick every 0.9 s), and `numeric id % 100`. Flag B (dark-mode, 30%, its own salt) shows overlap vs the independent expectation. Rules toggle adds prerequisite (payments-v2 off in BR) → target user-7 → rule 1 DE → off → rule 2 segment (enterprise or user-3) → fallthrough; tapping a user prints the trace. Kill switch returns the off variation. Playwright run (desk, 120 users): hash 10→20%: kept 8/8; 20→50%: 18/18; 0 flips per tick. random: kept 2/17, ~40 flips per tick. id % 100 at 20% with B at 30%: overlap 26 of 26 (independent ≈ 8); hash: overlap 6 (≈ 5). New salt changed 39 users at the same 20%. Two layouts: phone viewBox 360 (8×10 users, 14-unit text), desktop 640 (15×8, 13-unit text, capped at 700px). Phone fonts: min 13.2 / p25 13.2 px.
+  - Fixed during testing: slider/salt changes were counted as "flips"; flips now only come from live-request ticks. Sequential ids 1..120 made `id % 100` over-select low ids (39/120 at 20%); numeric ids now have evenly spread residues.
+- **Code:**
+  - SQL: ran on a throwaway Postgres 16.15 (port 5443). As a non-owner role with `app.tenant_id = 7`: the first run returned env_version 1 / flag_version 42 and wrote the change_log row; a second run with the same expected version returned 0 rows and did not bump env_version; a tenant-8 session could not see or update tenant 7's row (RLS) and saw only its own row.
+  - Java: compiled with `javac --release 21 -proc:none -Xlint:all` against Spring Boot 3.5.6 / Spring 6.2.11 (fetched with Maven into the scratch dir), with small `SnapshotStore` / `PatchEvent` stubs. Then ran it as a real Spring Boot app and used curl: a new client got `event:put id:102`, then a live `patch id:103` after publishing an event; `Last-Event-ID: 101` got only `patch id:102`; an old id (5) got a full `put`. No exceptions in the log.
+  - Python: ran on python3 (3.11+ syntax); printed `969 2018 True` (≈10% and ≈20% of 10,000 users, and the 10% set is a subset of the 20% set).
+- Checker: `node tools/check.js --require-intro --fonts feature-flags` passes on phone and desk (5 scenarios, 12 interview questions, 20 sources). Screenshots checked: architecture (phone/desk), knobs, deep dive, intro.
+
+## Event Ingestion Pipeline (`event-ingestion`)
+
+- New page: Event Ingestion Pipeline (domain 7). It covers the whole ingestion path: SDKs that batch, gzip, spool to disk and retry with jitter; stateless collectors behind GeoDNS + LB that check the write key and ack only after the log has acked; a raw log; a validator that checks against a schema registry, dedups by event_id, enriches and applies PII rules; a DLQ with replay; clean topics; one router per sink; and count-based audits plus lag. It links out and does not re-explain Kafka internals (`message-queue`), windows, watermarks and checkpoints (`stream-analytics`), lake tables (`data-lake`), or ops telemetry (`observability`).
+- **Our design vs documented fact:** labelled as our design: the collector/validator split (validate after the log), the API shapes (`/v1/batch`, `/v1/replay`), the 24 h and 4-week dedup knob, the Postgres day-partitioned dedup table, the per-source DLQ alerting, the "~20K events/s per collector" and "~40 B per dedup key" sizing (both marked estimate/illustrative), and the knob baselines (100K events/s, 10M online devices). The registry endpoints (`GET /subjects/{s}/versions/latest`, `POST /compatibility/...`, `POST /subjects/{s}/versions` → 409) follow the Confluent Schema Registry API. The clock-skew correction `received_at − (sent_at − timestamp)` is given as a general technique, not attributed to a company.
+- **Facts used (sources in `realWorld.sources`):**
+  - Netflix: 45B events/day in 2011 → 500B/day (~1 PB) by 2015 (VentureBeat article by Zhenzhong Xu, ex-Netflix).
+  - Netflix: Keystone v1.5 Kafka-fronted branch; routing service with separate routing jobs per sink for isolation; Samza jobs in Docker on EC2 (InfoQ 2016).
+  - Netflix: "in 2016, 36 Kafka clusters, >700B messages/day"; tunable at-least-once (InfoQ 2018, which recalls the 2016 figure).
+  - LinkedIn 2015: >800B messages/day, >175 TB; extra tiers and mirror makers create loss points; Hadoop consumers write audit info back as a separate tier.
+  - Segment 2017: ~0.6% duplicates within a 4-week window; per-worker RocksDB on local EBS; publish only if the id is new, then commit the input offset.
+  - Segment 2018: a shared queue caused head-of-line blocking, so they moved to a queue and service per destination (InfoQ 2018 summary of "Goodbye Microservices"); then Centrifuge, a virtual-queue system for per-customer/endpoint isolation (Segment/Twilio 2018 post).
+  - Uber 2016: MirrorMaker rebalances with ~5–10 min of inactivity, a static whitelist needing restarts, loss risk; uReplicator with a Helix controller.
+  - Uber 2016: Chaperone 10-minute tumbling windows keyed by the event time in the message, tier-vs-tier count comparison, WAL + UUIDs for exactly-once auditing.
+  - Pinterest: services write to local disk and the Singer agent ships to Kafka with at-least-once delivery, because direct writes buffered in memory and a long Kafka outage could lose data; >150B messages/day.
+  - Confluent docs: BACKWARD is the default, and preferred so consumers can rewind; BACKWARD → upgrade consumers first; transitive variants check all versions; with Avro/Protobuf, adding or removing a field with a default is fully compatible.
+  - Snowplow: Enrich validates raw collector events against schemas; failed events go to a bad stream with typed bad rows (size_violation, format_violation, schema violations).
+- **Hedged / not used:**
+  - Netflix "1 trillion/day" (2016–17 decks), "3 trillion/day" (2018 HPCwire) and "~2 trillion/day" (secondary blogs) disagree and come from slides or aggregators, so they were not used.
+  - The Netflix Tech Blog originals did not show up in search results, so the page cites InfoQ and VentureBeat instead. VentureBeat has three URL variants (/ai/, /business/, /technology/); /business/ is used.
+  - LinkedIn's 1.1T/day (2015 BigDataWire) was not used. The page uses the figure stated in the cited post (800B).
+  - Segment Centrifuge throughput (TechCrunch: 157K → 400K events/s) was not used.
+  - The Pinterest post date is not shown in the results, so it is written as "c. 2017".
+  - "FORWARD → upgrade producers first" was only visible in third-party summaries of the Confluent table. It is the standard reading of the definition and is stated without a citation.
+  - The search budget ran out before I could open the Avro specification page and Snowplow's current failed-event docs. The Avro rules are instead verified empirically (see the widget section).
+- **Knobs:** 5 controls (schema contract, dedup, back-pressure, sink delivery, flush interval). The checker reports every option changes the outcome (11/11). The numbers are illustrative and say so in the intro and hints. Dedup state = 100K/s × 86,400 × 40 B ≈ 346 GB/day, or ≈ 9.7 TB for 4 weeks. The duplicate meter for "none" uses Segment's measured 0.6%. Schemaless hides the registry and DLQ; tag hides the DLQ. Shared writer marks the partner API red and lake/search as stalled.
+- **Widget:** a real schema-compatibility checker plus validation router.
+  - Seven edits (add optional/required, remove optional/required, rename with alias, int→long, make optional) apply cumulatively to a draft. BACKWARD, FORWARD and FULL are computed against the latest version and against all versions, using Avro resolution: match by name or reader alias, reader default fills a missing field, writer-only fields are ignored, numeric/string↔bytes promotion, every writer union branch must resolve.
+  - **Cross-checked against Apache Avro 1.12.0 `SchemaCompatibility.checkReaderWriterCompatibility`:** 814 reader/writer pairs (every single edit, 300 random edit sequences in both directions, 200 random pairs) agreed 814/814.
+  - Registering applies the selected registry mode (all 7 Confluent modes, transitive included) and returns "409 Conflict" with the reason.
+  - Events from an old app (writes v1) and a new app (writes latest) are validated against their writer schema. About 12% are corrupted (missing required field, or "1.2s" in a numeric field) and go to the ingest DLQ. Each sink then resolves writer → its reader schema: Warehouse is pinned until you upgrade it, Search reads the latest. Failures go to that sink's DLQ, and Replay re-resolves them.
+  - Driven in Playwright at 390 px and 1280 px: "− required" shows BACKWARD ✓ / FORWARD ✗. It is rejected under FORWARD (409: reader needs 'duration_ms') and accepted under BACKWARD. Warehouse DLQ filled (14) while Search stayed at 0. Upgrade + replay gave 14 decoded / 0 failing. Then "+ required" showed FORWARD ✓ vs latest but ✗ vs all, which is correct because v1 needs duration_ms. No console errors.
+  - Two layouts via `ctx.narrow`/`ctx.onResize`: phone viewBox 360 with 13.5–15 unit text (stacked), desktop viewBox 640. Phone fonts: min 12.7 px, p25 12.7 px.
+  - Fixed during testing: animated dots were drawn over box labels, so they now run under the boxes. A resize mid-flight now finishes in-flight events instantly instead of dropping their counts.
+  - Fixed after the screenshots: the intro "fix" frame showed validation at the collector, which contradicted the architecture. It now shows log → validator → DLQ/sinks.
+- **Code:**
+  - Java collector: compiled with `javac --release 21 -Xlint:all -proc:none` against Spring Boot 3.5.6 / spring-kafka 3.3.10 / kafka-clients 3.9.1 jars fetched with Maven, with no warnings. Run with a KafkaTemplate subclass whose `send` succeeds or fails:
+    - valid batch → 200 `{accepted=2}`, key = anonymous_id (falls back to event_id), source_id header set;
+    - bad write key → 401;
+    - missing event_id or empty batch → 400;
+    - failed send → 503 with Retry-After: 5.
+  - SQL: ran on a throwaway Postgres 16 (port 5444; socket dir `/tmp/cc5444` because the scratchpad path exceeds the 107-byte socket limit, and the server ran as the `postgres` user because pg_ctl refuses root).
+    - First insert returns 1 row, the duplicate returns 0.
+    - Two concurrent replay transactions over 700 DLQ rows: A claimed 500 and held its locks, B claimed the other 200 (SKIP LOCKED).
+    - ROLLBACK leaves rows pending.
+    - An insert for a day with no partition errors, which is why the note says to pre-create partitions.
+    - `DROP TABLE` on a partition expires its keys.
+  - Python SDK: ran on Python 3.13 against a local HTTP server (gzip decoded server-side):
+    - two 503s then 200 → 3 attempts with identical event_ids and the batch deleted;
+    - all 503 → spool kept;
+    - a new Tracker on the same file (restart) sends the kept events;
+    - 400 → batch dropped, as the note says;
+    - network down → spool kept.
+- Checker: `node tools/check.js --require-intro --fonts event-ingestion` → ✓ phone and desk (5 scenarios, knobs 11/11, 12 interview questions, 14 sources, font min 12.7 / p25 12.7 px).
+
+## Ads Serving: Targeting, Pacing & Auction (`ads-serving`)
+
+- New page: Ads Serving: Targeting, Pacing & Auction (domain 8). It covers the request funnel under a deadline (boolean-expression index → filters → pCTR/pCVR → auction), the campaign / ad group / creative model, ranking by bid × pCTR (eCPM), GSP / VCG / first price with reserves, budget pacing (throttling vs bid modification, PI controller on a forecast target curve), frequency caps, spend accounting with bounded overspend (async counter vs leases), the event log, and OpenRTB as the external integration. It links to `ad-click-aggregation` for the post-serve counting and billing path (whenNot, API, scenario 3, related) and to `recommendation` for embedding retrieval (whenNot, trade-offs). It does not repeat click dedup, watermarks, two-tower training or BM25.
+- **Our design vs documented fact:** labelled as our design: the 13-node architecture, the 60 ms internal deadline, the filter order, the `freq:{user}:{ad_group}` counters, the per-server budget-lease ledger, the PI controller (velocity form on log p / log m), the traffic-proportional target curve, the knob latency model (30 ms + 0.1 ms per candidate / 8 threads, + 15 ms for a synchronous DB row) and the $10k hot-campaign overspend model (rate × delay). These are illustrative, as the knobs intro says. The header-bidding context for Google's 2019 move is marked "our reading, not Google's wording".
+- **Facts used (sources in `realWorld.sources`, 19 in all):**
+  - Edelman, Ostrovsky, Schwarz (AER 2007): GSP is not truthful and has no dominant-strategy equilibrium; the generalized English auction has a unique equilibrium with VCG payoffs.
+  - Varian & Harris (AER 2014): search uses GSP, display exchanges generally use second price, Facebook uses VCG.
+  - Whang et al. (VLDB 2009): DNF/CNF targeting expressions indexed with inverted lists, top-N, tested on ad data.
+  - Google KDD 2013: FTRL-Proximal, per-coordinate learning rates, L1, sponsored-search CTR.
+  - Facebook ADKDD 2014: boosted trees feeding a linear classifier, "over 3%" better than either alone, historical features matter most. The 3.4% figure from a summary was not used.
+  - LinkedIn KDD 2014 budget pacing: title, venue and speaker only. The mechanism was not stated, because I only had the talk page.
+  - Yahoo Smart Pacing (KDD 2015): control-based pacing by response-rate layer; eCPC −72 / −67 / −79% on three campaigns.
+  - Twitter 2016 (quality factor, an adaptive controller trading quality for latency), 2019 SplitNet (light and heavy ranking, filtering before light ranking), 2020 (Live Spend Counter per DC, lag causes overspend), 2021 (sharded pacing service in every DC, every campaign every 10 s).
+  - Pinterest 2017: predictive spend to prevent overdelivery, Kafka Streams.
+  - Google Ad Manager: May 2019 post (unified first price; two auctions per ad before; unified pricing rules), and Sep 2019 post (full rollout starting).
+  - Google Cloud 2014: RTB transactions typically within 100 ms.
+  - Google Ads Help: up to 2× the average daily budget on one day, a 30.4× monthly cap, credits above it. Ad Rank thresholds act as reserve prices, and you pay the minimum to clear the thresholds and beat the ad below.
+  - Meta Marketing API: standard pacing adjusts the bid; accelerated delivery removes pacing adjustments.
+  - OpenRTB 2.6 (Apr 2022; ad pods, structured UA; `tmax`).
+- **Hedged / not used:**
+  - The 50–60 ms DSP budgets and the "Google 100 ms hard cutoff" came from blogs, so the page says "~100 ms (Google, 2014)" and makes the internal deadline our choice.
+  - Third-party versions of Meta's "total value" formula disagree (× vs +), so the page only says Meta adjusts bids for pacing.
+  - The Reddit sharded-pacing post appeared only on a mirror domain, so it was dropped.
+  - Completion of the Ad Manager rollout in late Sep 2019 came from third parties. The page says only that "the full rollout began in September 2019".
+  - The Pinterest Kafka Summit components (joiner / aggregator / predictor) were not used.
+- **Knobs:** checker 9 buttons / 8 changes. Every option changes the meters or the verdict:
+  - auction: revenue and bidding meters plus a note;
+  - pacing: budget-lasts and impressions-per-$ meters, plus hiding the pacing node;
+  - ledger: latency, overspend and hot-spot meters.
+  - The delay range goes to 1800 s, so async overspend crosses 2% (≈ $417 on $10k) and triggers the ⚠ verdict.
+  - "≈ 1.4× impressions per $" for bid modification comes from the widget simulation: 30 seeds, 1,742 vs 1,246 thousand impressions for the same budget.
+- **Widget:** two tabs, rebuilt via `ctx.onResize`.
+  - **Auction:** the real quality-weighted GSP (`s_{k+1}/pCTR_k + $0.01`, capped at the bid), VCG (`Σ_{j≥k}(α_j−α_{j+1})·s_{j+1} / (α_k·pCTR_k)`, with reserve phantoms below the last bidder) and first price for 1–3 slots, with position multipliers 1 / 0.6 / 0.35 and a reserve on eCPM. Rows are selectable, with ± bid / pCTR buttons and a shuffle. The defaults match the Python snippet exactly (A $1.76 / $1.66, C $1.38 / $1.37). The table is HTML, so it is never scaled.
+  - **Pacing:** 144 ten-minute steps, a log-normal second-price market (median $3 CPM, our bid $5), each auction = 1,000 impressions. It compares no pacing, throttling and bid modification, both driven by a velocity-form PI controller (Kp 0.2, Ki 0.05) on a forecast-proportional target. Options: an unforecast 17–19 h ×2.2 spike, and a 30-minute spend lag that makes the controller oscillate and lets unpaced delivery overspend by ~$250–400.
+  - Gains were tuned over 30 seeds in node: max gap vs target is ~1–2% live and ~10% with lag.
+  - Phone: viewBox 360, text 14–15 units, min 13.2 px / p25 13.2 px (checker; the pacing tab was measured separately at 13.2 px). Desktop: viewBox 560, capped at 680 px wide.
+  - Fixed during testing: the reserve line was drawn over the "slot 1" label, the "24h" axis label was clipped, the desktop chart was oversized, and an end-of-day exhaustion at 23:50 now shows as ✓.
+- **Code:**
+  - Python: ran on python3 (3.11+). Output `(1,'A',1.76,1.66,2.0)`, `(2,'C',1.38,1.37,1.5)` matches the comment and the widget.
+  - SQL: ran on a throwaway Postgres 16.15 on port 5445. The data dir was in /tmp/pg-ads-serving-5445, because the scratchpad parent is mode 700 and its socket path exceeds 107 bytes.
+    - Sequential grants of 3,000 against 10,000 returned 3000/3000/3000/1000. A settle (used 2,500 of 3,000) freed 500, and the next grant returned 500.
+    - 24 concurrent grants of 700 granted exactly 10,000 in total (14×700 + 200; 9 got 0 rows), with no CHECK violation or error.
+    - Bug found by running it: the first version computed `granted` in RETURNING from post-update values and over-reported a partial last chunk. It was rewritten with a `FOR UPDATE` subquery.
+  - Java: compiled with `javac --release 21 -proc:none` against spring-context 6.2.12 (fetched with Maven), with stubs for `Campaign` / `SpendClient` / `TrafficForecast`.
+    - Run with a fake spend client: on target p = 0.50, 1% ahead p = 0.37 (0.35 after 60 more ticks), 1% behind p = 0.62.
+    - Bug found by running it: the first version normalized the error per 10-s step, making the gains 60× hotter than the widget and saturating p at 1%. It now uses a 10-minute budget unit and Ki/60.
+- Checker: `node tools/check.js --require-intro --fonts ads-serving` passes on phone and desk (5 scenarios, 12 interview questions, 19 sources).
+
+## Global Secondary Index (`global-secondary-index`)
+
+- New page: Global Secondary Index (answers "Design a global secondary index / secondary search index"). It covers local (document-partitioned) vs global (term-partitioned) indexes, scatter-gather tail latency, sync (2PC, Spanner/CockroachDB) vs async (log-fed, DynamoDB GSI) maintenance, projections/covering indexes, uniqueness, hot low-cardinality keys and write sharding, sparse indexes, online backfill (write-only → backfill → verify → readable), stale entries with version guards, tombstones and row re-check, the external search index pattern (CDC/outbox → OpenSearch/Elasticsearch with `version_type=external` = source LSN, alias swap, read-your-writes), Vitess lookup vindexes and Cassandra 2i / SAI / materialized views. It links to `search-engine` (inverted index internals, BM25), `distributed-sql` (2PC, Raft, clocks) and `kv-store` (base-table partitioning) from `whenNot`, `outOfScope`, interview answers and `related`, and does not re-explain them.
+- **Our design vs documented fact:** the router/applier/backfill architecture, the LSN-versioned applier with tombstones, the "re-check the row on read" defence, the `min_lsn` read-your-writes API, the 7-writes-per-order status lifecycle in the knobs, and all latency numbers are our design or illustrative. Documented facts are listed below and appear only in `realWorld`, `tldr.numbers`, notes and interview answers.
+- **Facts used (sources in `realWorld.sources`):**
+  - DynamoDB: GSIs launched in 2013, eventually consistent, return only projected attributes (AWS News Blog). Strongly consistent reads are not supported on a GSI (Read consistency page). A GSI with too little write capacity throttles writes to the base table (back pressure); AWS advises GSI write capacity ≥ the table's; throttles name the GSI with `IndexWriteProvisionedThroughputExceeded` (GSI throttling page, Knowledge Center). The 10 GB cap per partition-key value with an LSI (secondary index guidelines). Random vs calculated suffix write sharding (write sharding page). GSIs are sparse by default (sparse indexes page).
+  - Spanner: secondary indexes strongly consistent (non-relational overview); a non-interleaved index is its own table split independently, interleaved indexes keep updates local and avoid cross-split 2PC (schema design whitepaper / secondary indexes page); backfill runs in the background at low priority and takes "several minutes to many hours"; `STORING` (and `INCLUDE` for the PostgreSQL dialect) (secondary indexes page).
+  - CockroachDB: `STORING` makes a covering index and removes the index join; hash-sharded indexes with a hidden shard column for sequential keys (indexes and hash-sharded index pages).
+  - F1 (VLDB 2013): delete-only and write-only intermediate states, servers at most one schema version apart.
+  - Vitess: lookup vindexes avoid scatter; `consistent_lookup_unique` orders commits so a partial failure does not leave inconsistent data, avoiding 2PC; creating a lookup vindex does not backfill by itself (`CreateLookupVindex` does). Slack: Vitess served 99% of query load in 2020.
+  - Cassandra: MVs reclassified as experimental and not recommended for new production use, CASSANDRA-13959 (user list announcement, 2017). SAI is CEP-7, attached to SSTables, recommended index in 5.0, with 2i/SASI planned for removal (CEP-7 wiki, SAI overview).
+  - CDC: Airbnb SpinalTap (2018); Netflix Delta (2019, via InfoQ's summary: log + dumps, enrichment, chosen over dual writes / log tables / distributed transactions, search indexing as a use case); Netflix DBLog (2020, watermarks interleave chunked selects with log events, no table locks).
+  - Elasticsearch: `version_type=external` rejects writes whose version is not higher than the stored one; aliases can be swapped atomically in one `_aliases` call for reindex without downtime. `refresh=wait_for` semantics come from the official refresh-parameter reference (it appeared only under a docs-preview mirror URL, so it is stated without a source link).
+- **Hedged / not used:** the original Netflix Delta TechBlog URL never appeared in search results, so the InfoQ summary is cited and labelled as such. No Shopify/Uber/DoorDash post on Elasticsearch sync turned up (only tutorials), so none is cited. Cassandra 5.0's release year is given as "5.0" in the timeline, not a date. "SAI is still a local index" is general knowledge about Cassandra's per-node indexes, not quoted from a source. Spanner's exact "index write is in the same transaction" wording was not found; the page says indexes are "strongly consistent" and that cross-split index updates need 2PC, which the docs do say. The web-search budget ran out before a planned Cassandra 2i fan-out search; that claim is stated generally.
+- **Knobs:** 4 segmented controls + a shard slider; checker 11 clicks / 8 changes (the 3 non-changes are re-clicking the already-selected option). Query and write p99 come from a seeded Monte Carlo (1,500 queries) over an illustrative per-partition latency (lognormal median 2 ms, σ 0.5, plus a 0.2% chance of ~40 ms), summing the max over the partitions touched per round, so fan-out shows up as a real order statistic. Keys-only global reads add a fetch round over N·(1 − (1 − 1/N)^m) shards. Status hot-partition share uses a lifecycle model (insert PENDING + 3 transitions × 2 writes = 7 index writes, 2 on the busiest value). Unique constraint is only "enforceable" for sync + plain key.
+- **Widget:** a real sharded table (40 orders, FNV-1a placement on `hash(order_id) % N`, N = 4 or 8) with real global indexes on customer_id and status (entries on `hash(value) % N` or `hash(status#k) % N` with the suffix), each entry carrying its LSN, deletes as tombstones, and versioned upserts. Modes: none (full scan of all shards), local (all shards), global sync (row + old + new entry in one simulated 2PC; latency = 2 rounds × max over participants), global async (1 partition acked, changes queued and drained by an applier in small batches every 300 ms). Queries read the index partition(s), re-check each hit against the base row and report stale (dropped) and missed (not yet indexed) rows; p99 is from 2,000 simulated queries of the same shape. "Add 24 orders" shows all 24 PENDING entries landing in one partition, or spread over ≤ 4 with the suffix. Two layouts via `ctx.onResize`: phone viewBox 360 with 13–14-unit text and 4 columns; desktop viewBox 600 with 8 columns, capped at 760 px. Phone fonts: min 12.3 / p25 12.3 px.
+  - Fixed during testing: the burst message in async mode read the load counters before the applier had delivered anything ("0/0"); it now computes where the new entries will land.
+  - Fixed during testing: the phone layout overflowed by 14 px because `IndexWriteProvisionedThroughputExceeded` could not wrap; it now has `<wbr>` breaks.
+- **Code:**
+  - SQL: ran on a throwaway Postgres 16 (port 5446; the data dir was `/tmp/pg5446` because the postgres user cannot traverse the root-only scratchpad path). The snippet runs as written and returns order 7 under PAID. The same events applied in order, reversed, and reversed with duplicates all end in the same two rows: live (PAID, 7, LSN 120) and a PENDING tombstone at LSN 120.
+  - Java: compiled with `javac --release 21 -proc:none -Xlint:all` (no warnings) against the real jars, fetched with Maven: spring-kafka 3.3.10, spring-context 6.2.11, elasticsearch-java 8.18.8, jackson-databind 2.19.2. Not run against a live Kafka/Elasticsearch.
+  - Python: ran with `python3 -I` (3.13; nothing newer than 3.11 is used). Two runs printed p99 ≈ 43 ms unhedged and ≈ 11 ms hedged; the note quotes those.
+- Checker: `node tools/check.js --require-intro --fonts global-secondary-index` passes on phone and desk (5 scenarios, 12 interview questions, 23 sources).
+
+## Data Lake & Batch/Stream ETL (`data-lake`)
+
+- New page: Data Lake & Batch/Stream ETL (domain 9). It covers raw files vs a table format (Iceberg / Delta / Hudi), the metadata tree (metadata.json → manifest list → manifests → data/delete files), commit as a compare-and-swap of the catalog pointer, optimistic concurrency with validate/retry/abort, snapshot isolation, time travel and rollback, medallion zones, batch ETL (idempotent dynamic partition overwrite, write-audit-publish on a branch) vs streaming ingestion (Flink commits on checkpoint), CDC with Debezium, copy-on-write vs merge-on-read (equality/position deletes, Hudi logs, Delta/Iceberg v3 deletion vectors), small files and compaction, hidden partitioning and partition evolution, schema evolution by field id, late data and reprocessing, catalogs (HMS, Glue, REST: Polaris/Nessie/Unity), expire snapshots and orphan cleanup, and Trino/Spark readers. It links to `object-storage`, `stream-analytics`, `job-scheduler`, `message-queue`, `event-ingestion`, `privacy-data-platform` (related) and `stream-analytics` / `distributed-sql` (whenNot) and does not repeat S3 durability, Flink windows or Airflow internals.
+- **Our design vs documented fact:** the architecture (Kafka + Debezium → Flink, Airflow → Spark, a quality-audit step, table services as a separate compute pool), the `commit_log` table in the SQL snippet, the knob workload (4 MB/s, 8 writers, 256 MB CoW rewrite unit, compaction run times 180 s / 1800 s, conflict probability formula) and the widget workload are our design / illustrative and labelled so. The `iceberg_tables` columns match Iceberg's JdbcCatalog (from my knowledge of the Iceberg code, not from a search result). The mechanisms (pointer CAS, validation, sequence numbers, delete types, WAP via branches) are documented behaviour.
+- **Facts used (sources in `realWorld.sources`):**
+  - Iceberg spec: v2 delete files (position and equality), manifest list per snapshot, sequence numbers; atomic swap of metadata as basis for serializable isolation (iceberg.apache.org/spec). Reliability page 1.7.2: optimistic concurrency, appends add a new manifest without rewriting on retry, compaction must fail if its inputs were deleted.
+  - Hidden partitioning and metadata-only partition evolution; Hive needs a new table to change partitioning (Iceberg partitioning and evolution docs).
+  - Flink sink: exactly-once, commit after checkpoint completes; Iceberg commits can fail while checkpoints succeed, so alert on time since last successful commit (flink-writes docs).
+  - Iceberg defaults: `write.target-file-size-bytes` 512 MB, `commit.retry.num-retries` 4 (Iceberg Rust `table_properties.rs`; the Java defaults are the same to my knowledge).
+  - Netflix: Hive state in two places, directory listing, users must know the layout (Blue / O'Malley, Strata NY 2018 slides). Developed at Netflix 2017, ASF incubator Nov 2018, TLP May 2020 (Wikipedia; Incubator proposal seen in search).
+  - Uber: Hudi post (Mar 2017): timeline, record-key → file-id index, Avro log + compaction to Parquet, minutes of latency without a separate speed layer. Graduation post (2020): early 2016 >1,000 executors / >20 TB jobs; all raw tables on Hudi by end of 2017. 2026 post: ~350 logical PB on HDFS + GCS, ~6 trillion rows and ~3 M new files per day, ~350,000 commits/day, 19,500 datasets, ~70,000 table-service operations per day.
+  - Hudi CoW vs MoR (hudi.apache.org table types).
+  - Delta Lake VLDB 2020 (Armbrust et al., PVLDB 13(12)): log in the object store, Parquet checkpoints, time travel, thousands of customers, largest at exabyte scale. Linux Foundation, Oct 2019.
+  - Databricks medallion docs: bronze raw / silver validated / gold enriched; recommended, not required.
+  - Debezium PostgreSQL connector: logical decoding (pgoutput), replication slot, initial snapshot; op codes c/u/d/r (r = snapshot read).
+  - Airbnb 2022: Hive → Spark 3 + Iceberg on S3; consistent schema across engines; multiple partition specs.
+  - Netflix 2023 (TechBlog): Maestro incremental processing on Iceberg instead of lookback windows.
+  - AWS: WAP with Iceberg branches + fast-forward; Iceberg v3 deletion vectors in Puffin files, row lineage.
+- **Hedged / not used:** Netflix's own WAP talk (2017, Michelle Winters) only appeared in secondary write-ups, so WAP is sourced to the AWS blog and described generically. The exact Iceberg v3 release date was not in the results; the timeline says "2025" (GA came with Iceberg 1.10, per Dremio/AWS write-ups). The Delta paper's put-if-absent / coordination-service detail for S3 was not confirmed by search (search budget ran out), so the page only says "transaction log in the object store". No Apple / LinkedIn claims (not found). The 2026 Uber numbers are self-reported and attributed as such. The orphan-cleanup 3-day default comes from third-party summaries consistent with my knowledge of the Spark procedure; it is stated as "3 days by default" in one scenario step and one failure row.
+- **Correctness notes:** Flink upserts write equality deletes; Spark MERGE (MoR) writes position deletes. Only deletes that name a rewritten file conflict with compaction; a rewrite that keeps its starting sequence number can commit past concurrent equality deletes. The scenario, knob notes and widget all say this explicitly, which is why the conflict scenario uses a Spark MERGE rather than Flink.
+- **Knobs:** 5 controls (layer, CoW/MoR, compaction, interval, update share); checker 7/7 option clicks change the outcome. Default (Iceberg, MoR, hourly, 60 s, 10%) gives ✅; CoW → ⚠ (~130× write amplification, illustrative); no compaction → ⚠; nightly whole-day compaction → ⚠ (≈ 60% aborts); Hive folders → ❌. All numbers labelled illustrative.
+- **Widget:** a real optimistic-commit simulator. State is a map of immutable snapshots (each a set of live file ids with a parent), a catalog pointer and metadata version, and object storage. The ingest writer (auto every 2.2 s, prep 0.9 s) uploads a data file (plus, with "MERGE deletes", a position delete into a random live file) and CASes from its base; on a mismatch it walks the snapshots since its base and re-applies (re-planning the delete if its target was compacted). Compaction (prep 5.2 s) picks the closed hour with the most small files, applies existing deletes, and on a mismatch validates every concurrent snapshot: abort if one removed an input or added a delete into one; otherwise rebase. Also: time travel (tap a snapshot), rollback (ancestors only, new metadata version, no data change), expire (keep last 3 ancestors) + GC (delete unreferenced files except in-flight uploads), live counts of files, small files, delete files, visible rows, objects, orphans, retries, aborts. Scripted run in Chromium: compaction without MERGE rebased past an append and committed; with MERGE on, 2 of 3 compactions aborted naming the snapshot and file; rollback and expire behaved as logged; no page errors. Two layouts via `ctx.narrow` / `ctx.onResize` (phone viewBox 360, text 13–14 units; desktop 560, capped at 680 px). Phone fonts: min 12.3 / p25 12.3 px.
+- **Code:**
+  - SQL: ran on a throwaway Postgres 16.15 (port 5447; the data dir had to live in /tmp/pg5447 because the postgres user cannot traverse the scratchpad path, and the socket path was too long). Two sessions raced with the same expected pointer: session A (holding the lock for 2 s) got 1 row; session B blocked, then got 0 rows; B's retry from the new pointer got 1 row; `previous_metadata_location` was correct; the as-of lookup returned the right file for a past and a current timestamp.
+  - Python: ran on Python 3.13 (uses 3.10+ syntax only). Output `2, 3, 4` then `abort: S3 changed ['b']`, matching the note. 45 lines.
+  - Java: compiled with `javac --release 21 -Xlint:deprecation,removal` against Spark 3.5.3 (`spark-sql_2.13` fetched with Maven), no warnings. Also run end to end on local Spark 3.5.3 + `iceberg-spark-runtime-3.5_2.13:1.9.2` with a Hadoop catalog: duplicates removed, null-user rows dropped, other days untouched, the day partition replaced (old row gone), a rerun gave the same table, and a failing audit (1 of 3 rows without a country) threw while `main` kept the old data and only `audit` moved. Confirms `CREATE OR REPLACE BRANCH`, `INSERT OVERWRITE …branch_audit` with dynamic overwrite, `count_if` and `system.fast_forward`.
+- Checker: `node tools/check.js --require-intro --fonts data-lake` passes on phone and desk (5 scenarios, 12 interview questions, 20 sources). Fixed during testing: a long `<code>` metric name overflowed the failures table on phones (reworded), and the phone architecture layout was rearranged so the catalog sits between the writers and the audit step instead of needing a long curved publish edge.
+
+## Privacy-Aware Data Platform (`privacy-data-platform`)
+
+- New page: Privacy-Aware Data Platform (domain 9). It covers PII discovery and classification (sampling, regex + validators such as Luhn, name dictionaries, ML, confidence bands, human review), the data catalog as a metadata graph, column-level lineage (OpenLineage `columnLineage` facet, query-log parsing, runtime probes), tag propagation with explicit declassification, RBAC vs ABAC/tag-based vs purpose-based access, PDP vs PEP (Ranger / OPA style), dynamic masking, row filters, tokenization and pseudonymization, per-user keys with crypto-shredding, data subject requests (GDPR Art. 17, India DPDP Act s.12, CCPA) fanned out by lineage to tables, indexes, caches, features, exports and backups, retention TTLs, consent, audit logs, access reviews, break-glass access and minimisation at ingest.
+- It links to, and does not repeat: `rag-agent-platform` (document ACLs in retrieval) and `llm-gateway` (prompt PII redaction), both from `whenNot`; plus `data-lake`, `event-ingestion`, `observability` and `api-gateway` in `related`.
+- **Our design vs documented fact:**
+  - Our design: the architecture (ingestion → lake → jobs → copies; scanner / lineage / catalog / PDP / PEP / audit / DSR orchestrator / KMS), the confidence thresholds, the policy table, the API, the data model, the default-deny rule for untagged datasets, edge aging in lineage, and the verification-query rule for DSR tasks.
+  - Documented: Meta enforcing purpose limitation with Policy Zones (IFC), lineage via Privacy Probes, and PrivacyLib inside the logger. Uber DataK9. Airbnb DPP components. LinkedIn schema annotations and Dali. Ranger row filters and masks. Atlas → Ranger tag policies and propagation. The OpenLineage facet structure. OPA decoupling decision from enforcement.
+  - No company internals are claimed beyond what the sources say.
+- **Facts used (sources in `realWorld.sources`):**
+  - **Meta.**
+    - 2024: Policy Zones are part of PAI. They use information-flow control, check annotated data as it is processed, and integrate with HHVM, Presto and Spark.
+    - Jan 2025: Privacy Probes sample source/sink payloads at runtime and match them, combined with static analysis. Exact matches are strong evidence; transformed values need human review. Lineage is the precursor to placing Policy Zones.
+    - Jul 2025: batch Policy Zones for non-content messaging data (delivery status, timestamps), with a `MESSAGING_DATA` annotation on loggers.
+    - Oct 2026: before a write, the PrivacyLib integration in Logger invokes Policy Zones to check the flow to the destination table.
+    - InfoQ, Jan 2026: PrivacyLib instruments reads and writes and feeds a central lineage graph.
+  - **Uber DataK9 (May 2024).**
+    - <1% of datasets (about 1,000) labelled by experts, and >99% auto-tagged.
+    - Signals: field names/types, contents and lineage.
+    - A model is deployed only above >90% accuracy and >85% F2.
+    - Lat/lng with ≥3 decimals counts as precise location.
+    - RSAC 2026 talk abstract: >2 exabytes on 7+ platforms.
+  - **Airbnb:** Madoka (metadata) and Inspekt (Task Creator + Scanner, reports back to Madoka; Madoka flags mismatches with annotations), plus Cipher, Obliviate and Angmar.
+  - **LinkedIn:** governance annotations in schemas at creation time, kept in DataHub (2022). Dali generating column-level transformations from metadata and member privacy preferences, with purging via Gobblin (2017–18 talks).
+  - **Ranger and Atlas:**
+    - Ranger 0.6 added Hive row filters and column masks.
+    - A separate `select` access policy is still required.
+    - Atlas classifications drive Ranger tag policies and propagate along lineage (Cloudera CDP 7.x docs).
+  - **OpenLineage:** `columnLineage.fields[out].inputFields[]` with `transformations` (`type` DIRECT/INDIRECT, `subtype` such as IDENTITY/AGGREGATION, and a `masking` flag).
+  - **Laws:**
+    - GDPR Art. 17 erasure "without undue delay", with exceptions.
+    - The one-month answer period is from GDPR Art. 12(3). It is standard text, but I could not cite an Art. 12 page because the search budget ran out, so the page only says "one month" with the Art. 12 label.
+    - DPDP Act 2023 s.12: erasure unless retention is needed for the purpose or by law. The DPDP Rules were notified in Nov 2025 and phase in over 18 months (PIB).
+    - CCPA: delete within 45 days, extendable once by 45 days, and direct service providers to delete (Perkins Coie).
+  - **Crypto-shredding:** Thoughtworks Radar.
+- **Hedged / dropped:**
+  - The Airbnb series is dated "c. 2021", because the source page has no visible date.
+  - The Atlas/Ranger entry is labelled "CDP 7.x" instead of a year.
+  - Uber's "~1% of rows sampled per scan" appeared only in a search summary, so it was not used.
+  - The DPDP "48-hour notice before erasure" and the "consent manager Nov 2026" dates came from secondary sources and were not used.
+  - Whether a regulator accepts crypto-shredding as erasure is stated as a legal call in the Java note and the tradeoffs.
+  - Google SDP: the docs did not confirm that the card detector uses Luhn, so the page attributes Luhn only to "validators" generally and cites Google only for infoTypes.
+  - The search budget was exhausted before I could find an official Google likelihood page or Airbnb Part 2 (Inspekt details).
+- **Knobs:**
+  - Every option changes meters or the verdict (checker 12/12).
+  - All numbers are illustrative and labelled so in the intro: recall per discovery method, exposure, and an erasure-completeness formula. The policy count is roles × tables × 5% for RBAC, versus tags × roles or tags × purposes × 2.
+  - The steward review node appears only for the ML option, and the KMS node only for per-user keys.
+- **Widget:** a real mechanism, with two layouts via `ctx.onResize`. Phone uses a 360 viewBox with 13.5–14-unit text; desktop uses a 600 viewBox capped at 640 px. Phone fonts: min 12.7 / p25 12.7 px. The steps:
+  1. **Scan:** runs real detectors on the sample rows: email/phone regex, a 13–19-digit test plus Luhn, an ISO date test and a column-name dictionary. Confidence is 0.7 × match fraction plus a name bonus. ≥0.85 means auto-tag; 0.5–0.85 goes to review and is treated as PII. Card numbers pass Luhn; the 16-digit tracking numbers fail it and are not flagged. `user_id` (name only, 0.55) goes to review.
+  2. **Propagate:** worklist BFS over 29 column-level edges. Each BFS level is animated. Hash/tokenize turns PII into pseudonymous, and a group aggregate removes the tag, but only when declassifiers are on. Tags only rise, so it terminates.
+  3. **Query:** a purpose-to-role check (deny the whole query), then first-match tag policies per column (clear / mask / default deny), real mask functions, and a row filter (support → ticket user; DSR → subject; a dataset without a subject key returns 0 rows).
+  4. **Erase:** the fan-out is every dataset with a tagged column. The rows are deleted from materialized data built from the sources (join, per-user aggregates, group-by, consent filter for the CRM export). A ground-truth check reports datasets that still hold the subject because they were untagged.
+  - Tested in Playwright: no console errors and no overflow. With declassifiers off, `daily_rev` joins the fan-out as "recompute aggregate". With `users.email` untagged, `crm_export` is reported as missed and verification fails. Analyst + support purpose is denied.
+  - Fixed during testing:
+    - Same-row edges were invisible on phones (4-unit gap). They are now U-shaped arcs below the boxes.
+    - `orders_snap` collided with the tag symbol, so it was renamed to `order_rows`.
+    - Nested parentheses in the log were removed.
+- **Code:**
+  - **SQL:** ran on Postgres 16 (port 5449) with three roles.
+    - Analyst / analytics: email NULL (deny).
+    - Analyst reading the raw table: permission denied.
+    - Support / support with ticket u42: only u42's rows, with `l***@post.de`.
+    - Support / analytics: deny.
+    - Privacy / dsr: clear.
+  - **Python:** ran on Python 3.13 (3.11+ syntax). It printed the result quoted in the note, including `daily_rev` dropping out when declassified.
+  - **Java:** compiled with `javac --release 21 -proc:none -Xlint:all` against Spring Boot 3.5.6 jars (spring-boot-starter-jdbc, fetched with Maven), with no warnings. Run against Postgres 16, it shows round-trip decrypt, rejection of a cross-subject decrypt (GCM tag), `shred` returning true then false, and shredded data becoming `Optional.empty` while other users still decrypt.
+- **Checker:** `node tools/check.js --require-intro --fonts privacy-data-platform` reports ALL OK on phone and desk: 5 scenarios, knobs 12/12, 12 interview questions, 20 sources.
+
