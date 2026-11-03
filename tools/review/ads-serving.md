@@ -1,0 +1,47 @@
+# ads-serving review
+
+- New page: Ads Serving: Targeting, Pacing & Auction (domain 8). It covers the request funnel under a deadline (boolean-expression index → filters → pCTR/pCVR → auction), the campaign / ad group / creative model, ranking by bid × pCTR (eCPM), GSP / VCG / first price with reserves, budget pacing (throttling vs bid modification, PI controller on a forecast target curve), frequency caps, spend accounting with bounded overspend (async counter vs leases), the event log, and OpenRTB as the external integration. It links to `ad-click-aggregation` for the post-serve counting and billing path (whenNot, API, scenario 3, related) and to `recommendation` for embedding retrieval (whenNot, trade-offs). It does not repeat click dedup, watermarks, two-tower training or BM25.
+- **Our design vs documented fact:** labelled as our design: the 13-node architecture, the 60 ms internal deadline, the filter order, the `freq:{user}:{ad_group}` counters, the per-server budget-lease ledger, the PI controller (velocity form on log p / log m), the traffic-proportional target curve, the knob latency model (30 ms + 0.1 ms per candidate / 8 threads, + 15 ms for a synchronous DB row) and the $10k hot-campaign overspend model (rate × delay). These are illustrative, as the knobs intro says. The header-bidding context for Google's 2019 move is marked "our reading, not Google's wording".
+- **Facts used (sources in `realWorld.sources`, 19 in all):**
+  - Edelman, Ostrovsky, Schwarz (AER 2007): GSP is not truthful and has no dominant-strategy equilibrium; the generalized English auction has a unique equilibrium with VCG payoffs.
+  - Varian & Harris (AER 2014): search uses GSP, display exchanges generally use second price, Facebook uses VCG.
+  - Whang et al. (VLDB 2009): DNF/CNF targeting expressions indexed with inverted lists, top-N, tested on ad data.
+  - Google KDD 2013: FTRL-Proximal, per-coordinate learning rates, L1, sponsored-search CTR.
+  - Facebook ADKDD 2014: boosted trees feeding a linear classifier, "over 3%" better than either alone, historical features matter most. The 3.4% figure from a summary was not used.
+  - LinkedIn KDD 2014 budget pacing: title, venue and speaker only. The mechanism was not stated, because I only had the talk page.
+  - Yahoo Smart Pacing (KDD 2015): control-based pacing by response-rate layer; eCPC −72 / −67 / −79% on three campaigns.
+  - Twitter 2016 (quality factor, an adaptive controller trading quality for latency), 2019 SplitNet (light and heavy ranking, filtering before light ranking), 2020 (Live Spend Counter per DC, lag causes overspend), 2021 (sharded pacing service in every DC, every campaign every 10 s).
+  - Pinterest 2017: predictive spend to prevent overdelivery, Kafka Streams.
+  - Google Ad Manager: May 2019 post (unified first price; two auctions per ad before; unified pricing rules), and Sep 2019 post (full rollout starting).
+  - Google Cloud 2014: RTB transactions typically within 100 ms.
+  - Google Ads Help: up to 2× the average daily budget on one day, a 30.4× monthly cap, credits above it. Ad Rank thresholds act as reserve prices, and you pay the minimum to clear the thresholds and beat the ad below.
+  - Meta Marketing API: standard pacing adjusts the bid; accelerated delivery removes pacing adjustments.
+  - OpenRTB 2.6 (Apr 2022; ad pods, structured UA; `tmax`).
+- **Hedged / not used:**
+  - The 50–60 ms DSP budgets and the "Google 100 ms hard cutoff" came from blogs, so the page says "~100 ms (Google, 2014)" and makes the internal deadline our choice.
+  - Third-party versions of Meta's "total value" formula disagree (× vs +), so the page only says Meta adjusts bids for pacing.
+  - The Reddit sharded-pacing post appeared only on a mirror domain, so it was dropped.
+  - Completion of the Ad Manager rollout in late Sep 2019 came from third parties. The page says only that "the full rollout began in September 2019".
+  - The Pinterest Kafka Summit components (joiner / aggregator / predictor) were not used.
+- **Knobs:** checker 9 buttons / 8 changes. Every option changes the meters or the verdict:
+  - auction: revenue and bidding meters plus a note;
+  - pacing: budget-lasts and impressions-per-$ meters, plus hiding the pacing node;
+  - ledger: latency, overspend and hot-spot meters.
+  - The delay range goes to 1800 s, so async overspend crosses 2% (≈ $417 on $10k) and triggers the ⚠ verdict.
+  - "≈ 1.4× impressions per $" for bid modification comes from the widget simulation: 30 seeds, 1,742 vs 1,246 thousand impressions for the same budget.
+- **Widget:** two tabs, rebuilt via `ctx.onResize`.
+  - **Auction:** the real quality-weighted GSP (`s_{k+1}/pCTR_k + $0.01`, capped at the bid), VCG (`Σ_{j≥k}(α_j−α_{j+1})·s_{j+1} / (α_k·pCTR_k)`, with reserve phantoms below the last bidder) and first price for 1–3 slots, with position multipliers 1 / 0.6 / 0.35 and a reserve on eCPM. Rows are selectable, with ± bid / pCTR buttons and a shuffle. The defaults match the Python snippet exactly (A $1.76 / $1.66, C $1.38 / $1.37). The table is HTML, so it is never scaled.
+  - **Pacing:** 144 ten-minute steps, a log-normal second-price market (median $3 CPM, our bid $5), each auction = 1,000 impressions. It compares no pacing, throttling and bid modification, both driven by a velocity-form PI controller (Kp 0.2, Ki 0.05) on a forecast-proportional target. Options: an unforecast 17–19 h ×2.2 spike, and a 30-minute spend lag that makes the controller oscillate and lets unpaced delivery overspend by ~$250–400.
+  - Gains were tuned over 30 seeds in node: max gap vs target is ~1–2% live and ~10% with lag.
+  - Phone: viewBox 360, text 14–15 units, min 13.2 px / p25 13.2 px (checker; the pacing tab was measured separately at 13.2 px). Desktop: viewBox 560, capped at 680 px wide.
+  - Fixed during testing: the reserve line was drawn over the "slot 1" label, the "24h" axis label was clipped, the desktop chart was oversized, and an end-of-day exhaustion at 23:50 now shows as ✓.
+- **Code:**
+  - Python: ran on python3 (3.11+). Output `(1,'A',1.76,1.66,2.0)`, `(2,'C',1.38,1.37,1.5)` matches the comment and the widget.
+  - SQL: ran on a throwaway Postgres 16.15 on port 5445. The data dir was in /tmp/pg-ads-serving-5445, because the scratchpad parent is mode 700 and its socket path exceeds 107 bytes.
+    - Sequential grants of 3,000 against 10,000 returned 3000/3000/3000/1000. A settle (used 2,500 of 3,000) freed 500, and the next grant returned 500.
+    - 24 concurrent grants of 700 granted exactly 10,000 in total (14×700 + 200; 9 got 0 rows), with no CHECK violation or error.
+    - Bug found by running it: the first version computed `granted` in RETURNING from post-update values and over-reported a partial last chunk. It was rewritten with a `FOR UPDATE` subquery.
+  - Java: compiled with `javac --release 21 -proc:none` against spring-context 6.2.12 (fetched with Maven), with stubs for `Campaign` / `SpendClient` / `TrafficForecast`.
+    - Run with a fake spend client: on target p = 0.50, 1% ahead p = 0.37 (0.35 after 60 more ticks), 1% behind p = 0.62.
+    - Bug found by running it: the first version normalized the error per 10-s step, making the gains 60× hotter than the widget and saturating p at 1%. It now uses a 10-minute budget unit and Ki/60.
+- Checker: `node tools/check.js --require-intro --fonts ads-serving` passes on phone and desk (5 scenarios, 12 interview questions, 19 sources).

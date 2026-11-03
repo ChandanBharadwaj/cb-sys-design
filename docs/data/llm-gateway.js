@@ -493,5 +493,5 @@ general_settings:
     }
   ],
 
-  related: ['rate-limiter', 'api-gateway', 'llm-inference', 'rag-agent-platform', 'distributed-cache']
+  related: ['rate-limiter', 'api-gateway', 'llm-inference', 'rag-agent-platform', 'distributed-cache', 'privacy-data-platform']
 });

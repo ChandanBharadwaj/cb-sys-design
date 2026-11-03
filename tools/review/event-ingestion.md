@@ -1,0 +1,53 @@
+# event-ingestion review
+
+- New page: Event Ingestion Pipeline (domain 7). It covers the whole ingestion path: SDKs that batch, gzip, spool to disk and retry with jitter; stateless collectors behind GeoDNS + LB that check the write key and ack only after the log has acked; a raw log; a validator that checks against a schema registry, dedups by event_id, enriches and applies PII rules; a DLQ with replay; clean topics; one router per sink; and count-based audits plus lag. It links out and does not re-explain Kafka internals (`message-queue`), windows, watermarks and checkpoints (`stream-analytics`), lake tables (`data-lake`), or ops telemetry (`observability`).
+- **Our design vs documented fact:** labelled as our design: the collector/validator split (validate after the log), the API shapes (`/v1/batch`, `/v1/replay`), the 24 h and 4-week dedup knob, the Postgres day-partitioned dedup table, the per-source DLQ alerting, the "~20K events/s per collector" and "~40 B per dedup key" sizing (both marked estimate/illustrative), and the knob baselines (100K events/s, 10M online devices). The registry endpoints (`GET /subjects/{s}/versions/latest`, `POST /compatibility/...`, `POST /subjects/{s}/versions` → 409) follow the Confluent Schema Registry API. The clock-skew correction `received_at − (sent_at − timestamp)` is given as a general technique, not attributed to a company.
+- **Facts used (sources in `realWorld.sources`):**
+  - Netflix: 45B events/day in 2011 → 500B/day (~1 PB) by 2015 (VentureBeat article by Zhenzhong Xu, ex-Netflix).
+  - Netflix: Keystone v1.5 Kafka-fronted branch; routing service with separate routing jobs per sink for isolation; Samza jobs in Docker on EC2 (InfoQ 2016).
+  - Netflix: "in 2016, 36 Kafka clusters, >700B messages/day"; tunable at-least-once (InfoQ 2018, which recalls the 2016 figure).
+  - LinkedIn 2015: >800B messages/day, >175 TB; extra tiers and mirror makers create loss points; Hadoop consumers write audit info back as a separate tier.
+  - Segment 2017: ~0.6% duplicates within a 4-week window; per-worker RocksDB on local EBS; publish only if the id is new, then commit the input offset.
+  - Segment 2018: a shared queue caused head-of-line blocking, so they moved to a queue and service per destination (InfoQ 2018 summary of "Goodbye Microservices"); then Centrifuge, a virtual-queue system for per-customer/endpoint isolation (Segment/Twilio 2018 post).
+  - Uber 2016: MirrorMaker rebalances with ~5–10 min of inactivity, a static whitelist needing restarts, loss risk; uReplicator with a Helix controller.
+  - Uber 2016: Chaperone 10-minute tumbling windows keyed by the event time in the message, tier-vs-tier count comparison, WAL + UUIDs for exactly-once auditing.
+  - Pinterest: services write to local disk and the Singer agent ships to Kafka with at-least-once delivery, because direct writes buffered in memory and a long Kafka outage could lose data; >150B messages/day.
+  - Confluent docs: BACKWARD is the default, and preferred so consumers can rewind; BACKWARD → upgrade consumers first; transitive variants check all versions; with Avro/Protobuf, adding or removing a field with a default is fully compatible.
+  - Snowplow: Enrich validates raw collector events against schemas; failed events go to a bad stream with typed bad rows (size_violation, format_violation, schema violations).
+- **Hedged / not used:**
+  - Netflix "1 trillion/day" (2016–17 decks), "3 trillion/day" (2018 HPCwire) and "~2 trillion/day" (secondary blogs) disagree and come from slides or aggregators, so they were not used.
+  - The Netflix Tech Blog originals did not show up in search results, so the page cites InfoQ and VentureBeat instead. VentureBeat has three URL variants (/ai/, /business/, /technology/); /business/ is used.
+  - LinkedIn's 1.1T/day (2015 BigDataWire) was not used. The page uses the figure stated in the cited post (800B).
+  - Segment Centrifuge throughput (TechCrunch: 157K → 400K events/s) was not used.
+  - The Pinterest post date is not shown in the results, so it is written as "c. 2017".
+  - "FORWARD → upgrade producers first" was only visible in third-party summaries of the Confluent table. It is the standard reading of the definition and is stated without a citation.
+  - The search budget ran out before I could open the Avro specification page and Snowplow's current failed-event docs. The Avro rules are instead verified empirically (see the widget section).
+- **Knobs:** 5 controls (schema contract, dedup, back-pressure, sink delivery, flush interval). The checker reports every option changes the outcome (11/11). The numbers are illustrative and say so in the intro and hints. Dedup state = 100K/s × 86,400 × 40 B ≈ 346 GB/day, or ≈ 9.7 TB for 4 weeks. The duplicate meter for "none" uses Segment's measured 0.6%. Schemaless hides the registry and DLQ; tag hides the DLQ. Shared writer marks the partner API red and lake/search as stalled.
+- **Widget:** a real schema-compatibility checker plus validation router.
+  - Seven edits (add optional/required, remove optional/required, rename with alias, int→long, make optional) apply cumulatively to a draft. BACKWARD, FORWARD and FULL are computed against the latest version and against all versions, using Avro resolution: match by name or reader alias, reader default fills a missing field, writer-only fields are ignored, numeric/string↔bytes promotion, every writer union branch must resolve.
+  - **Cross-checked against Apache Avro 1.12.0 `SchemaCompatibility.checkReaderWriterCompatibility`:** 814 reader/writer pairs (every single edit, 300 random edit sequences in both directions, 200 random pairs) agreed 814/814.
+  - Registering applies the selected registry mode (all 7 Confluent modes, transitive included) and returns "409 Conflict" with the reason.
+  - Events from an old app (writes v1) and a new app (writes latest) are validated against their writer schema. About 12% are corrupted (missing required field, or "1.2s" in a numeric field) and go to the ingest DLQ. Each sink then resolves writer → its reader schema: Warehouse is pinned until you upgrade it, Search reads the latest. Failures go to that sink's DLQ, and Replay re-resolves them.
+  - Driven in Playwright at 390 px and 1280 px: "− required" shows BACKWARD ✓ / FORWARD ✗. It is rejected under FORWARD (409: reader needs 'duration_ms') and accepted under BACKWARD. Warehouse DLQ filled (14) while Search stayed at 0. Upgrade + replay gave 14 decoded / 0 failing. Then "+ required" showed FORWARD ✓ vs latest but ✗ vs all, which is correct because v1 needs duration_ms. No console errors.
+  - Two layouts via `ctx.narrow`/`ctx.onResize`: phone viewBox 360 with 13.5–15 unit text (stacked), desktop viewBox 640. Phone fonts: min 12.7 px, p25 12.7 px.
+  - Fixed during testing: animated dots were drawn over box labels, so they now run under the boxes. A resize mid-flight now finishes in-flight events instantly instead of dropping their counts.
+  - Fixed after the screenshots: the intro "fix" frame showed validation at the collector, which contradicted the architecture. It now shows log → validator → DLQ/sinks.
+- **Code:**
+  - Java collector: compiled with `javac --release 21 -Xlint:all -proc:none` against Spring Boot 3.5.6 / spring-kafka 3.3.10 / kafka-clients 3.9.1 jars fetched with Maven, with no warnings. Run with a KafkaTemplate subclass whose `send` succeeds or fails:
+    - valid batch → 200 `{accepted=2}`, key = anonymous_id (falls back to event_id), source_id header set;
+    - bad write key → 401;
+    - missing event_id or empty batch → 400;
+    - failed send → 503 with Retry-After: 5.
+  - SQL: ran on a throwaway Postgres 16 (port 5444; socket dir `/tmp/cc5444` because the scratchpad path exceeds the 107-byte socket limit, and the server ran as the `postgres` user because pg_ctl refuses root).
+    - First insert returns 1 row, the duplicate returns 0.
+    - Two concurrent replay transactions over 700 DLQ rows: A claimed 500 and held its locks, B claimed the other 200 (SKIP LOCKED).
+    - ROLLBACK leaves rows pending.
+    - An insert for a day with no partition errors, which is why the note says to pre-create partitions.
+    - `DROP TABLE` on a partition expires its keys.
+  - Python SDK: ran on Python 3.13 against a local HTTP server (gzip decoded server-side):
+    - two 503s then 200 → 3 attempts with identical event_ids and the batch deleted;
+    - all 503 → spool kept;
+    - a new Tracker on the same file (restart) sends the kept events;
+    - 400 → batch dropped, as the note says;
+    - network down → spool kept.
+- Checker: `node tools/check.js --require-intro --fonts event-ingestion` → ✓ phone and desk (5 scenarios, knobs 11/11, 12 interview questions, 14 sources, font min 12.7 / p25 12.7 px).

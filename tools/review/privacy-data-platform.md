@@ -1,0 +1,66 @@
+# privacy-data-platform review
+
+- New page: Privacy-Aware Data Platform (domain 9). It covers PII discovery and classification (sampling, regex + validators such as Luhn, name dictionaries, ML, confidence bands, human review), the data catalog as a metadata graph, column-level lineage (OpenLineage `columnLineage` facet, query-log parsing, runtime probes), tag propagation with explicit declassification, RBAC vs ABAC/tag-based vs purpose-based access, PDP vs PEP (Ranger / OPA style), dynamic masking, row filters, tokenization and pseudonymization, per-user keys with crypto-shredding, data subject requests (GDPR Art. 17, India DPDP Act s.12, CCPA) fanned out by lineage to tables, indexes, caches, features, exports and backups, retention TTLs, consent, audit logs, access reviews, break-glass access and minimisation at ingest.
+- It links to, and does not repeat: `rag-agent-platform` (document ACLs in retrieval) and `llm-gateway` (prompt PII redaction), both from `whenNot`; plus `data-lake`, `event-ingestion`, `observability` and `api-gateway` in `related`.
+- **Our design vs documented fact:**
+  - Our design: the architecture (ingestion → lake → jobs → copies; scanner / lineage / catalog / PDP / PEP / audit / DSR orchestrator / KMS), the confidence thresholds, the policy table, the API, the data model, the default-deny rule for untagged datasets, edge aging in lineage, and the verification-query rule for DSR tasks.
+  - Documented: Meta enforcing purpose limitation with Policy Zones (IFC), lineage via Privacy Probes, and PrivacyLib inside the logger. Uber DataK9. Airbnb DPP components. LinkedIn schema annotations and Dali. Ranger row filters and masks. Atlas → Ranger tag policies and propagation. The OpenLineage facet structure. OPA decoupling decision from enforcement.
+  - No company internals are claimed beyond what the sources say.
+- **Facts used (sources in `realWorld.sources`):**
+  - **Meta.**
+    - 2024: Policy Zones are part of PAI. They use information-flow control, check annotated data as it is processed, and integrate with HHVM, Presto and Spark.
+    - Jan 2025: Privacy Probes sample source/sink payloads at runtime and match them, combined with static analysis. Exact matches are strong evidence; transformed values need human review. Lineage is the precursor to placing Policy Zones.
+    - Jul 2025: batch Policy Zones for non-content messaging data (delivery status, timestamps), with a `MESSAGING_DATA` annotation on loggers.
+    - Oct 2026: before a write, the PrivacyLib integration in Logger invokes Policy Zones to check the flow to the destination table.
+    - InfoQ, Jan 2026: PrivacyLib instruments reads and writes and feeds a central lineage graph.
+  - **Uber DataK9 (May 2024).**
+    - <1% of datasets (about 1,000) labelled by experts, and >99% auto-tagged.
+    - Signals: field names/types, contents and lineage.
+    - A model is deployed only above >90% accuracy and >85% F2.
+    - Lat/lng with ≥3 decimals counts as precise location.
+    - RSAC 2026 talk abstract: >2 exabytes on 7+ platforms.
+  - **Airbnb:** Madoka (metadata) and Inspekt (Task Creator + Scanner, reports back to Madoka; Madoka flags mismatches with annotations), plus Cipher, Obliviate and Angmar.
+  - **LinkedIn:** governance annotations in schemas at creation time, kept in DataHub (2022). Dali generating column-level transformations from metadata and member privacy preferences, with purging via Gobblin (2017–18 talks).
+  - **Ranger and Atlas:**
+    - Ranger 0.6 added Hive row filters and column masks.
+    - A separate `select` access policy is still required.
+    - Atlas classifications drive Ranger tag policies and propagate along lineage (Cloudera CDP 7.x docs).
+  - **OpenLineage:** `columnLineage.fields[out].inputFields[]` with `transformations` (`type` DIRECT/INDIRECT, `subtype` such as IDENTITY/AGGREGATION, and a `masking` flag).
+  - **Laws:**
+    - GDPR Art. 17 erasure "without undue delay", with exceptions.
+    - The one-month answer period is from GDPR Art. 12(3). It is standard text, but I could not cite an Art. 12 page because the search budget ran out, so the page only says "one month" with the Art. 12 label.
+    - DPDP Act 2023 s.12: erasure unless retention is needed for the purpose or by law. The DPDP Rules were notified in Nov 2025 and phase in over 18 months (PIB).
+    - CCPA: delete within 45 days, extendable once by 45 days, and direct service providers to delete (Perkins Coie).
+  - **Crypto-shredding:** Thoughtworks Radar.
+- **Hedged / dropped:**
+  - The Airbnb series is dated "c. 2021", because the source page has no visible date.
+  - The Atlas/Ranger entry is labelled "CDP 7.x" instead of a year.
+  - Uber's "~1% of rows sampled per scan" appeared only in a search summary, so it was not used.
+  - The DPDP "48-hour notice before erasure" and the "consent manager Nov 2026" dates came from secondary sources and were not used.
+  - Whether a regulator accepts crypto-shredding as erasure is stated as a legal call in the Java note and the tradeoffs.
+  - Google SDP: the docs did not confirm that the card detector uses Luhn, so the page attributes Luhn only to "validators" generally and cites Google only for infoTypes.
+  - The search budget was exhausted before I could find an official Google likelihood page or Airbnb Part 2 (Inspekt details).
+- **Knobs:**
+  - Every option changes meters or the verdict (checker 12/12).
+  - All numbers are illustrative and labelled so in the intro: recall per discovery method, exposure, and an erasure-completeness formula. The policy count is roles × tables × 5% for RBAC, versus tags × roles or tags × purposes × 2.
+  - The steward review node appears only for the ML option, and the KMS node only for per-user keys.
+- **Widget:** a real mechanism, with two layouts via `ctx.onResize`. Phone uses a 360 viewBox with 13.5–14-unit text; desktop uses a 600 viewBox capped at 640 px. Phone fonts: min 12.7 / p25 12.7 px. The steps:
+  1. **Scan:** runs real detectors on the sample rows: email/phone regex, a 13–19-digit test plus Luhn, an ISO date test and a column-name dictionary. Confidence is 0.7 × match fraction plus a name bonus. ≥0.85 means auto-tag; 0.5–0.85 goes to review and is treated as PII. Card numbers pass Luhn; the 16-digit tracking numbers fail it and are not flagged. `user_id` (name only, 0.55) goes to review.
+  2. **Propagate:** worklist BFS over 29 column-level edges. Each BFS level is animated. Hash/tokenize turns PII into pseudonymous, and a group aggregate removes the tag, but only when declassifiers are on. Tags only rise, so it terminates.
+  3. **Query:** a purpose-to-role check (deny the whole query), then first-match tag policies per column (clear / mask / default deny), real mask functions, and a row filter (support → ticket user; DSR → subject; a dataset without a subject key returns 0 rows).
+  4. **Erase:** the fan-out is every dataset with a tagged column. The rows are deleted from materialized data built from the sources (join, per-user aggregates, group-by, consent filter for the CRM export). A ground-truth check reports datasets that still hold the subject because they were untagged.
+  - Tested in Playwright: no console errors and no overflow. With declassifiers off, `daily_rev` joins the fan-out as "recompute aggregate". With `users.email` untagged, `crm_export` is reported as missed and verification fails. Analyst + support purpose is denied.
+  - Fixed during testing:
+    - Same-row edges were invisible on phones (4-unit gap). They are now U-shaped arcs below the boxes.
+    - `orders_snap` collided with the tag symbol, so it was renamed to `order_rows`.
+    - Nested parentheses in the log were removed.
+- **Code:**
+  - **SQL:** ran on Postgres 16 (port 5449) with three roles.
+    - Analyst / analytics: email NULL (deny).
+    - Analyst reading the raw table: permission denied.
+    - Support / support with ticket u42: only u42's rows, with `l***@post.de`.
+    - Support / analytics: deny.
+    - Privacy / dsr: clear.
+  - **Python:** ran on Python 3.13 (3.11+ syntax). It printed the result quoted in the note, including `daily_rev` dropping out when declassified.
+  - **Java:** compiled with `javac --release 21 -proc:none -Xlint:all` against Spring Boot 3.5.6 jars (spring-boot-starter-jdbc, fetched with Maven), with no warnings. Run against Postgres 16, it shows round-trip decrypt, rejection of a cross-subject decrypt (GCM tag), `shred` returning true then false, and shredded data becoming `Optional.empty` while other users still decrypt.
+- **Checker:** `node tools/check.js --require-intro --fonts privacy-data-platform` reports ALL OK on phone and desk: 5 scenarios, knobs 12/12, 12 interview questions, 20 sources.
