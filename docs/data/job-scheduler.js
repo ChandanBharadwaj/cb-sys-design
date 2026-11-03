@@ -483,5 +483,5 @@ def charge(self, order_id: int) -> str:
     }
   ],
 
-  related: ['message-queue', 'lock-manager', 'payment-gateway', 'notifications', 'stream-analytics', 'distributed-sql']
+  related: ['message-queue', 'data-lake', 'lock-manager', 'payment-gateway', 'notifications', 'stream-analytics']
 });

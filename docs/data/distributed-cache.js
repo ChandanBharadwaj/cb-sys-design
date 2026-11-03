@@ -451,5 +451,5 @@ def xfetch(cache, key: str, recompute, ttl: int = 600, beta: float = 1.0):
     }
   ],
 
-  related: ['kv-store', 'cdn', 'rate-limiter', 'newsfeed', 'url-shortener', 'leaderboard']
+  related: ['kv-store', 'cdn', 'multi-region', 'rate-limiter', 'newsfeed', 'leaderboard']
 });

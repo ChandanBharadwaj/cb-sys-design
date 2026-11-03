@@ -162,7 +162,7 @@ This document presents a comprehensive list of high-scale distributed system des
 
 ## 9. Additional Systems (added to the Atlas)
 
-These 16 systems extend the catalog above. Each has an animated page in the [System Design Atlas](https://chandanbharadwaj.github.io/cb-sys-design/).
+These 28 systems extend the catalog above. Each has an animated page in the [System Design Atlas](https://chandanbharadwaj.github.io/cb-sys-design/).
 
 ### Live Event Streaming at Massive Scale (e.g., Hotstar, JioCinema, YouTube Live)
 * **Purpose:** Streams a live event (cricket finals, concerts) to tens of millions of concurrent viewers with a few seconds of delay.
@@ -258,3 +258,48 @@ These 16 systems extend the catalog above. Each has an animated page in the [Sys
 * **Purpose:** Releases a fixed monthly quota of darshan and seva slots to millions of devotees who arrive in the same minute.
 * **Key Challenges:** Demand many times the quota, fairness, bots and agents, payment failures holding slots, and not crashing at T0.
 * **Core Patterns & Tech:** Virtual waiting room with paced admission, date × time-slot inventory with TTL holds, per-identity limits, electronic lucky dip for sevas, CDN and pre-scaling.
+
+### Image Hosting & Thumbnails (e.g., Instagram, Pinterest, Imgix)
+* **Purpose:** Accepts photo uploads and serves each image at the right size and format for every screen.
+* **Key Challenges:** Upload reliability, many derivative sizes per image, first-request latency vs storage cost, abuse via arbitrary resize parameters, and private images.
+* **Core Patterns & Tech:** Presigned direct-to-storage uploads, async processing pipeline (EXIF strip, moderation, dedup), eager thumbnails vs on-the-fly resizing with a derivative cache, WebP/AVIF negotiation, immutable URLs behind a CDN.
+
+### Product Catalog & Cart (e.g., Amazon, Flipkart, Shopify)
+* **Purpose:** Serves product pages with current price and stock, and keeps every shopper's cart across devices and sign-in.
+* **Key Challenges:** Category-specific attributes, seller ingestion, fast-changing price/stock on heavily cached pages, guest-to-user cart merge, and an add-to-cart that must never fail.
+* **Core Patterns & Tech:** Product/variant/SKU model with flexible attributes, CDC to the search index, page composition with separate price and availability services, cart in a highly available KV store, merge semantics and re-validation at checkout.
+
+### Feature Flag & Config Service, Multi-Tenant (e.g., LaunchDarkly, Unleash, Meta Configerator)
+* **Purpose:** Turns features on and off for chosen users in seconds across many tenants, without redeploys.
+* **Key Challenges:** Zero-latency evaluation, consistent percentage rollouts, fast global propagation, tenant isolation, and safe config changes.
+* **Core Patterns & Tech:** Local SDK evaluation from an in-memory ruleset, deterministic hash bucketing, SSE streaming with polling fallback and relay proxies, versioned snapshots, fail-static defaults, audit and staged config rollout.
+
+### Real-Time Event Ingestion & Streaming Pipeline (e.g., Netflix Keystone, Segment)
+* **Purpose:** Collects billions of events from apps and services into a reliable, well-formed stream for many consumers.
+* **Key Challenges:** Bursty producers, schema drift, duplicates, slow sinks, back-pressure, and proving nothing was lost.
+* **Core Patterns & Tech:** SDK batching and disk spooling, stateless collectors, schema registry with compatibility rules, dead-letter queues and replay, event-id dedup, per-sink fan-out isolation.
+
+### Ads Serving: Targeting, Pacing & Auction (e.g., Google Ads, Meta Ads)
+* **Purpose:** Picks the ad to show for each request in milliseconds, prices it fairly and spreads advertiser budgets over the day.
+* **Key Challenges:** Tight latency budget, retrieval over millions of targeting rules, click prediction, auction pricing, budget overspend across many servers, frequency caps.
+* **Core Patterns & Tech:** Boolean-expression targeting index, pCTR models and eCPM ranking, GSP / VCG / first-price auctions, throttling or bid-modifying pacing with feedback control, fast counter stores.
+
+### Global Secondary Index & Secondary Search (e.g., DynamoDB GSI, Spanner, Vitess)
+* **Purpose:** Queries sharded data by a field other than its key, and keeps an external search index in sync.
+* **Key Challenges:** Scatter-gather tail latency, cross-partition index writes, consistency of async indexes, hot low-cardinality keys, online backfill.
+* **Core Patterns & Tech:** Local vs global (term-partitioned) indexes, synchronous transactional vs asynchronous index maintenance, covering projections, CDC/outbox into Elasticsearch with versioned upserts and alias swaps.
+
+### Data Lake with Batch/Stream ETL (e.g., Netflix Iceberg, Uber Hudi, Databricks Delta)
+* **Purpose:** Keeps raw and refined company data in cheap object storage as reliable tables for batch and streaming jobs.
+* **Key Challenges:** Atomic commits on object storage, concurrent writers, upserts from CDC, small files, schema and partition evolution, data quality.
+* **Core Patterns & Tech:** Open table formats (snapshots, manifests, CAS commits), medallion zones, Spark batch and Flink streaming writers, Debezium CDC, copy-on-write vs merge-on-read, compaction, write-audit-publish.
+
+### Multi-Region Active-Active Architecture (e.g., Netflix, Uber, DynamoDB Global Tables)
+* **Purpose:** Serves users from several live regions at once and survives the loss of a whole region.
+* **Key Challenges:** Global routing, write conflicts, replication lag and RPO, failover capacity headroom, split-brain, data residency.
+* **Core Patterns & Tech:** GeoDNS / anycast steering, home-region pinning, async multi-master with LWW or CRDTs, cross-region consensus for critical data, region evacuation drills, N+1 capacity planning.
+
+### Privacy-Aware Data Platform: PII, RBAC, Lineage (e.g., Meta PAI, LinkedIn DataHub)
+* **Purpose:** Finds personal data everywhere, controls who may use it for what, tracks where it flows and erases it on request.
+* **Key Challenges:** Discovering PII at scale, keeping tags correct through transformations, enforcing policy in every engine, and deleting a person from every copy.
+* **Core Patterns & Tech:** Column classifiers and catalog tags, column-level lineage with tag propagation, RBAC + tag/purpose-based policies, masking and tokenization, crypto-shredding, lineage-driven erasure and retention.

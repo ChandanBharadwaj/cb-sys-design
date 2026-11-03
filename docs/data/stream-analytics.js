@@ -460,5 +460,5 @@ ORDER BY window_start;`,
     }
   ],
 
-  related: ['message-queue', 'ad-click-aggregation', 'top-k', 'observability', 'search-engine']
+  related: ['event-ingestion', 'message-queue', 'data-lake', 'ad-click-aggregation', 'top-k', 'observability']
 });

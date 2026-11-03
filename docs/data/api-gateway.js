@@ -472,5 +472,5 @@ def authenticate(auth_header: str) -> dict:
     }
   ],
 
-  related: ['rate-limiter', 'llm-gateway', 'cdn', 'distributed-cache', 'observability', 'url-shortener']
+  related: ['rate-limiter', 'feature-flags', 'llm-gateway', 'cdn', 'distributed-cache', 'observability']
 });

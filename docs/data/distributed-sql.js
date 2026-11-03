@@ -495,5 +495,5 @@ class HLC:
     }
   ],
 
-  related: ['kv-store', 'lock-manager', 'payment-gateway', 'unique-id', 'message-queue']
+  related: ['kv-store', 'global-secondary-index', 'multi-region', 'lock-manager', 'payment-gateway', 'unique-id']
 });

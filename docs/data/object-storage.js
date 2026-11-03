@@ -468,5 +468,5 @@ SELECT key, size, etag
     }
   ],
 
-  related: ['file-sync', 'cdn', 'kv-store', 'video-streaming', 'distributed-sql', 'web-crawler']
+  related: ['image-hosting', 'file-sync', 'cdn', 'kv-store', 'data-lake', 'distributed-sql']
 });

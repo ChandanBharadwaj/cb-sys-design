@@ -479,5 +479,5 @@ print(sorted(merged), d5)   # ['a', 'book', 'pen'] {'Sx': 3, 'Sy': 1, 'Sz': 1}`
     }
   ],
 
-  related: ['distributed-cache', 'distributed-sql', 'object-storage', 'lock-manager', 'unique-id', 'message-queue']
+  related: ['global-secondary-index', 'multi-region', 'distributed-cache', 'distributed-sql', 'object-storage', 'lock-manager']
 });

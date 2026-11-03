@@ -457,5 +457,5 @@ service:
     }
   ],
 
-  related: ['stream-analytics', 'search-engine', 'message-queue', 'api-gateway', 'object-storage']
+  related: ['event-ingestion', 'stream-analytics', 'search-engine', 'message-queue', 'api-gateway', 'object-storage']
 });

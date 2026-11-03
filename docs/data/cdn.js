@@ -450,7 +450,7 @@ curl -sS -X POST \\
     }
   ],
 
-  related: ['video-streaming', 'live-streaming', 'distributed-cache', 'rate-limiter', 'object-storage', 'api-gateway']
+  related: ['image-hosting', 'video-streaming', 'live-streaming', 'distributed-cache', 'object-storage', 'multi-region']
 });
 
 /* knobs diagram = architecture + a direct edge → origin path used when there is no upper tier */

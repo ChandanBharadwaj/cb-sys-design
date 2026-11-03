@@ -477,5 +477,5 @@ while True:
     }
   ],
 
-  related: ['stream-analytics', 'job-scheduler', 'notifications', 'ad-click-aggregation', 'observability', 'kv-store']
+  related: ['event-ingestion', 'stream-analytics', 'job-scheduler', 'notifications', 'ad-click-aggregation', 'kv-store']
 });

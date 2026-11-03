@@ -465,5 +465,5 @@ public class FeedController {
     }
   ],
 
-  related: ['vector-db', 'newsfeed', 'search-engine', 'stream-analytics', 'rag-agent-platform', 'video-streaming']
+  related: ['vector-db', 'newsfeed', 'ads-serving', 'search-engine', 'stream-analytics', 'rag-agent-platform']
 });

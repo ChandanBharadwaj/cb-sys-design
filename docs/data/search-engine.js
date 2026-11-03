@@ -453,5 +453,5 @@ class BM25Index:
     }
   ],
 
-  related: ['web-crawler', 'typeahead', 'vector-db', 'observability', 'rag-agent-platform', 'kv-store']
+  related: ['global-secondary-index', 'web-crawler', 'typeahead', 'vector-db', 'observability', 'rag-agent-platform']
 });

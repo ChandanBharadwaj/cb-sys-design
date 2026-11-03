@@ -87,7 +87,7 @@ SD.register({
     ],
     whenNot: [
       'Unique seats with an announced on-sale time (see <a href="ticket-booking.html">Ticket Booking</a>)',
-      'Digital goods with unlimited copies: there is no stock to reserve',
+      'Product pages, prices and the cart before checkout (see <a href="catalog-cart.html">Product Catalog &amp; Cart</a>)',
       'You only need the money movement itself (see <a href="payment-gateway.html">Payment Gateway</a>)'
     ],
     glossary: [
@@ -494,5 +494,5 @@ SELECT id, type, payload FROM outbox
     }
   ],
 
-  related: ['payment-gateway', 'ticket-booking', 'message-queue', 'kv-store', 'job-scheduler', 'food-delivery']
+  related: ['catalog-cart', 'payment-gateway', 'ticket-booking', 'message-queue', 'kv-store', 'job-scheduler']
 });

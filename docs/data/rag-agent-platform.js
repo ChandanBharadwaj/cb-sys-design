@@ -522,5 +522,5 @@ SET hnsw.iterative_scan = relaxed_order;`
     }
   ],
 
-  related: ['vector-db', 'llm-gateway', 'llm-inference', 'search-engine', 'recommendation']
+  related: ['vector-db', 'llm-gateway', 'llm-inference', 'search-engine', 'privacy-data-platform', 'recommendation']
 });

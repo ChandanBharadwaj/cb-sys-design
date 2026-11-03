@@ -478,5 +478,5 @@ if drift > 0.005:
     }
   ],
 
-  related: ['stream-analytics', 'top-k', 'message-queue', 'observability', 'payment-gateway', 'unique-id']
+  related: ['ads-serving', 'stream-analytics', 'top-k', 'message-queue', 'event-ingestion', 'unique-id']
 });
