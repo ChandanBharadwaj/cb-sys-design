@@ -40,7 +40,7 @@
 
     { slug: 'architectural-styles', domain: 2, title: 'Architectural Styles', one: 'Layered, hexagonal, modular monolith, microservices, serverless, event-driven: what each costs and when to pick it.', examples: 'Spring Modulith, Shopify, Prime Video', tags: ['hexagonal', 'modular monolith', 'microservices'], added: true },
     { slug: 'quality-attributes', domain: 2, title: 'Quality Attributes & ATAM', one: 'Making "fast, secure, scalable" measurable and finding which decisions trade one against another.', examples: 'ISO 25010, SEI ATAM', tags: ['utility tree', 'scenarios', 'trade-off points'], added: true },
-    { slug: 'documenting-architecture', domain: 2, title: 'Documenting Architecture', one: 'Diagrams and docs people actually read: C4 levels, arc42 sections and diagrams as code.', examples: 'C4, arc42, Structurizr', tags: ['C4', 'diagrams as code', '4+1'], added: true, status: 'planned' },
+    { slug: 'documenting-architecture', domain: 2, title: 'Documenting Architecture', one: 'Diagrams and docs people actually read: C4 levels, arc42 sections and diagrams as code.', examples: 'C4, arc42, Structurizr', tags: ['C4', 'diagrams as code', '4+1'], added: true },
 
     { slug: 'build-vs-buy', domain: 3, title: 'Build vs Buy vs Rent', one: 'Deciding whether to build it, buy a product, rent SaaS or adopt open source, based on what makes you different.', examples: 'Wardley maps, TCO, decision matrix', tags: ['core vs context', 'TCO', 'lock-in'] },
     { slug: 'finops', domain: 3, title: 'FinOps & Cloud Economics', one: 'Knowing what each feature costs to run, and designing so the cloud bill grows slower than the business.', examples: 'FinOps Foundation, AWS CUR', tags: ['TCO', 'unit cost', 'spot/RI'], status: 'planned' },
