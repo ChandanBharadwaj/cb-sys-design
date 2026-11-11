@@ -257,7 +257,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 22px; }
   display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; align-items: baseline;
   padding: 10px 12px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border);
 }
-.api .m { font-family: var(--mono); font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 6px; color: #fff; }
+.api .m { font-family: var(--mono); font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 6px; color: #fff; background: #64748b; }
 .m.GET { background: #059669; } .m.POST { background: #4f46e5; } .m.PUT, .m.PATCH { background: #d97706; }
 .m.DELETE { background: #dc2626; } .m.WS, .m.SSE, .m.RPC, .m.UDP, .m.SQL { background: #7c3aed; }
 .api .p { font-family: var(--mono); font-size: 14px; overflow-wrap: anywhere; }
@@ -748,3 +748,4 @@ a.law:hover { border-color: var(--accent); text-decoration: none; }
 .hub-card .hc-groups span { font-size: 12px; color: var(--text-2); background: var(--surface-2); border-radius: 7px; padding: 3px 8px; }
 .hub-card .hc-go { margin-top: auto; font-weight: 600; color: var(--accent); }
 @media (prefers-reduced-motion: reduce) { .hub-card { transition: none; } .hub-card:hover { transform: none; } }
+.m.ADR, .m.RFC, .m.DOC { background: #0891b2; } .m.POLICY { background: #4d7c0f; } .m.SLO, .m.EVENT { background: #c2410c; } .m.YAML, .m.HCL { background: #7c3aed; }
