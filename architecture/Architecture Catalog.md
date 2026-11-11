@@ -450,7 +450,7 @@ _Telemetry, SLOs, disaster recovery, chaos and incidents._
 * **Interactive deep dive:** error-budget burn with multi-window burn-rate alerts, using the Google SRE workbook formula.
 * **Page:** `docs/architecture/topics/slo-error-budgets.html`
 
-### Disaster Recovery: RTO & RPO _(planned)_
+### Disaster Recovery: RTO & RPO ✅
 * **What it is:** Surviving the loss of a whole region, and choosing how much downtime and data loss you can afford.
 * **Key references:** AWS DR strategies, Patroni
 * **Core ideas:** RTO/RPO, active-active, failover
@@ -460,7 +460,7 @@ _Telemetry, SLOs, disaster recovery, chaos and incidents._
 * **Interactive deep dive:** pick a strategy and fail a region; the RTO and RPO clocks run against cost.
 * **Page:** `docs/architecture/topics/disaster-recovery.html`
 
-### Chaos Engineering _(planned)_
+### Chaos Engineering ✅
 * **What it is:** Breaking things on purpose, in a controlled way, to prove the system survives real failures.
 * **Key references:** Chaos Monkey, Gremlin, AWS FIS
 * **Core ideas:** hypothesis, blast radius, game day
@@ -470,7 +470,7 @@ _Telemetry, SLOs, disaster recovery, chaos and incidents._
 * **Interactive deep dive:** run an experiment and check whether the hypothesis holds, with an auto-abort.
 * **Page:** `docs/architecture/topics/chaos-engineering.html`
 
-### Incident Management & Postmortems _(planned)_
+### Incident Management & Postmortems ✅
 * **What it is:** Running an outage calmly with clear roles, and learning from it without blame.
 * **Key references:** PagerDuty, Google SRE
 * **Core ideas:** incident commander, MTTR, blameless
@@ -484,7 +484,7 @@ _Telemetry, SLOs, disaster recovery, chaos and incidents._
 ## 9. Leadership & Human Architecture
 _Influence, teams, communication, debt and governance._
 
-### Leading Without Authority: RFCs & ADRs _(planned)_
+### Leading Without Authority: RFCs & ADRs ✅
 * **What it is:** Getting a technical decision made and adopted through writing and influence, not rank.
 * **Key references:** Nygard ADRs, Uber/Google RFCs
 * **Core ideas:** ADR, RFC, consensus
@@ -494,7 +494,7 @@ _Influence, teams, communication, debt and governance._
 * **Interactive deep dive:** an RFC lifecycle with stakeholder sign-off states.
 * **Page:** `docs/architecture/topics/rfcs-adrs.html`
 
-### Structured Upskilling _(planned)_
+### Structured Upskilling ✅
 * **What it is:** Raising the whole team's skill floor with skills matrices, learning paths, runbooks and workshops.
 * **Key references:** Skills matrix, katas, guilds
 * **Core ideas:** curriculum, runbooks, pairing
@@ -513,7 +513,7 @@ _Influence, teams, communication, debt and governance._
 * **Interactive deep dive:** a team communication graph against the service dependency graph. A reorg shows the change in coupling and cross-team handoffs.
 * **Page:** `docs/architecture/topics/conways-law.html`
 
-### Stakeholder Communication _(planned)_
+### Stakeholder Communication ✅
 * **What it is:** Explaining technical trade-offs to executives in terms of money, risk and time, and getting a decision.
 * **Key references:** Pyramid principle, one-pagers
 * **Core ideas:** exec summary, framing, buy-in
@@ -522,7 +522,7 @@ _Influence, teams, communication, debt and governance._
 * **Interactive deep dive:** rewrite a technical message for different audiences (exec, PM, engineer).
 * **Page:** `docs/architecture/topics/stakeholder-communication.html`
 
-### Technical Debt Management _(planned)_
+### Technical Debt Management ✅
 * **What it is:** Measuring tech debt, showing its interest, and negotiating real time to pay it down.
 * **Key references:** Fowler quadrant, hotspots
 * **Core ideas:** hotspots, debt register, cost of delay
@@ -532,7 +532,7 @@ _Influence, teams, communication, debt and governance._
 * **Interactive deep dive:** a hotspot map showing the cost of delay as interest compounds.
 * **Page:** `docs/architecture/topics/tech-debt.html`
 
-### Conflict Resolution _(planned)_
+### Conflict Resolution ✅
 * **What it is:** Turning a heated "Kafka vs RabbitMQ" style argument between senior engineers into a decision everyone commits to.
 * **Key references:** Thomas–Kilmann, DACI
 * **Core ideas:** mediation, disagree & commit, spikes
@@ -541,7 +541,7 @@ _Influence, teams, communication, debt and governance._
 * **Interactive deep dive:** a decision-matrix walkthrough of a "Kafka vs RabbitMQ" style dispute.
 * **Page:** `docs/architecture/topics/conflict-resolution.html`
 
-### Architecture Governance _(planned)_
+### Architecture Governance ✅
 * **What it is:** Keeping many teams aligned with review forums, fitness functions, a tech radar and golden paths, without becoming a bottleneck.
 * **Key references:** ArchUnit, Thoughtworks Radar
 * **Core ideas:** fitness functions, tech radar, guardrails
