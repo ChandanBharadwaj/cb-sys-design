@@ -20,7 +20,7 @@ _The theory interviewers expect you to quote, and apply correctly._
 * **Interactive deep dive:** a 3-replica cluster. You cut the network, write to both sides, and watch CP refuse while AP diverges and later reconciles. A PACELC slider shows latency vs read freshness.
 * **Page:** `docs/architecture/topics/cap-pacelc.html`
 
-### Consistency Models & Isolation _(planned)_
+### Consistency Models & Isolation ✅
 * **What it is:** What a read is allowed to return: from linearizable to eventual, and which anomalies each isolation level lets through.
 * **Key references:** Jepsen, Postgres SSI
 * **Core ideas:** linearizable, causal, write skew
@@ -31,7 +31,7 @@ _The theory interviewers expect you to quote, and apply correctly._
 * **Interactive deep dive:** interleave two clients' operations and see which models allow each history.
 * **Page:** `docs/architecture/topics/consistency-models.html`
 
-### Consensus & Impossibility Results _(planned)_
+### Consensus & Impossibility Results ✅
 * **What it is:** Why agreement over an unreliable network is hard, and how quorums, Raft and fencing make it practical.
 * **Key references:** FLP, Two Generals, Raft
 * **Core ideas:** quorum, byzantine, fallacies
@@ -42,7 +42,7 @@ _The theory interviewers expect you to quote, and apply correctly._
 * **Interactive deep dive:** quorum overlap calculator plus a Raft leader election.
 * **Page:** `docs/architecture/topics/consensus-theory.html`
 
-### Scalability Laws _(planned)_
+### Scalability Laws ✅
 * **What it is:** How much faster more machines really make you, and how queues explode as utilisation climbs.
 * **Key references:** Amdahl, Gunther's USL, Little
 * **Core ideas:** speed-up, queueing, tail latency
@@ -52,7 +52,7 @@ _The theory interviewers expect you to quote, and apply correctly._
 * **Interactive deep dive:** add nodes and see speed-up curves for Amdahl vs USL; a Little's Law sizing calculator.
 * **Page:** `docs/architecture/topics/scalability-laws.html`
 
-### Design Principles _(planned)_
+### Design Principles ✅
 * **What it is:** SOLID, coupling and cohesion: the rules that keep code and modules easy to change.
 * **Key references:** SOLID, Demeter, Gall
 * **Core ideas:** coupling, cohesion, YAGNI
@@ -63,7 +63,7 @@ _The theory interviewers expect you to quote, and apply correctly._
 * **Interactive deep dive:** a dependency graph where you move classes between modules and watch the coupling metrics.
 * **Page:** `docs/architecture/topics/design-principles.html`
 
-### Socio-technical Laws _(planned)_
+### Socio-technical Laws ✅
 * **What it is:** The laws about people and software: why adding engineers slows you down and every behaviour becomes a contract.
 * **Key references:** Conway, Brooks, Hyrum, Goodhart
 * **Core ideas:** teams, metrics, evolution
@@ -73,7 +73,7 @@ _The theory interviewers expect you to quote, and apply correctly._
 * **Interactive deep dive:** Brooks's Law: adding people to a late project, with communication paths n(n−1)/2 against ramp-up time.
 * **Page:** `docs/architecture/topics/socio-technical-laws.html`
 
-### Reliability Math _(planned)_
+### Reliability Math ✅
 * **What it is:** Turning nines into minutes, and working out the availability of a chain of dependencies.
 * **Key references:** Nines, MTBF/MTTR, cells
 * **Core ideas:** availability, blast radius, shuffle sharding
@@ -100,7 +100,7 @@ _Styles, quality attributes and how to write architecture down._
 * **Interactive deep dive:** one feature change ripples through each style. It counts the modules touched, deploys needed, network hops and team handoffs.
 * **Page:** `docs/architecture/topics/architectural-styles.html`
 
-### Quality Attributes & ATAM _(planned)_
+### Quality Attributes & ATAM ✅
 * **What it is:** Making "fast, secure, scalable" measurable and finding which decisions trade one against another.
 * **Key references:** ISO 25010, SEI ATAM
 * **Core ideas:** utility tree, scenarios, trade-off points
@@ -110,7 +110,7 @@ _Styles, quality attributes and how to write architecture down._
 * **Interactive deep dive:** build a utility tree; rank scenarios by importance × difficulty.
 * **Page:** `docs/architecture/topics/quality-attributes.html`
 
-### Documenting Architecture _(planned)_
+### Documenting Architecture ✅
 * **What it is:** Diagrams and docs people actually read: C4 levels, arc42 sections and diagrams as code.
 * **Key references:** C4, arc42, Structurizr
 * **Core ideas:** C4, diagrams as code, 4+1
