@@ -56,7 +56,7 @@
     { slug: 'twelve-factor', domain: 4, title: 'The 12-Factor App', one: 'Twelve rules that make a service portable, disposable and easy to scale on any cloud.', examples: 'Heroku, Spring Boot, Kubernetes', tags: ['config', 'stateless', 'disposability'] },
 
     { slug: 'event-driven-sagas', domain: 5, title: 'Event-Driven Architecture & Sagas', one: 'Keeping data consistent across services without distributed transactions: events, outbox and compensations.', examples: 'Temporal, Camunda, outbox', tags: ['choreography', 'orchestration', 'outbox'], added: true },
-    { slug: 'api-design', domain: 5, title: 'API Design & Governance', one: 'Designing REST, gRPC and GraphQL APIs that evolve without breaking the teams that depend on them.', examples: 'OpenAPI, Pact, Google AIP', tags: ['versioning', 'contract tests', 'idempotency'], added: true, status: 'planned' },
+    { slug: 'api-design', domain: 5, title: 'API Design & Governance', one: 'Designing REST, gRPC and GraphQL APIs that evolve without breaking the teams that depend on them.', examples: 'OpenAPI, Pact, Google AIP', tags: ['versioning', 'contract tests', 'idempotency'], added: true },
     { slug: 'multi-tenancy', domain: 5, title: 'Multi-tenancy Architecture', one: 'Serving many customers from one platform while keeping their data, performance and costs isolated.', examples: 'AWS SaaS Lens, Postgres RLS', tags: ['silo/pool/bridge', 'RLS', 'noisy neighbour'], added: true },
 
     { slug: 'container-patterns', domain: 6, title: 'Advanced Container Patterns', one: 'Sidecars, ambassadors and init containers, and when a sidecar beats a shared library or a separate service.', examples: 'Kubernetes, Dapr, Envoy', tags: ['sidecar', 'pod design', 'autoscaling'] },
