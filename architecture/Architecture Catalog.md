@@ -238,7 +238,7 @@ _DDD, evolution, data architecture, CDC, migrations and AI systems._
 * **Interactive deep dive:** a RAG pipeline cost/latency/quality calculator plus an agent-tool permission boundary.
 * **Page:** `docs/architecture/topics/ai-architecture.html`
 
-### The 12-Factor App _(planned)_
+### The 12-Factor App ✅
 * **What it is:** Twelve rules that make a service portable, disposable and easy to scale on any cloud.
 * **Key references:** Heroku, Spring Boot, Kubernetes
 * **Core ideas:** config, stateless, disposability
@@ -252,7 +252,7 @@ _DDD, evolution, data architecture, CDC, migrations and AI systems._
 ## 5. Integration & APIs
 _Events, sagas, API contracts and multi-tenant SaaS._
 
-### Event-Driven Architecture & Sagas _(planned)_
+### Event-Driven Architecture & Sagas ✅
 * **What it is:** Keeping data consistent across services without distributed transactions: events, outbox and compensations.
 * **Key references:** Temporal, Camunda, outbox
 * **Core ideas:** choreography, orchestration, outbox
@@ -262,7 +262,7 @@ _Events, sagas, API contracts and multi-tenant SaaS._
 * **Interactive deep dive:** an order saga where you inject a failure at any step and watch compensations.
 * **Page:** `docs/architecture/topics/event-driven-sagas.html`
 
-### API Design & Governance _(planned)_
+### API Design & Governance ✅
 * **What it is:** Designing REST, gRPC and GraphQL APIs that evolve without breaking the teams that depend on them.
 * **Key references:** OpenAPI, Pact, Google AIP
 * **Core ideas:** versioning, contract tests, idempotency
@@ -272,7 +272,7 @@ _Events, sagas, API contracts and multi-tenant SaaS._
 * **Interactive deep dive:** a schema-change checker that flags whether each change breaks consumers.
 * **Page:** `docs/architecture/topics/api-design.html`
 
-### Multi-tenancy Architecture _(planned)_
+### Multi-tenancy Architecture ✅
 * **What it is:** Serving many customers from one platform while keeping their data, performance and costs isolated.
 * **Key references:** AWS SaaS Lens, Postgres RLS
 * **Core ideas:** silo/pool/bridge, RLS, noisy neighbour
@@ -287,7 +287,7 @@ _Events, sagas, API contracts and multi-tenant SaaS._
 ## 6. Infrastructure, DevOps & Delivery
 _Containers, deployments, IaC, resilience and platforms._
 
-### Advanced Container Patterns _(planned)_
+### Advanced Container Patterns ✅
 * **What it is:** Sidecars, ambassadors and init containers, and when a sidecar beats a shared library or a separate service.
 * **Key references:** Kubernetes, Dapr, Envoy
 * **Core ideas:** sidecar, pod design, autoscaling
@@ -298,7 +298,7 @@ _Containers, deployments, IaC, resilience and platforms._
 * **Interactive deep dive:** compare sidecar, library and remote service by latency, memory, upgrade blast radius and language coupling.
 * **Page:** `docs/architecture/topics/container-patterns.html`
 
-### Deployment Strategies & Feature Flags _(planned)_
+### Deployment Strategies & Feature Flags ✅
 * **What it is:** Shipping safely: blue-green, canary with automatic rollback, dark launches and flags at scale.
 * **Key references:** Argo Rollouts, LaunchDarkly
 * **Core ideas:** canary, blue-green, flags
@@ -308,7 +308,7 @@ _Containers, deployments, IaC, resilience and platforms._
 * **Interactive deep dive:** a canary that ramps traffic while you inject an error rate and watch automated rollback.
 * **Page:** `docs/architecture/topics/deployment-strategies.html`
 
-### Infrastructure as Code & Drift _(planned)_
+### Infrastructure as Code & Drift ✅
 * **What it is:** Describing every environment in code so it can be rebuilt identically, and catching manual drift.
 * **Key references:** Terraform, Pulumi, OPA
 * **Core ideas:** immutable, state, drift
@@ -328,7 +328,7 @@ _Containers, deployments, IaC, resilience and platforms._
 * **Interactive deep dive:** a failing dependency with breaker states, a retry storm with and without jitter, and bulkhead thread pools.
 * **Page:** `docs/architecture/topics/resiliency-patterns.html`
 
-### Platform Engineering _(planned)_
+### Platform Engineering ✅
 * **What it is:** Building self-service golden paths so product teams ship without filing tickets or learning every tool.
 * **Key references:** Backstage, Spotify, DORA
 * **Core ideas:** IDP, golden path, cognitive load
