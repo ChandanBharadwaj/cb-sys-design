@@ -1,5 +1,10 @@
-/* Master list of domains and systems. Used by the index page and for cross-links. */
-window.SD_CATALOG = {
+/* System Design track: master list of domains and systems. Used by the index pages, the nav drawer and cross-links. */
+(window.SD_TRACKS = window.SD_TRACKS || {}).sd = {
+  track: {
+    id: 'sd', name: 'System Design', brand: 'System Design Atlas', icon: '◇',
+    unit: 'system', units: 'systems', group: 'domain', groups: 'domains',
+    dir: 'system-design', pageDir: 'systems', visitedKey: 'sd-visited', relatedTitle: 'Related designs'
+  },
   domains: [
     { id: 1, name: 'Core Infrastructure', icon: '⚙', blurb: 'The building blocks every large system leans on.' },
     { id: 2, name: 'Real-Time & Geospatial', icon: '◎', blurb: 'Moving things, live connections, millisecond decisions.' },

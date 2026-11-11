@@ -1,16 +1,17 @@
-# Authoring a system page
+# Authoring a page
 
-Each system in the Atlas is **one data file plus one widget file**. The shared engine (`docs/assets/js/engine.js`) renders everything else.
+The site has two tracks that share one engine (`docs/assets/js/engine.js`) and one stylesheet:
 
-| File | What it contains |
-|---|---|
-| `docs/data/<slug>.js` | All content. It calls `SD.register({...})`. |
-| `docs/assets/js/widgets/<slug>.js` | One interactive simulation. It calls `SD.widget('<slug>', (root, ctx) => {...})`. |
-| `docs/systems/<slug>.html` | Generated shell. Do not edit. To regenerate: `python3 tools/gen_shells.py`. |
+| Track | Catalog | Data file | Widget file | Generated shell |
+|---|---|---|---|---|
+| System Design | `docs/assets/js/catalog.js` | `docs/system-design/data/<slug>.js` | `docs/system-design/widgets/<slug>.js` | `docs/system-design/systems/<slug>.html` |
+| Architecture | `docs/assets/js/arch-catalog.js` | `docs/architecture/data/<slug>.js` | `docs/architecture/widgets/<slug>.js` | `docs/architecture/topics/<slug>.html` |
 
-The reference implementation is `docs/data/ride-sharing.js` and `docs/assets/js/widgets/ride-sharing.js`. Read both before writing a page and match their depth and tone.
+Each page is **one data file plus one widget file**. The data file calls `SD.register({...})`; the widget calls `SD.widget('<slug>', (root, ctx) => {...})`. Shells are generated: `python3 tools/gen_shells.py` (it also writes the redirect stubs in `docs/systems/`).
 
-Do **not** edit `engine.js`, `site.css`, `catalog.js`, the shells, or another system's files. If the engine can't do something you need, work around it inside your widget and mention it in your report.
+The reference implementation is `docs/system-design/data/ride-sharing.js` and `docs/system-design/widgets/ride-sharing.js`. Read both before writing a page and match their depth and tone. Architecture pages follow the extra rules in **Architecture topic pages** at the end of this file.
+
+Do **not** edit `engine.js`, `site.css`, the catalogs, the shells, or another page's files. If the engine can't do something you need, work around it inside your widget and mention it in your report.
 
 ---
 
@@ -130,7 +131,7 @@ Rules:
 
 ## Verify before you finish
 1. Make sure the local server is running: `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8765/index.html`. If it isn't, start it with `cd docs && python3 -m http.server 8765 --bind 127.0.0.1 &`.
-2. Run `node tools/check.js <slug> [<slug>...]`. Every line must start with ✓, at both phone and desktop sizes: no console errors, no horizontal overflow, scenarios and knobs work, and there are ≥ 8 interview questions and ≥ 3 sources.
+2. Run `node tools/check.js <slug> [<slug>...]` (add `--track arch` for architecture pages). Every line must start with ✓, at both phone and desktop sizes: no console errors, no horizontal overflow, scenarios and knobs work, and there are ≥ 8 interview questions and ≥ 3 sources.
 3. **Look at the screenshots** with the Read tool: `.shots/<slug>-phone-architecture.png`, `-desk-architecture.png`, `-phone-knobs.png` and `-phone-deep-dive.png`. Fix overlapping boxes, cramped tall layouts and unreadable widgets.
 4. Do not run git commands. The coordinator commits.
 
@@ -138,7 +139,7 @@ Rules:
 
 ## The `intro` block ("Start here" section)
 
-Every page starts with a beginner-friendly section. Put `intro` right after `tldr` in the data file. The reference is `docs/data/ride-sharing.js`; read its `intro` first and match its tone and depth.
+Every page starts with a beginner-friendly section. Put `intro` right after `tldr` in the data file. The reference is `docs/system-design/data/ride-sharing.js`; read its `intro` first and match its tone and depth.
 
 ```js
 intro: {
@@ -196,3 +197,33 @@ Patterns that work:
 - **Move long text out of the SVG.** Put long labels, legends and explanations in HTML (`.w-stats`, `.w-log`, a caption). HTML text is never scaled down.
 - **Fewer, bigger cells.** Reduce how many items you draw on phones rather than shrinking them, e.g. 6 grid rows instead of 12, or 8 bars instead of 20.
 - Keep every control reachable with no horizontal scroll. The `.w-controls` row wraps.
+
+---
+
+## Architecture topic pages
+
+Architecture topics use the **same schema and the same quality bar** as system pages. A topic is a concept (CAP, strangler fig, OAuth, SLOs, Conway's Law), so some fields are reinterpreted. The engine already renames the sections for the architecture track (see `track.sections` in `arch-catalog.js`); you only fill the data.
+
+| Field | On an architecture page it holds |
+|---|---|
+| `tldr` | Problem, core idea, interview hook, 3 headline numbers (sourced or marked *estimate* / *rule of thumb*). |
+| `intro` | Exactly as for system pages: plain-English definition, analogy, problem, 3-frame story (naive → breaks → fix), when/when-not, glossary. |
+| `requirements` | Rendered as **Principles & quality attributes**. `functional` = core principles (6), `nonFunctional` = quality goals this buys, with measurable targets where possible (6), `outOfScope` = **anti-patterns** (3–5). |
+| `calculator` | **Model it**: the topic's real math (TCO break-even, error budget minutes, burn rate, quorum overlap, availability of a chain, migration waves…). 4–6 inputs, 5–6 outputs. |
+| `api` | **Contracts & artefacts**: the things an architect writes. Use `m` as a short type badge: `ADR`, `RFC`, `POLICY`, `SLO`, `YAML`, `HTTP`, `GET`/`POST`, `SQL`, `EVENT`, `DOC`. `p` = artefact name, `d` = what goes in it. 4–6 entries. |
+| `dataModel` | 2–4 tables: the records behind the practice (risk register, decision log, SLO definition, token claims, migration checkpoint table…). |
+| `architecture` + `scenarios` | Animated diagram of the mechanism or the organisation. Node kinds `team`, `person` and `policy` are available for people, roles and decision points. Same layout rules (wide + tall positions). 4–5 scenarios, ≥ 1 failure, ≥ 1 at scale or under pressure. |
+| `knobs` | **Decision knobs**: the real choices (e.g. build/buy/OSS, CP/AP, breaker thresholds, team topology). Meters are outcomes such as cost, time to market, risk, coupling, latency, availability, cognitive load. Every option must move the meters or the verdict. |
+| `widget` | An interactive simulation of the real mechanism, same readability rules as system pages. |
+| `realWorld` | What real organisations published (engineering blogs, papers, books, standards: Google SRE book, NIST, RFCs, Thoughtworks, Martin Fowler, AWS Builders' Library…). Real URLs from search results only. |
+| `tradeoffs`, `failures` | Trade-off table; `failures` = anti-patterns and failure modes, each with *Detect* and *Mitigate*. |
+| `interview` | 10–12 questions an **architect** interview asks: definitions, "what would you choose and why", scenario/design questions, and how you would convince others. For leadership topics, include 3–4 **behavioural** questions answered in a STAR outline (Situation, Task, Action, Result) with concrete, realistic detail. |
+| `code` | 2–3 snippets in the reader's stack: Java 21 / Spring Boot 3, Postgres, Python 3.11+, plus Terraform, Kubernetes YAML, Rego or an ADR/markdown template where that is the real artefact (`lang: 'yaml'`, `'bash'`, `'sql'`, `'java'`, `'python'`, `'js'`). |
+| `related` | Same-track slugs from `arch-catalog.js` (**planned topics are fine**, they are hidden until written) and system-design pages as `'sd:<slug>'`, e.g. `'sd:rate-limiter'`. 4–7 entries. |
+
+Rules specific to architecture pages:
+- Quote laws and definitions **precisely**, with who and when (e.g. "Gilbert and Lynch proved CAP in 2002"). Point out common misreadings.
+- Prefer primary sources: the original paper, the RFC, the NIST publication, the book's own site, the company's own engineering blog.
+- Numbers that are rules of thumb must say so. Do not invent survey statistics.
+- Keep the tone practical: always end with **how you would decide** and **what you would say in the interview**.
+- Run `node tools/check.js --track arch --fonts <slug>` and look at the screenshots, same as system pages.

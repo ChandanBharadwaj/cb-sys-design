@@ -1,5 +1,5 @@
 /* ==========================================================================
-   System Design Atlas — page engine
+   Design Atlas — shared page engine (System Design + Architecture tracks)
    A data file calls SD.register({...}); an optional widget file calls
    SD.widget(slug, fn). On DOMContentLoaded the engine renders the page.
    ========================================================================== */
@@ -52,6 +52,34 @@
     get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* ignore */ } }
   };
+
+  /* ---------------- tracks ----------------
+     Each catalog file registers window.SD_TRACKS[id] = { track, domains, systems }.
+     <html data-track="sd|arch" data-root="../../"> tells the engine which one this page belongs to
+     and how to reach docs/ from here. */
+  const DOC = document.documentElement;
+  const TRACKS = window.SD_TRACKS || {};
+  const TRACK_ID = DOC.getAttribute('data-track') || 'sd';
+  const ROOT = DOC.getAttribute('data-root') || '';
+  if (TRACKS[TRACK_ID]) window.SD_CATALOG = TRACKS[TRACK_ID];
+  const DEFAULT_TRACK = { id: 'sd', name: 'System Design', brand: 'System Design Atlas', unit: 'system', units: 'systems', group: 'domain', groups: 'domains', dir: 'system-design', pageDir: 'systems', visitedKey: 'sd-visited', relatedTitle: 'Related designs' };
+  const trackOf = (cat) => Object.assign({}, DEFAULT_TRACK, (cat && cat.track) || {});
+  const ready = (s) => s && s.status !== 'planned';
+  // URL of a page in any track, relative to the current page
+  const pageUrl = (t, slug) => ROOT + t.dir + '/' + t.pageDir + '/' + slug + '.html';
+  SD.tracks = TRACKS; SD.trackId = TRACK_ID; SD.root = ROOT; SD.trackOf = trackOf; SD.pageUrl = pageUrl; SD.isReady = ready;
+
+  // "System Design · Architecture" segmented switch shown in every top bar
+  function trackSwitch(current) {
+    const nav = el('nav', { class: 'track-switch', 'aria-label': 'Sections of the site' });
+    Object.keys(TRACKS).forEach((id) => {
+      const t = trackOf(TRACKS[id]);
+      nav.append(el('a', { href: ROOT + t.dir + '/index.html', class: id === current ? 'on' : null, 'aria-current': id === current ? 'true' : null },
+        el('span', { class: 'ti', text: t.icon || '◇' }), el('span', { class: 'tl', text: t.name })));
+    });
+    return nav;
+  }
+  SD.trackSwitch = trackSwitch;
 
   function fmtNum(n, digits) {
     if (typeof n !== 'number' || !isFinite(n)) return String(n);
@@ -142,20 +170,22 @@
   function globalNav(opts) {
     opts = opts || {};
     const cat = window.SD_CATALOG || { domains: [], systems: [] };
+    const T = trackOf(cat);
+    const Units = T.units[0].toUpperCase() + T.units.slice(1);
     const base = opts.base || '';
-    const visited = new Set(store.get('sd-visited', []));
+    const visited = new Set(store.get(T.visitedKey, []));
     const cur = cat.systems.find((s) => s.slug === opts.current);
-    const btn = el('button', { class: 'icon-btn nav-btn', 'aria-haspopup': 'dialog', 'aria-expanded': 'false', 'aria-label': 'All systems', title: 'All systems (press / to search)' },
-      el('span', { class: 'ti', text: '☰' }), el('span', { class: 'tl', text: 'Systems' }));
+    const btn = el('button', { class: 'icon-btn nav-btn', 'aria-haspopup': 'dialog', 'aria-expanded': 'false', 'aria-label': 'All ' + T.units, title: 'All ' + T.units + ' (press / to search)' },
+      el('span', { class: 'ti', text: '☰' }), el('span', { class: 'tl', text: Units }));
     const backdrop = el('div', { class: 'gn-backdrop', hidden: true });
-    const input = el('input', { type: 'search', placeholder: `Search ${cat.systems.length} systems…`, 'aria-label': 'Search systems', autocomplete: 'off' });
+    const input = el('input', { type: 'search', placeholder: `Search ${cat.systems.length} ${T.units}…`, 'aria-label': 'Search ' + T.units, autocomplete: 'off' });
     const closeBtn = el('button', { class: 'icon-btn', 'aria-label': 'Close', text: '✕' });
     const list = el('div', { class: 'gn-list' });
-    const empty = el('div', { class: 'gn-empty', hidden: true, text: 'No systems match that search.' });
+    const empty = el('div', { class: 'gn-empty', hidden: true, text: 'No ' + T.units + ' match that search.' });
     const panel = el('div', { class: 'gn-panel', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'gn-title', hidden: true },
-      el('div', { class: 'gn-head' }, el('h2', { id: 'gn-title', text: 'All systems' }), closeBtn),
+      el('div', { class: 'gn-head' }, el('h2', { id: 'gn-title', text: T.name + ': all ' + T.units }), closeBtn),
       el('label', { class: 'search gn-search' }, el('span', { 'aria-hidden': 'true', text: '⌕' }), input),
-      el('a', { class: 'gn-home', href: opts.home || 'index.html' }, '⌂ Home: overview of all ' + cat.domains.length + ' domains'),
+      el('a', { class: 'gn-home', href: opts.home || 'index.html' }, '⌂ ' + T.name + ' home: all ' + cat.domains.length + ' ' + T.groups),
       list, empty);
     const items = [];
     const groups = [];
@@ -167,9 +197,11 @@
       const ul = el('ul');
       sys.forEach((s) => {
         const isCur = s.slug === opts.current;
-        const a = el('a', { href: base + s.slug + '.html', class: 'gn-item' + (isCur ? ' current' : ''), 'aria-current': isCur ? 'page' : null },
+        const live = ready(s);
+        const a = el(live ? 'a' : 'span', { href: live ? base + s.slug + '.html' : null, class: 'gn-item' + (isCur ? ' current' : '') + (live ? '' : ' planned'), 'aria-current': isCur ? 'page' : null, 'aria-disabled': live ? null : 'true' },
           el('span', { class: 'gn-t' }, el('span', { text: s.title }),
             s.added ? el('span', { class: 'gn-new', text: 'new' }) : null,
+            live ? null : el('span', { class: 'gn-planned', text: 'planned' }),
             visited.has(s.slug) ? el('span', { class: 'gn-seen', title: 'Visited', text: '✓' }) : null),
           s.one ? el('span', { class: 'gn-one', text: s.one }) : null);
         const li = el('li', null, a);
@@ -181,7 +213,7 @@
       groups.push({ det, initial: det.open });
     });
 
-    const visibleLinks = () => items.filter((x) => !x.li.hidden && x.det.open && !x.det.hidden).map((x) => x.a);
+    const visibleLinks = () => items.filter((x) => !x.li.hidden && x.det.open && !x.det.hidden && x.a.tagName === 'A').map((x) => x.a);
     function filter() {
       const terms = input.value.toLowerCase().trim().split(/\s+/).filter(Boolean);
       let shown = 0;
@@ -288,7 +320,8 @@
      ====================================================================== */
   const KIND_LABEL = {
     client: 'Client', edge: 'Edge / Gateway', service: 'Service', store: 'Database / Store',
-    queue: 'Queue / Log', cache: 'Cache / In-memory', compute: 'Worker / Compute', external: 'External', ml: 'ML / GPU'
+    queue: 'Queue / Log', cache: 'Cache / In-memory', compute: 'Worker / Compute', external: 'External', ml: 'ML / GPU',
+    team: 'Team', person: 'Person / Role', policy: 'Policy / Decision'
   };
   const SIZE = { wide: { W: 1000, w: 150, h: 58 }, tall: { W: 420, w: 128, h: 50 } };
 
@@ -1032,30 +1065,35 @@
 
   function buildPage(D) {
     const cat = window.SD_CATALOG || { domains: [], systems: [] };
+    const T = trackOf(cat);
+    const SEC = Object.assign({}, T.sections || {});
+    Object.entries(D.sections || {}).forEach(([k, v]) => { SEC[k] = Object.assign({}, SEC[k] || {}, v); });
+    const sec = (k, title, label, sub) => { const o = SEC[k] || {}; return [o.title || title, o.label || label, o.sub !== undefined ? o.sub : sub]; };
     const meta = cat.systems.find((s) => s.slug === D.slug) || {};
     const dom = cat.domains.find((d) => d.id === (D.domain || meta.domain)) || {};
-    document.title = `${D.title} — System Design Atlas`;
-    const visited = store.get('sd-visited', []);
-    if (!visited.includes(D.slug)) { visited.push(D.slug); store.set('sd-visited', visited); }
+    document.title = `${D.title} — ${T.brand}`;
+    const visited = store.get(T.visitedKey, []);
+    if (!visited.includes(D.slug)) { visited.push(D.slug); store.set(T.visitedKey, visited); }
 
     const app = document.getElementById('app');
     app.innerHTML = '';
-    const order = cat.systems;
+    const order = cat.systems.filter((x) => ready(x) || x.slug === D.slug);
     const pos = order.findIndex((x) => x.slug === D.slug);
     const prevSys = pos > 0 ? order[pos - 1] : null;
     const nextSys = pos >= 0 && pos < order.length - 1 ? order[pos + 1] : null;
     const arrow = (s, dir) => s
-      ? el('a', { class: 'icon-btn nav-arrow', href: s.slug + '.html', title: (dir < 0 ? 'Previous: ' : 'Next: ') + s.title, 'aria-label': (dir < 0 ? 'Previous system: ' : 'Next system: ') + s.title, text: dir < 0 ? '‹' : '›' })
+      ? el('a', { class: 'icon-btn nav-arrow', href: s.slug + '.html', title: (dir < 0 ? 'Previous: ' : 'Next: ') + s.title, 'aria-label': (dir < 0 ? 'Previous ' : 'Next ') + T.unit + ': ' + s.title, text: dir < 0 ? '‹' : '›' })
       : el('span', { class: 'icon-btn nav-arrow disabled', 'aria-hidden': 'true', text: dir < 0 ? '‹' : '›' });
     const top = el('header', { class: 'topbar' },
-      el('a', { class: 'brand', href: '../index.html' }, el('span', { class: 'brand-mark', text: '◇' }), el('span', { class: 'brand-t', text: 'Design Atlas' })),
+      el('a', { class: 'brand', href: ROOT + 'index.html', title: 'Design Atlas home' }, el('span', { class: 'brand-mark', text: '◇' }), el('span', { class: 'brand-t', text: 'Design Atlas' })),
       globalNav({ current: D.slug, base: '', home: '../index.html' }),
       el('nav', { class: 'crumb', 'aria-label': 'Breadcrumb' },
-        el('a', { class: 'cr-home', href: '../index.html', text: 'Home' }), el('span', { class: 'cr-sep cr-home', text: '›' }),
+        el('a', { class: 'cr-home', href: '../index.html', text: T.name }), el('span', { class: 'cr-sep cr-home', text: '›' }),
         dom.id ? el('a', { href: '../index.html#domain-' + dom.id, text: dom.name }) : null,
         el('span', { class: 'cr-sep cr-title', text: '›' }), el('span', { class: 'cr-title', 'aria-current': 'page', text: D.title })),
       el('span', { class: 'spacer' }),
       el('div', { class: 'nav-arrows' }, arrow(prevSys, -1), arrow(nextSys, 1)),
+      Object.keys(TRACKS).length > 1 ? trackSwitch(TRACK_ID) : null,
       themeButton());
     const nav = el('nav', { class: 'secnav', 'aria-label': 'Sections' });
     const navInner = el('div', { class: 'secnav-inner' }); nav.append(navInner);
@@ -1073,7 +1111,7 @@
     hero.append(el('div', { class: 'eyebrow' },
       el('span', { class: 'pill accent', text: dom.name || '' }),
       D.examples || meta.examples ? el('span', { class: 'pill', text: 'e.g. ' + (D.examples || meta.examples) }) : null,
-      meta.added ? el('span', { class: 'pill new', text: '★ added beyond catalog' }) : null));
+      meta.added ? el('span', { class: 'pill new', text: T.addedLabel || '★ added beyond catalog' }) : null));
     hero.append(el('h1', { text: D.title }));
     if (D.tagline) hero.append(el('p', { class: 'tagline', html: D.tagline }));
     let box = null;
@@ -1091,28 +1129,29 @@
 
     /* start here */
     if (D.intro) {
-      const s = add('intro', 'Start here: what it is and why it exists', 'Start here', 'New to this topic? Read this first. Already know it? Jump to <a href="#architecture">the architecture</a>.');
+      const s = add('intro', ...sec('intro', 'Start here: what it is and why it exists', 'Start here', 'New to this topic? Read this first. Already know it? Jump to <a href="#architecture">the architecture</a>.'));
       introSection(s, D, box);
     }
 
     /* requirements */
     if (D.requirements) {
-      const s = add('requirements', 'Requirements', 'Requirements', 'What we must build, how well, and what we deliberately skip.');
+      const s = add('requirements', ...sec('requirements', 'Requirements', 'Requirements', 'What we must build, how well, and what we deliberately skip.'));
       const R = D.requirements;
+      const cols = (SEC.requirements && SEC.requirements.cols) || ['Functional', 'Non-functional', 'Out of scope'];
       const col = (title, items, cls) => el('div', { class: 'req-col card reveal' }, el('h3', { text: title }),
         el('div', { class: 'chips' }, (items || []).map((x, i) => { const c = el('span', { class: 'chip ' + cls, html: x }); c.style.transitionDelay = (i * 60) + 'ms'; return c; })));
-      s.append(el('div', { class: 'grid g3' }, col('Functional', R.functional, 'fr'), col('Non-functional', R.nonFunctional, 'nfr'), col('Out of scope', R.outOfScope, 'oos')));
+      s.append(el('div', { class: 'grid g3' }, col(cols[0], R.functional, 'fr'), col(cols[1], R.nonFunctional, 'nfr'), col(cols[2], R.outOfScope, 'oos')));
     }
 
     /* capacity */
     if (D.calculator) {
-      const s = add('capacity', 'Back-of-the-envelope', 'Capacity', 'Drag the sliders — every number recomputes live.');
+      const s = add('capacity', ...sec('capacity', 'Back-of-the-envelope', 'Capacity', 'Drag the sliders — every number recomputes live.'));
       calculator(s, D.calculator);
     }
 
     /* API + data model */
     if (D.api || D.dataModel) {
-      const s = add('api', 'API & Data Model', 'API & Data');
+      const s = add('api', ...sec('api', 'API & Data Model', 'API & Data'));
       const g = el('div', { class: 'grid g2' });
       if (D.api) g.append(el('div', { class: 'card reveal' }, el('div', { class: 'api-list' },
         D.api.map((a) => el('div', { class: 'api' }, el('span', { class: 'm ' + a.m, text: a.m }), el('span', { class: 'p', text: a.p }), el('span', { class: 'd', html: a.d }))))));
@@ -1128,7 +1167,7 @@
 
     /* architecture + scenarios */
     if (D.architecture) {
-      const s = add('architecture', 'Architecture in motion', 'Architecture', 'Pick a scenario. Packets show the request path; tap any box for details. ← → keys step through.');
+      const s = add('architecture', ...sec('architecture', 'Architecture in motion', 'Architecture', 'Pick a scenario. Packets show the request path; tap any box for details. ← → keys step through.'));
       const card = el('div', { class: 'card diagram-card' });
       const body = el('div');
       card.append(body);
@@ -1142,13 +1181,13 @@
 
     /* knobs */
     if (D.knobs) {
-      const s = add('knobs', 'Design knobs: tweak it, see what changes', 'Knobs', D.knobs.intro || 'Change one decision at a time. The diagram, the request path and the outcome meters update instantly.');
+      const s = add('knobs', ...sec('knobs', 'Design knobs: tweak it, see what changes', 'Knobs', D.knobs.intro || 'Change one decision at a time. The diagram, the request path and the outcome meters update instantly.'));
       knobsSection(s, D);
     }
 
     /* widget */
     if (D.widget && SD.widgets[D.slug]) {
-      const s = add('deep-dive', 'Interactive deep dive', 'Deep dive', 'A small simulation of the core mechanism. Play with it.');
+      const s = add('deep-dive', ...sec('deepDive', 'Interactive deep dive', 'Deep dive', 'A small simulation of the core mechanism. Play with it.'));
       const card = el('div', { class: 'card widget-card' });
       const body = el('div', { class: 'widget-body' });
       card.append(el('div', { class: 'widget-head' }, el('h3', { text: D.widget.title }), D.widget.caption ? el('p', { html: D.widget.caption }) : null), body);
@@ -1176,7 +1215,7 @@
     /* real world */
     if (D.realWorld) {
       const R = D.realWorld;
-      const s = add('real-world', 'How it is actually built', 'Real world', R.intro || 'What the companies themselves have published, in order. Every card links to its source.');
+      const s = add('real-world', ...sec('realWorld', 'How it is actually built', 'Real world', R.intro || 'What the companies themselves have published, in order. Every card links to its source.'));
       const srcLink = (i) => {
         const src = (R.sources || [])[i];
         return src ? el('a', { class: 'src', href: src.url, target: '_blank', rel: 'noopener', text: '↗ ' + src.title }) : null;
@@ -1202,7 +1241,7 @@
 
     /* trade-offs + failures */
     if (D.tradeoffs || D.failures) {
-      const s = add('tradeoffs', 'Trade-offs & failure modes', 'Trade-offs');
+      const s = add('tradeoffs', ...sec('tradeoffs', 'Trade-offs & failure modes', 'Trade-offs'));
       if (D.tradeoffs) {
         const T = D.tradeoffs;
         s.append(el('div', { class: 'tscroll reveal' }, el('table', { class: 't' },
@@ -1218,7 +1257,7 @@
 
     /* interview */
     if (D.interview) {
-      const s = add('interview', 'Interview questions', 'Interview', 'Answer out loud first, then open the card. Turn on quiz mode to blur answers.');
+      const s = add('interview', ...sec('interview', 'Interview questions', 'Interview', 'Answer out loud first, then open the card. Turn on quiz mode to blur answers.'));
       const list = el('div');
       const quizBtn = el('button', { class: 'btn', text: '◐ Quiz mode: off' });
       const openAll = el('button', { class: 'btn', text: 'Expand all' });
@@ -1246,7 +1285,7 @@
 
     /* code */
     if (D.code && D.code.length) {
-      const s = add('code', 'Build it in your stack', 'Code', 'Small, real snippets in Java / Spring Boot, Postgres and Python.');
+      const s = add('code', ...sec('code', 'Build it in your stack', 'Code', 'Small, real snippets in Java / Spring Boot, Postgres and Python.'));
       const tabs = el('div', { class: 'code-tabs' });
       const box = el('div');
       const showCode = (i) => {
@@ -1267,17 +1306,25 @@
     }
 
     /* related + pager */
-    const rel = (D.related || []).map((slug) => cat.systems.find((x) => x.slug === slug)).filter(Boolean);
+    // related: 'slug' (same track) or 'trackId:slug' (other track, e.g. 'sd:rate-limiter')
+    const rel = (D.related || []).map((ref) => {
+      const m = /^(\w+):(.+)$/.exec(ref);
+      const tid = m ? m[1] : TRACK_ID; const slug = m ? m[2] : ref;
+      const c = TRACKS[tid] || (tid === TRACK_ID ? cat : null);
+      const x = c && c.systems.find((y) => y.slug === slug);
+      if (!x || !ready(x)) return null;
+      return { title: x.title, href: tid === TRACK_ID ? slug + '.html' : pageUrl(trackOf(c), slug), other: tid !== TRACK_ID ? trackOf(c).name : null };
+    }).filter(Boolean);
     if (rel.length) {
-      const s = add('related', 'Related designs', 'Related');
-      s.append(el('div', { class: 'related' }, rel.map((r) => el('a', { href: r.slug + '.html', text: r.title }))));
+      const s = add('related', ...sec('related', T.relatedTitle, 'Related'));
+      s.append(el('div', { class: 'related' }, rel.map((r) => el('a', { href: r.href }, r.title, r.other ? el('span', { class: 'rel-track', text: r.other }) : null))));
     }
     if (pos >= 0) {
       main.append(el('div', { class: 'pager' },
         prevSys ? el('a', { href: prevSys.slug + '.html' }, el('div', { class: 'dir', text: '← Previous' }), prevSys.title) : el('span'),
         nextSys ? el('a', { class: 'next', href: nextSys.slug + '.html' }, el('div', { class: 'dir', text: 'Next →' }), nextSys.title) : null));
     }
-    main.append(el('footer', { class: 'foot', html: 'System Design Atlas · numbers labelled <em>estimate</em> are back-of-envelope; everything attributed to a company links to its source.' }));
+    main.append(el('footer', { class: 'foot', html: T.brand + ' · numbers labelled <em>estimate</em> are back-of-envelope; everything attributed to a company links to its source.' }));
 
     /* section nav + scrollspy */
     const links = {};
@@ -1292,7 +1339,8 @@
       toc.append(el('div', { class: 'toc-h toc-h2', text: 'More in ' + (dom.name || 'this domain') }));
       siblings.forEach((x) => toc.append(x.slug === D.slug
         ? el('span', { class: 'toc-sys current', 'aria-current': 'page', text: x.title })
-        : el('a', { class: 'toc-sys', href: x.slug + '.html', text: x.title })));
+        : ready(x) ? el('a', { class: 'toc-sys', href: x.slug + '.html', text: x.title })
+          : el('span', { class: 'toc-sys planned', title: 'Planned', text: x.title })));
     }
     if ('IntersectionObserver' in window) {
       const io = new IntersectionObserver((ents) => {
@@ -1308,6 +1356,113 @@
     }
     revealAll(main);
   }
+
+  /* ======================================================================
+     Track index page (system-design/index.html, architecture/index.html)
+     Expects #navSlot, #themeSlot, #trackSlot, #countPill, #q, #onlyNew, #domChips, #domains, #empty, #net
+     ====================================================================== */
+  function indexPage() {
+    const C = window.SD_CATALOG; const T = trackOf(C);
+    const $ = (id) => document.getElementById(id);
+    if ($('themeSlot')) $('themeSlot').append(themeButton());
+    if ($('navSlot')) $('navSlot').append(globalNav({ base: T.pageDir + '/', home: 'index.html' }));
+    if ($('trackSlot') && Object.keys(TRACKS).length > 1) $('trackSlot').append(trackSwitch(TRACK_ID));
+    const nReady = C.systems.filter(ready).length;
+    if ($('countPill')) $('countPill').textContent = C.systems.length + ' ' + T.units + ' · ' + C.domains.length + ' ' + T.groups + (nReady < C.systems.length ? ' · ' + nReady + ' ready' : '');
+    const visited = new Set(store.get(T.visitedKey, []));
+    const host = $('domains');
+    let n = 0;
+    const cards = [];
+    C.domains.forEach((d) => {
+      const list = C.systems.filter((s) => s.domain === d.id);
+      const grid = el('div', { class: 'ix-grid' });
+      const r = list.filter(ready).length;
+      const sec = el('section', { class: 'ix-domain reveal', id: 'domain-' + d.id },
+        el('div', { class: 'ix-domain-head' }, el('div', { class: 'di', text: d.icon }),
+          el('div', null, el('h2', { text: d.id + '. ' + d.name }), el('p', { text: d.blurb + ' · ' + list.length + ' ' + T.units + (r < list.length ? ' (' + r + ' ready)' : '') }))),
+        grid);
+      list.forEach((s) => {
+        n++;
+        const live = ready(s);
+        const a = el(live ? 'a' : 'div', { class: 'sys-card' + (live ? '' : ' planned'), href: live ? T.pageDir + '/' + s.slug + '.html' : null, 'aria-disabled': live ? null : 'true' },
+          el('div', { class: 'corner' },
+            s.added ? el('span', { class: 'pill new', style: { padding: '1px 7px', fontSize: '10.5px' }, text: '★ new' }) : null,
+            live ? null : el('span', { class: 'pill planned', text: 'planned' }),
+            visited.has(s.slug) ? el('span', { class: 'seen', title: 'Visited', text: '✓' }) : null),
+          el('span', { class: 'num', text: String(n).padStart(2, '0') }),
+          el('h3', { text: s.title }),
+          s.one ? el('div', { class: 'one', text: s.one }) : null,
+          s.examples ? el('div', { class: 'ex', text: (T.examplesPrefix != null ? T.examplesPrefix : 'e.g. ') + s.examples }) : null,
+          el('div', { class: 'tags' }, (s.tags || []).map((t) => el('span', { text: t }))));
+        grid.append(a);
+        cards.push({ a, s, sec, text: [s.title, s.one || '', s.examples || '', (s.tags || []).join(' '), d.name].join(' ').toLowerCase() });
+      });
+      host.append(sec);
+    });
+
+    // domain jump bar + scrollspy
+    const chipHost = $('domChips');
+    const chips = {};
+    C.domains.forEach((d) => { const a = el('a', { href: '#domain-' + d.id, text: d.icon + ' ' + d.name }); chips['domain-' + d.id] = a; chipHost.append(a); });
+    if ('IntersectionObserver' in window) {
+      const spy = new IntersectionObserver((es) => es.forEach((e) => {
+        if (!e.isIntersecting) return;
+        Object.values(chips).forEach((a) => a.classList.remove('active'));
+        const a = chips[e.target.id];
+        if (a) { a.classList.add('active'); chipHost.scrollTo({ left: a.offsetLeft - chipHost.clientWidth / 2 + a.offsetWidth / 2, behavior: reduced ? 'auto' : 'smooth' }); }
+      }), { rootMargin: '-40% 0px -55% 0px' });
+      document.querySelectorAll('.ix-domain').forEach((s) => spy.observe(s));
+    }
+    if (location.hash) { const t = document.getElementById(location.hash.slice(1)); if (t) { t.classList.add('in'); requestAnimationFrame(() => t.scrollIntoView()); } }
+
+    // search + filter ("only added" on system design, "only ready" on tracks with planned topics)
+    const q = $('q'); const only = $('onlyNew');
+    const pred = T.filterReady ? (s) => ready(s) : (s) => s.added;
+    let on = false;
+    function filter() {
+      const terms = q.value.toLowerCase().trim().split(/\s+/).filter(Boolean);
+      let shown = 0;
+      const secCount = new Map();
+      cards.forEach((c) => {
+        const ok = (!on || pred(c.s)) && terms.every((t) => c.text.includes(t));
+        c.a.hidden = !ok; if (ok) shown++;
+        secCount.set(c.sec, (secCount.get(c.sec) || 0) + (ok ? 1 : 0));
+      });
+      secCount.forEach((v, s) => { s.hidden = v === 0; });
+      $('empty').hidden = shown > 0;
+    }
+    q.addEventListener('input', filter);
+    if (only) only.addEventListener('click', () => { on = !on; only.setAttribute('aria-pressed', on); only.classList.toggle('primary', on); filter(); });
+    revealAll(document);
+    if ($('net')) heroNet($('net'));
+  }
+  SD.indexPage = indexPage;
+
+  // animated network behind index heroes
+  function heroNet(net) {
+    const W = 1200, H = 520;
+    net.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    net.setAttribute('preserveAspectRatio', 'xMidYMid slice');
+    const pts = Array.from({ length: 26 }, () => [Math.random() * W, Math.random() * H]);
+    const links = [];
+    pts.forEach((p, i) => {
+      const near = pts.map((q, j) => [j, Math.hypot(p[0] - q[0], p[1] - q[1])]).filter(([j]) => j !== i).sort((a, b) => a[1] - b[1]).slice(0, 2);
+      near.forEach(([j]) => { if (i < j) links.push([i, j]); });
+    });
+    links.forEach(([i, j]) => net.append(svg('line', { x1: pts[i][0], y1: pts[i][1], x2: pts[j][0], y2: pts[j][1], stroke: 'var(--edge)', 'stroke-width': 1.2 })));
+    pts.forEach((p) => net.append(svg('circle', { cx: p[0], cy: p[1], r: 4, fill: 'var(--surface)', stroke: 'var(--accent)', 'stroke-width': 1.5 })));
+    if (reduced) return;
+    const dots = links.map(() => { const c = svg('circle', { r: 2.6, fill: 'var(--accent-2)' }); net.append(c); return { c, t: Math.random(), v: 0.0002 + Math.random() * 0.0004 }; });
+    makeLoop(net, (dt) => {
+      dots.forEach((d, k) => {
+        d.t = (d.t + d.v * dt) % 1;
+        const [i, j] = links[k];
+        d.c.setAttribute('cx', pts[i][0] + (pts[j][0] - pts[i][0]) * d.t);
+        d.c.setAttribute('cy', pts[i][1] + (pts[j][1] - pts[i][1]) * d.t);
+      });
+    });
+  }
+  SD.heroNet = heroNet;
 
   document.addEventListener('DOMContentLoaded', () => {
     if (SD.data && document.getElementById('app')) {

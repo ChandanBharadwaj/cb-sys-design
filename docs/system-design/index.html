@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en" data-track="sd" data-root="../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>System Design Atlas</title>
+<meta name="description" content="44 animated, research-backed system designs: architecture in motion, design knobs, real-world implementations from published papers and engineering blogs, and interview questions.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/site.css">
+<script>try{var t=JSON.parse(localStorage.getItem('sd-theme')||'"light"');if(t!=='auto')document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light')}catch(e){document.documentElement.setAttribute('data-theme','light')}</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html" title="Design Atlas home"><span class="brand-mark">◇</span><span class="brand-t">Design Atlas</span></a>
+  <span id="navSlot"></span>
+  <span class="spacer"></span>
+  <span id="trackSlot"></span>
+  <span id="themeSlot"></span>
+</header>
+
+<main class="wrap">
+  <section class="ix-hero">
+    <div class="ix-net" aria-hidden="true"><svg id="net"></svg></div>
+    <div class="eyebrow" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+      <span class="pill accent" id="countPill">44 systems · 9 domains</span>
+      <span class="pill">sourced from papers &amp; engineering blogs</span>
+    </div>
+    <h1>System design you can <span class="grad">watch, tweak and break.</span></h1>
+    <p>Every page opens with a plain-English <b>Start here</b> section: what the system is, what problem it solves and why the obvious design breaks. Then each design has an animated architecture, step-through scenarios including failures, design knobs that show how a different choice changes the outcome, how real companies built it (with sources), and interview questions.</p>
+    <div class="ix-tools">
+      <label class="search" for="q"><span aria-hidden="true">⌕</span><input id="q" type="search" placeholder="Search: kafka, H3, idempotency, HNSW…" autocomplete="off"></label>
+      <button class="btn" id="onlyNew" aria-pressed="false">★ Only added systems</button>
+    </div>
+    <div class="howto" id="howto">
+      <div class="stat"><div class="v">① Start here</div><div class="l">Plain-English intro: what it is, the problem it solves, an animated before/after story</div></div>
+      <div class="stat"><div class="v">▶ Scenarios</div><div class="l">Step through happy paths and failures as packets move</div></div>
+      <div class="stat"><div class="v">⇄ Knobs</div><div class="l">Change one decision and the diagram and metrics update</div></div>
+      <div class="stat"><div class="v">↗ Real world</div><div class="l">How Uber, Netflix, Stripe and others actually built it</div></div>
+      <div class="stat"><div class="v">? Interview</div><div class="l">Questions with crisp answers and a quiz mode</div></div>
+    </div>
+  </section>
+  <nav class="dom-chips" aria-label="Domains"><div class="dom-chips-inner" id="domChips"></div></nav>
+  <div id="domains"></div>
+  <div class="empty" id="empty" hidden>No systems match that search.</div>
+  <footer class="foot">Built as a static site for GitHub Pages · numbers marked <em>estimate</em> are back-of-envelope; company facts link to their sources.</footer>
+</main>
+
+<script src="../assets/js/catalog.js"></script>
+<script src="../assets/js/arch-catalog.js"></script>
+<script src="../assets/js/engine.js"></script>
+<script>SD.indexPage();</script>
+</body>
+</html>

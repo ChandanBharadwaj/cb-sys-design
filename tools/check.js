@@ -1,6 +1,7 @@
 // Smoke-test every page at phone and desktop sizes with Playwright.
 // Serve docs/ first:  cd docs && python3 -m http.server 8765 --bind 127.0.0.1
-// usage: node tools/check.js [--noshot] [slug ...]
+// usage: node tools/check.js [--noshot] [--track sd|arch] [--fonts] [--full] [slug ...]
+// With no slugs it checks the hub, both track indexes and every page of the chosen track(s).
 const { chromium } = require('playwright');
 const fs = require('fs'); const path = require('path');
 const DOCS = path.join(__dirname, '..', 'docs');
@@ -8,20 +9,35 @@ const BASE = 'http://127.0.0.1:8765/';
 const OUT = path.join(__dirname, '..', '.shots'); fs.mkdirSync(OUT, { recursive: true });
 const args = process.argv.slice(2);
 const full = args.includes('--full'); const requireIntro = args.includes('--require-intro'); const checkFonts = args.includes('--fonts'); const slugs0 = args.filter(a => !a.startsWith('--'));
-const slugs = slugs0.length ? slugs0 : fs.readdirSync(path.join(DOCS, 'data')).map(f => f.replace('.js', ''));
+const ti = args.indexOf('--track'); const onlyTrack = ti >= 0 ? args[ti + 1] : null;
+const TRACKS = { sd: { dir: 'system-design', pageDir: 'systems', search: 'kafka' }, arch: { dir: 'architecture', pageDir: 'topics', search: 'oauth' } };
+const dataSlugs = (t) => { const d = path.join(DOCS, TRACKS[t].dir, 'data'); return fs.existsSync(d) ? fs.readdirSync(d).filter(f => f.endsWith('.js')).map(f => f.replace('.js', '')) : []; };
+const pages = [];
+if (!slugs0.length || args.includes('--index')) {
+  pages.push({ slug: '__hub__', url: 'index.html', index: true, hub: true });
+  pages.push({ slug: '__sd-index__', url: 'system-design/index.html', index: true, track: 'sd' });
+  pages.push({ slug: '__arch-index__', url: 'architecture/index.html', index: true, track: 'arch' });
+}
+for (const t of Object.keys(TRACKS)) {
+  if (onlyTrack && onlyTrack !== t) continue;
+  const all = dataSlugs(t);
+  (slugs0.length ? slugs0.filter(s => s !== onlyTrack && all.includes(s)) : all)
+    .forEach(slug => pages.push({ slug, track: t, url: TRACKS[t].dir + '/' + TRACKS[t].pageDir + '/' + slug + '.html' }));
+}
 (async () => {
   const browser = await chromium.launch();
   const sizes = [['phone', 390, 844], ['desk', 1440, 900]];
   const report = [];
   for (const [name, w, h] of sizes) {
     const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 1 });
-    for (const slug of ['__index__', ...slugs]) {
+    for (const pg of pages) {
+      const slug = pg.slug;
       const page = await ctx.newPage();
       const errs = [];
       page.on('pageerror', e => errs.push('pageerror: ' + e.message));
       page.on('console', m => { if (m.type() === 'error' || m.type() === 'warning') errs.push(m.type() + ': ' + m.text()); });
       page.on('requestfailed', r => { if (!r.url().includes('fonts.')) errs.push('reqfail: ' + r.url()); });
-      const url = slug === '__index__' ? BASE + 'index.html' : BASE + 'systems/' + slug + '.html';
+      const url = BASE + pg.url;
       await page.goto(url, { waitUntil: 'load' });
       await page.waitForTimeout(600);
       const info = await page.evaluate(() => {
@@ -35,7 +51,8 @@ const slugs = slugs0.length ? slugs0 : fs.readdirSync(path.join(DOCS, 'data')).m
       const navR = { ok: true, why: [] };
       try {
         const btn = page.locator('.nav-btn');
-        if (!(await btn.count())) { navR.ok = false; navR.why.push('no Systems button'); }
+        if (pg.hub) { const n = await page.locator('.hub-card').count(); if (n !== 2) navR.why.push('hub shows ' + n + ' track cards'); }
+        else if (!(await btn.count())) { navR.ok = false; navR.why.push('no Systems button'); }
         else {
           await btn.click(); await page.waitForTimeout(300);
           const st = await page.evaluate(() => {
@@ -45,17 +62,17 @@ const slugs = slugs0.length ? slugs0 : fs.readdirSync(path.join(DOCS, 'data')).m
           });
           if (!st.open) navR.why.push('drawer did not open');
           if (st.links !== st.total) navR.why.push('drawer has ' + st.links + ' links');
-          if (slug !== '__index__' && st.cur !== 1) navR.why.push('current page not highlighted');
+          if (!pg.index && st.cur !== 1) navR.why.push('current page not highlighted');
           if (!st.focusIn) navR.why.push('focus not moved into drawer');
           if (st.overflow > 1) navR.why.push('overflow with drawer open ' + st.overflow + 'px');
-          await page.keyboard.type('kafka'); await page.waitForTimeout(100);
+          await page.keyboard.type(TRACKS[pg.track].search); await page.waitForTimeout(100);
           const n = await page.evaluate(() => [...document.querySelectorAll('.gn-item')].filter((a) => a.offsetParent !== null).length);
           if (!(n >= 1 && n < st.total)) navR.why.push('search kept ' + n + ' results');
           await page.keyboard.press('Escape'); await page.waitForTimeout(300);
           const after = await page.evaluate(() => ({ hidden: document.querySelector('.gn-panel').hidden, focusBtn: document.activeElement && document.activeElement.classList.contains('nav-btn') }));
           if (!after.hidden) navR.why.push('Esc did not close');
           if (!after.focusBtn) navR.why.push('focus not returned to button');
-          if (slug !== '__index__') {
+          if (!pg.index) {
             const links = await page.evaluate(() => [...document.querySelectorAll('.crumb a, .nav-arrows a')].map((a) => a.getAttribute('href')));
             if (!links.some((h) => /index\.html#domain-\d/.test(h))) navR.why.push('breadcrumb has no domain link');
             if (!links.some((h) => /^[a-z0-9-]+\.html$/.test(h))) navR.why.push('no prev/next arrows');
@@ -66,7 +83,7 @@ const slugs = slugs0.length ? slugs0 : fs.readdirSync(path.join(DOCS, 'data')).m
       await page.goto(url, { waitUntil: 'load' }); await page.waitForTimeout(300);
 
       let interact = {};
-      if (slug !== '__index__') {
+      if (!pg.index) {
         interact = await page.evaluate(async () => {
           const out = { scen: 0, knobs: 0, knobChanges: 0 };
           const tabs = document.querySelectorAll('#architecture .tab');
@@ -127,7 +144,7 @@ const slugs = slugs0.length ? slugs0 : fs.readdirSync(path.join(DOCS, 'data')).m
           if (await loc.count()) { await loc.scrollIntoViewIfNeeded(); await page.waitForTimeout(2200); await loc.screenshot({ path: path.join(OUT, `${slug}-${name}-${sec}.png`) }); }
         }
       }
-      report.push({ nav: navR, slug, size: name, overflow: info.sw > info.iw ? info.sw - info.iw : 0, wide: info.wide, errs: errs.slice(0, 5), ...interact });
+      report.push({ nav: navR, slug, index: !!pg.index, size: name, overflow: info.sw > info.iw ? info.sw - info.iw : 0, wide: info.wide, errs: errs.slice(0, 5), ...interact });
       await page.close();
     }
     await ctx.close();
@@ -139,7 +156,7 @@ const slugs = slugs0.length ? slugs0 : fs.readdirSync(path.join(DOCS, 'data')).m
     if (r.overflow) problems.push('overflow ' + r.overflow + 'px ' + r.wide.join(','));
     if (r.errs.length) problems.push('errors: ' + r.errs.join(' | '));
     if (r.nav && !r.nav.ok) problems.push('global nav: ' + r.nav.why.join(', '));
-    if (r.slug !== '__index__') {
+    if (!r.index) {
       if (!r.scen) problems.push('no scenarios');
       if (r.knobs && r.knobChanges < Math.min(2, r.knobs - 1)) problems.push('knobs do not change outcome');
       if (r.calcBad && r.calcBad.length) problems.push('calc: ' + r.calcBad.join(','));
