@@ -86,7 +86,7 @@
     { slug: 'stakeholder-communication', domain: 9, title: 'Stakeholder Communication', one: 'Explaining technical trade-offs to executives in terms of money, risk and time, and getting a decision.', examples: 'Pyramid principle, one-pagers', tags: ['exec summary', 'framing', 'buy-in'] },
     { slug: 'tech-debt', domain: 9, title: 'Technical Debt Management', one: 'Measuring tech debt, showing its interest, and negotiating real time to pay it down.', examples: 'Fowler quadrant, hotspots', tags: ['hotspots', 'debt register', 'cost of delay'] },
     { slug: 'conflict-resolution', domain: 9, title: 'Conflict Resolution', one: 'Turning a heated "Kafka vs RabbitMQ" style argument between senior engineers into a decision everyone commits to.', examples: 'Thomas–Kilmann, DACI', tags: ['mediation', 'disagree & commit', 'spikes'] },
-    { slug: 'architecture-governance', domain: 9, title: 'Architecture Governance', one: 'Keeping many teams aligned with review forums, fitness functions, a tech radar and golden paths, without becoming a bottleneck.', examples: 'ArchUnit, Thoughtworks Radar', tags: ['fitness functions', 'tech radar', 'guardrails'], added: true, status: 'planned' }
+    { slug: 'architecture-governance', domain: 9, title: 'Architecture Governance', one: 'Keeping many teams aligned with review forums, fitness functions, a tech radar and golden paths, without becoming a bottleneck.', examples: 'ArchUnit, Thoughtworks Radar', tags: ['fitness functions', 'tech radar', 'guardrails'], added: true }
   ],
 
   /* "Laws you must know" strip on the architecture index. `to` = topic slug that explains it. */
