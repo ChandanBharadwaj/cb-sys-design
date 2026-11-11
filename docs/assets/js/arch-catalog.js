@@ -43,7 +43,7 @@
     { slug: 'documenting-architecture', domain: 2, title: 'Documenting Architecture', one: 'Diagrams and docs people actually read: C4 levels, arc42 sections and diagrams as code.', examples: 'C4, arc42, Structurizr', tags: ['C4', 'diagrams as code', '4+1'], added: true },
 
     { slug: 'build-vs-buy', domain: 3, title: 'Build vs Buy vs Rent', one: 'Deciding whether to build it, buy a product, rent SaaS or adopt open source, based on what makes you different.', examples: 'Wardley maps, TCO, decision matrix', tags: ['core vs context', 'TCO', 'lock-in'] },
-    { slug: 'finops', domain: 3, title: 'FinOps & Cloud Economics', one: 'Knowing what each feature costs to run, and designing so the cloud bill grows slower than the business.', examples: 'FinOps Foundation, AWS CUR', tags: ['TCO', 'unit cost', 'spot/RI'], status: 'planned' },
+    { slug: 'finops', domain: 3, title: 'FinOps & Cloud Economics', one: 'Knowing what each feature costs to run, and designing so the cloud bill grows slower than the business.', examples: 'FinOps Foundation, AWS CUR', tags: ['TCO', 'unit cost', 'spot/RI'] },
     { slug: 'risk-management', domain: 3, title: 'Risk Management & Lock-in', one: 'Listing what could go wrong (technical, operational, vendor) and choosing to avoid, reduce, transfer or accept each risk.', examples: 'Risk register, pre-mortem', tags: ['heat map', 'vendor lock-in', 'mitigation'] },
     { slug: 'okrs-to-nfrs', domain: 3, title: 'Translating OKRs to Tech', one: 'Turning a business goal like "increase retention" into a measurable target like "p95 page load under 200 ms".', examples: 'Impact mapping, latency budgets', tags: ['OKR', 'NFR', 'traceability'] },
 
