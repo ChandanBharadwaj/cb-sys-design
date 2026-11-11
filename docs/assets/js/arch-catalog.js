@@ -76,7 +76,7 @@
 
     { slug: 'observability-pillars', domain: 8, title: 'Three Pillars of Observability', one: 'Metrics, logs and traces tied together with OpenTelemetry, so you can explain any slow request.', examples: 'OpenTelemetry, Dapper, Honeycomb', tags: ['tracing', 'structured logs', 'sampling'] },
     { slug: 'slo-error-budgets', domain: 8, title: 'SRE: SLIs, SLOs & Error Budgets', one: 'Agreeing how reliable is reliable enough, and using the leftover error budget to decide when to ship.', examples: 'Google SRE book & workbook', tags: ['SLO', 'burn rate', 'error budget'] },
-    { slug: 'disaster-recovery', domain: 8, title: 'Disaster Recovery: RTO & RPO', one: 'Surviving the loss of a whole region, and choosing how much downtime and data loss you can afford.', examples: 'AWS DR strategies, Patroni', tags: ['RTO/RPO', 'active-active', 'failover'], status: 'planned' },
+    { slug: 'disaster-recovery', domain: 8, title: 'Disaster Recovery: RTO & RPO', one: 'Surviving the loss of a whole region, and choosing how much downtime and data loss you can afford.', examples: 'AWS DR strategies, Patroni', tags: ['RTO/RPO', 'active-active', 'failover'] },
     { slug: 'chaos-engineering', domain: 8, title: 'Chaos Engineering', one: 'Breaking things on purpose, in a controlled way, to prove the system survives real failures.', examples: 'Chaos Monkey, Gremlin, AWS FIS', tags: ['hypothesis', 'blast radius', 'game day'], status: 'planned' },
     { slug: 'incident-management', domain: 8, title: 'Incident Management & Postmortems', one: 'Running an outage calmly with clear roles, and learning from it without blame.', examples: 'PagerDuty, Google SRE', tags: ['incident commander', 'MTTR', 'blameless'], added: true },
 
