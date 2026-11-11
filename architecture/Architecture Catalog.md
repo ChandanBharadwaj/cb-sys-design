@@ -135,7 +135,7 @@ _Build vs buy, cloud economics, risk and turning OKRs into NFRs._
 * **Interactive deep dive:** 5-year TCO curves for build, buy and OSS with sliders, plus a weighted decision matrix with a break-even year.
 * **Page:** `docs/architecture/topics/build-vs-buy.html`
 
-### FinOps & Cloud Economics _(planned)_
+### FinOps & Cloud Economics ✅
 * **What it is:** Knowing what each feature costs to run, and designing so the cloud bill grows slower than the business.
 * **Key references:** FinOps Foundation, AWS CUR
 * **Core ideas:** TCO, unit cost, spot/RI
@@ -146,7 +146,7 @@ _Build vs buy, cloud economics, risk and turning OKRs into NFRs._
 * **Interactive deep dive:** a workload cost model where you toggle spot, RI, tiering and caching and watch the monthly bill and unit cost.
 * **Page:** `docs/architecture/topics/finops.html`
 
-### Risk Management & Lock-in _(planned)_
+### Risk Management & Lock-in ✅
 * **What it is:** Listing what could go wrong (technical, operational, vendor) and choosing to avoid, reduce, transfer or accept each risk.
 * **Key references:** Risk register, pre-mortem
 * **Core ideas:** heat map, vendor lock-in, mitigation
@@ -158,7 +158,7 @@ _Build vs buy, cloud economics, risk and turning OKRs into NFRs._
 * **Interactive deep dive:** a risk heat-map where mitigations move risks between cells.
 * **Page:** `docs/architecture/topics/risk-management.html`
 
-### Translating OKRs to Tech _(planned)_
+### Translating OKRs to Tech ✅
 * **What it is:** Turning a business goal like "increase retention" into a measurable target like "p95 page load under 200 ms".
 * **Key references:** Impact mapping, latency budgets
 * **Core ideas:** OKR, NFR, traceability
@@ -174,7 +174,7 @@ _Build vs buy, cloud economics, risk and turning OKRs into NFRs._
 ## 4. Modern Architectural Paradigms
 _DDD, evolution, data architecture, CDC, migrations and AI systems._
 
-### Domain-Driven Design _(planned)_
+### Domain-Driven Design ✅
 * **What it is:** Finding the right service boundaries by modelling the business: bounded contexts, a shared language and aggregates.
 * **Key references:** Evans, Event Storming
 * **Core ideas:** bounded context, aggregate, ACL
@@ -195,7 +195,7 @@ _DDD, evolution, data architecture, CDC, migrations and AI systems._
 * **Interactive deep dive:** migrate route by route behind a facade, shift traffic, and track shadow-compare mismatches and rollback.
 * **Page:** `docs/architecture/topics/strangler-fig.html`
 
-### Data Architecture: Mesh, Lake, CQRS, ES _(planned)_
+### Data Architecture: Mesh, Lake, CQRS, ES ✅
 * **What it is:** Where analytical data lives and who owns it, and when to split reads from writes or store events instead of state.
 * **Key references:** Data mesh, lakehouse, Axon
 * **Core ideas:** data mesh, CQRS, event sourcing
@@ -205,7 +205,7 @@ _DDD, evolution, data architecture, CDC, migrations and AI systems._
 * **Interactive deep dive:** an event-sourced account that replays events into different projections.
 * **Page:** `docs/architecture/topics/data-architecture.html`
 
-### Change Data Capture & Change Data Feed _(planned)_
+### Change Data Capture & Change Data Feed ✅
 * **What it is:** Streaming every database change to other systems in order, so caches, search and warehouses stay in sync.
 * **Key references:** Debezium, Delta CDF, outbox
 * **Core ideas:** WAL, Kafka Connect, outbox
@@ -216,7 +216,7 @@ _DDD, evolution, data architecture, CDC, migrations and AI systems._
 * **Interactive deep dive:** rows change in Postgres, the WAL streams to Kafka, and you watch consumer lag and how replay works after a sink failure.
 * **Page:** `docs/architecture/topics/cdc-pipelines.html`
 
-### Zero-Downtime State Migrations _(planned)_
+### Zero-Downtime State Migrations ✅
 * **What it is:** Changing schemas and moving billions of rows in parallel waves while users keep working.
 * **Key references:** Expand/contract, gh-ost, pg_repack
 * **Core ideas:** backfill, waves, dual write
@@ -227,7 +227,7 @@ _DDD, evolution, data architecture, CDC, migrations and AI systems._
 * **Interactive deep dive:** a wave scheduler migrating tenants in parallel while live traffic latency and lock waits are shown.
 * **Page:** `docs/architecture/topics/zero-downtime-migrations.html`
 
-### AI System Architecture _(planned)_
+### AI System Architecture ✅
 * **What it is:** Designing around non-deterministic models: RAG pipelines, embedding choices, evals, guardrails and MCP tool access.
 * **Key references:** RAG, MCP, local embeddings
 * **Core ideas:** RAG, agents, guardrails
