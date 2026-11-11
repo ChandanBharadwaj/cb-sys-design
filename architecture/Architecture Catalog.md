@@ -338,7 +338,7 @@ _Containers, deployments, IaC, resilience and platforms._
 * **Interactive deep dive:** a lead-time model comparing ticket-ops with a self-service platform.
 * **Page:** `docs/architecture/topics/platform-engineering.html`
 
-### Service Mesh _(planned)_
+### Service Mesh ✅
 * **What it is:** Moving mTLS, retries and traffic shifting out of every service and into a shared network layer.
 * **Key references:** Istio, Linkerd, ambient mesh
 * **Core ideas:** data plane, mTLS, traffic split
@@ -348,7 +348,7 @@ _Containers, deployments, IaC, resilience and platforms._
 * **Interactive deep dive:** request path with and without a mesh, showing latency overhead and policy enforcement.
 * **Page:** `docs/architecture/topics/service-mesh.html`
 
-### GitOps _(planned)_
+### GitOps ✅
 * **What it is:** Making Git the single source of truth for what runs, with agents that keep the cluster matching it.
 * **Key references:** Argo CD, Flux
 * **Core ideas:** reconcile, pull deploy, promotion
@@ -362,7 +362,7 @@ _Containers, deployments, IaC, resilience and platforms._
 ## 7. Security & Compliance
 _Zero trust, identity, supply chain, privacy and keys._
 
-### Zero Trust Architecture _(planned)_
+### Zero Trust Architecture ✅
 * **What it is:** Never trusting the network: every service call is authenticated, authorised and encrypted, even inside the perimeter.
 * **Key references:** NIST 800-207, BeyondCorp, SPIFFE
 * **Core ideas:** mTLS, micro-segmentation, workload identity
@@ -383,7 +383,7 @@ _Zero trust, identity, supply chain, privacy and keys._
 * **Interactive deep dive:** a step-through of the Auth Code + PKCE flow, a JWT decoder/validator, and an RBAC vs ABAC policy evaluator.
 * **Page:** `docs/architecture/topics/iam-oauth-oidc.html`
 
-### DevSecOps & Supply Chain Security _(planned)_
+### DevSecOps & Supply Chain Security ✅
 * **What it is:** Catching vulnerable or malicious code before it ships: scanning, SBOMs, signed builds and safe registries.
 * **Key references:** SLSA, Sigstore, CycloneDX
 * **Core ideas:** SAST/DAST, SBOM, dependency confusion
@@ -394,7 +394,7 @@ _Zero trust, identity, supply chain, privacy and keys._
 * **Interactive deep dive:** a pipeline with gates; inject a vulnerable or malicious dependency and see which gate catches it.
 * **Page:** `docs/architecture/topics/devsecops.html`
 
-### Data Privacy & Regulation _(planned)_
+### Data Privacy & Regulation ✅
 * **What it is:** Designing for GDPR and DPDP: data residency, right to be forgotten, masking and encryption everywhere.
 * **Key references:** GDPR, DPDP Act, PCI-DSS
 * **Core ideas:** erasure, crypto-shredding, residency
@@ -405,7 +405,7 @@ _Zero trust, identity, supply chain, privacy and keys._
 * **Interactive deep dive:** an erasure request flowing through services, warehouse and backups, with crypto-shredding.
 * **Page:** `docs/architecture/topics/data-privacy.html`
 
-### Threat Modeling _(planned)_
+### Threat Modeling ✅
 * **What it is:** Finding how a design can be attacked before it is built, element by element, with STRIDE.
 * **Key references:** STRIDE, OWASP, attack trees
 * **Core ideas:** DFD, trust boundary, STRIDE
@@ -414,7 +414,7 @@ _Zero trust, identity, supply chain, privacy and keys._
 * **Interactive deep dive:** click DFD elements to list STRIDE threats and mitigations.
 * **Page:** `docs/architecture/topics/threat-modeling.html`
 
-### Secrets & Key Management _(planned)_
+### Secrets & Key Management ✅
 * **What it is:** Keeping passwords and keys out of code, rotating them safely, and encrypting data with envelope keys.
 * **Key references:** Vault, AWS KMS, HSM
 * **Core ideas:** envelope encryption, rotation, dynamic secrets
@@ -429,7 +429,7 @@ _Zero trust, identity, supply chain, privacy and keys._
 ## 8. Observability & Operations
 _Telemetry, SLOs, disaster recovery, chaos and incidents._
 
-### Three Pillars of Observability _(planned)_
+### Three Pillars of Observability ✅
 * **What it is:** Metrics, logs and traces tied together with OpenTelemetry, so you can explain any slow request.
 * **Key references:** OpenTelemetry, Dapper, Honeycomb
 * **Core ideas:** tracing, structured logs, sampling
